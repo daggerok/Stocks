@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
   annualSeries, buildAnnualRows, CONTROL_NAMES, dividendMetrics, fundamentalsMetrics, mergeAnnual, normalizeTicker, parseRange, parseSecTickers, priceReturns,
-  readConfig, resolveControls, run, useApiRoot, valuationMetrics, type AnnualRow, type ChartDay, type Snapshot,
+  readConfig, resolveControls, run, sampleHistory, useApiRoot, valuationMetrics, type AnnualRow, type ChartDay, type Snapshot,
 } from './update-data.ts';
 
 const fact = (end: string, val: number, extra: Record<string, unknown> = {}) => ({ start: `${Number(end.slice(0, 4)) - 1}-${end.slice(5)}`, end, val, form: '10-K', filed: `${end.slice(0, 4)}-12-31`, ...extra });
@@ -124,6 +124,17 @@ describe('market data', () => {
     expect(r.perf5y).toBeNull();
     expect(r.tr10y).toBeNull();
     expect(r.cagr3y).toBeNull(); // only about 2.5 years of history: no anchor day 3 years back
+  });
+  test('history is weekly before the last year and daily after, with weekly volume summed', () => {
+    const { rows, dailyFrom } = sampleHistory(days);
+    const cutoff = days[days.length - 1].date;
+    expect(rows.length).toBeLessThan(days.length);
+    expect(dailyFrom && dailyFrom > days[0].date).toBe(true);
+    expect(rows.filter((r) => r.date >= (dailyFrom as string))).toHaveLength(days.filter((d) => d.date >= (dailyFrom as string)).length);
+    const weekly = rows.filter((r) => r.date < (dailyFrom as string));
+    expect(weekly.reduce((s, r) => s + r.volume, 0)).toBe(days.filter((d) => d.date < (dailyFrom as string)).length);
+    expect(rows[rows.length - 1].date).toBe(cutoff);
+    expect(sampleHistory([])).toEqual({ rows: [], dailyFrom: null });
   });
   test('dividend yield, growth and the honest zero of a non-payer', () => {
     const d = [2021, 2022, 2023, 2024].flatMap((y) => [1, 4, 7, 10].map((m) => ({ date: `${y}-${String(m).padStart(2, '0')}-15`, amount: 0.25 * (1 + (y - 2021) * 0.1) })));

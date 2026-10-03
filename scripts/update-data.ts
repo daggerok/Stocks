@@ -715,7 +715,32 @@ function historyPeriods(range: string): { period1: number; period2: number } {
   return { period1: Math.floor((Date.now() - Number(range.slice(0, -1)) * YEAR_MS) / 1000), period2 };
 }
 
-async function writeHistory(dir: URL, ticker: string, days: ChartDay[], pageSize: number): Promise<JsonRecord> {
+const isoWeek = (date: string): string => {
+  const d = new Date(`${date}T00:00:00Z`);
+  const day = (d.getUTCDay() + 6) % 7; // Monday = 0
+  d.setUTCDate(d.getUTCDate() - day + 3); // Thursday of the same ISO week decides the year
+  const firstThursday = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
+  return `${d.getUTCFullYear()}-${Math.floor((d.getTime() - firstThursday.getTime()) / (7 * DAY_MS)) + 1}`;
+};
+
+/** Published history: weekly rows (last trading day of the week, summed volume) up to one year before the last day, daily rows after that. Returns are computed from the full daily series before sampling. */
+export function sampleHistory(days: ChartDay[]): { rows: ChartDay[]; dailyFrom: string | null } {
+  const last = days[days.length - 1];
+  if (!last) return { rows: [], dailyFrom: null };
+  const cutoff = new Date(Date.parse(`${last.date}T00:00:00Z`) - 365 * DAY_MS).toISOString().slice(0, 10);
+  const rows: ChartDay[] = [];
+  let week = '';
+  for (const day of days) {
+    if (day.date > cutoff) { rows.push(day); continue; }
+    const key = isoWeek(day.date);
+    if (key === week) rows[rows.length - 1] = { ...day, volume: rows[rows.length - 1].volume + day.volume };
+    else { rows.push({ ...day }); week = key; }
+  }
+  return { rows, dailyFrom: days.find((d) => d.date > cutoff)?.date ?? null };
+}
+
+async function writeHistory(dir: URL, ticker: string, fullDays: ChartDay[], pageSize: number): Promise<JsonRecord> {
+  const { rows: days, dailyFrom } = sampleHistory(fullDays);
   const pages: string[] = [];
   const total = days.length;
   for (let i = 0; i * pageSize < total; i += 1) {
@@ -727,7 +752,7 @@ async function writeHistory(dir: URL, ticker: string, days: ChartDay[], pageSize
   try { // stale pages go only after the new ones are in place
     for (const file of await readdir(new URL('history/', dir))) if (/^\d{3}\.json$/.test(file) && !pages.includes(`history/${file}`)) await rm(new URL(`history/${file}`, dir));
   } catch { /* no history dir yet */ }
-  return { pages, pageSize, totalRows: total, asOf: days[days.length - 1]?.date ?? null, source: 'Yahoo Finance public chart API (adjusted close)' };
+  return { pages, pageSize, totalRows: total, asOf: days[days.length - 1]?.date ?? null, granularity: { weeklyBefore: dailyFrom, dailyFrom }, source: 'Yahoo Finance public chart API (adjusted close); weekly rows before the last year, daily after' };
 }
 
 export type Outcome = { row: JsonRecord } | { skipped: string };
