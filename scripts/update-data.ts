@@ -36,8 +36,16 @@ const companyDir = (ticker: string) => new URL(`companies/${ticker}/`, API_ROOT)
 
 export const CONTROL_NAMES = [
   'MAX_FETCHES', 'REQUEST_SLEEP', 'CONCURRENCY', 'MAX_RETRIES', 'EXCHANGES', 'TICKERS', 'MARKET_CAP', 'DIVIDEND_YIELD',
-  'HISTORY_RANGE', 'HISTORY_PAGE_SIZE', 'SKIP_YAHOO', 'SEC_UA', 'VERBOSE',
+  'HISTORY_RANGE', 'HISTORY_PAGE_SIZE', 'SKIP_YAHOO', 'SEC_UA', 'VERBOSE', 'USE_SYSTEM_CA',
+  ...['PERFORMANCE', 'TOTAL_RETURN'].flatMap((prefix) => ['YTD', '1Y', '3Y', '5Y', '10Y'].map((period) => `${prefix}_${period}`)),
 ] as const;
+export type ControlName = (typeof CONTROL_NAMES)[number];
+const PERIODS = ['YTD', '1Y', '3Y', '5Y', '10Y'] as const;
+type Period = (typeof PERIODS)[number];
+type RangeMap = Partial<Record<Period, Range>>;
+// metrics keys behind the PERFORMANCE_* (price change) and TOTAL_RETURN_* (dividend- and split-adjusted) filters
+const PERFORMANCE_KEYS: Record<Period, string> = { YTD: 'perfYtd', '1Y': 'perf1y', '3Y': 'perf3y', '5Y': 'perf5y', '10Y': 'perf10y' };
+const TOTAL_RETURN_KEYS: Record<Period, string> = { YTD: 'ytd', '1Y': 'tr1y', '3Y': 'tr3y', '5Y': 'tr5y', '10Y': 'tr10y' };
 
 export type UpdaterConfig = {
   maxFetches: number;
@@ -48,6 +56,8 @@ export type UpdaterConfig = {
   tickers: Set<string> | null;
   marketCap: Range;
   dividendYield: Range;
+  performance: RangeMap;
+  totalReturn: RangeMap;
   historyRange: string;
   historyPageSize: number;
   skipYahoo: boolean;
@@ -107,6 +117,15 @@ export function parseHistoryRange(value: string): string {
   return raw;
 }
 
+export function parseRanges(env: Record<string, string | undefined>, prefix: 'PERFORMANCE' | 'TOTAL_RETURN'): RangeMap {
+  const out: RangeMap = {};
+  for (const period of PERIODS) {
+    const range = parseRange(env[`${prefix}_${period}`] ?? '', `${prefix}_${period}`);
+    if (range.min !== undefined || range.max !== undefined) out[period] = range;
+  }
+  return out;
+}
+
 export function readConfig(env: Record<string, string | undefined> = process.env): UpdaterConfig {
   const int = (key: string, fallback: number, min: number) => {
     const v = env[key];
@@ -128,6 +147,8 @@ export function readConfig(env: Record<string, string | undefined> = process.env
     tickers: tickers.length ? new Set(tickers) : null,
     marketCap: parseRange(env.MARKET_CAP ?? '', 'MARKET_CAP'),
     dividendYield: parseRange(env.DIVIDEND_YIELD ?? '', 'DIVIDEND_YIELD'),
+    performance: parseRanges(env, 'PERFORMANCE'),
+    totalReturn: parseRanges(env, 'TOTAL_RETURN'),
     historyRange: parseHistoryRange(env.HISTORY_RANGE ?? 'max'),
     historyPageSize: int('HISTORY_PAGE_SIZE', 1000, 1),
     skipYahoo: bool(env.SKIP_YAHOO),
@@ -162,6 +183,11 @@ export function resolveControls(
   for (const key of CONTROL_NAMES) if (env[key] !== undefined) apply({ [key]: env[key] });
   if (result.SKIP_YAHOO && !/^(0|1|true|false|yes|no|y|n|on|off)$/i.test(result.SKIP_YAHOO.trim())) throw new Error('SKIP_YAHOO: expected boolean');
   if (result.VERBOSE && !/^(0|1|true|false|yes|no|y|n|on|off)$/i.test(result.VERBOSE.trim())) throw new Error('VERBOSE: expected boolean');
+  if (result.USE_SYSTEM_CA !== undefined) {
+    const mode = result.USE_SYSTEM_CA.trim().toLowerCase();
+    if (!['auto', 'true', 'false'].includes(mode)) throw new Error('USE_SYSTEM_CA: expected auto, true or false');
+    result.USE_SYSTEM_CA = mode;
+  }
   readConfig(result); // validate everything before any request or write
   return result;
 }
@@ -314,6 +340,9 @@ export function buildAnnualRows(facts: JsonRecord, limit = 15): AnnualRow[] {
   const op = flow(TAGS.operatingIncome);
   const net = flow(TAGS.netIncome);
   const da = flow(TAGS.da);
+  // many filers tag depreciation and intangible amortization separately instead of one combined D&A line
+  const depreciation = flow(['Depreciation']);
+  const amortization = flow(['AmortizationOfIntangibleAssets']);
   const ocf = flow(TAGS.ocf);
   const capex = flow(TAGS.capex);
   const divs = flow(TAGS.dividends);
@@ -339,7 +368,7 @@ export function buildAnnualRows(facts: JsonRecord, limit = 15): AnnualRow[] {
     const rev = revenue.get(end);
     const gp = gross.get(end) ?? (rev !== undefined && cost.has(end) ? rev - cost.get(end)! : undefined);
     const opInc = op.get(end);
-    const dna = da.get(end);
+    const dna = da.get(end) ?? (depreciation.has(end) ? depreciation.get(end)! + (amortization.get(end) ?? 0) : undefined);
     const ebitda = add(opInc, dna);
     const o = ocf.get(end);
     const cx = capex.get(end) === undefined ? undefined : Math.abs(capex.get(end)!);
@@ -731,6 +760,13 @@ export function sampleHistory(days: ChartDay[]): { rows: ChartDay[]; dailyFrom: 
   return { rows, dailyFrom: days.find((d) => d.date > cutoff)?.date ?? null };
 }
 
+/** Stale history pages are removed only after the new meta.json is written. */
+async function pruneHistoryPages(dir: URL, keep: string[]): Promise<void> {
+  try {
+    for (const file of await readdir(new URL('history/', dir))) if (/^\d{3}\.json$/.test(file) && !keep.includes(`history/${file}`)) await rm(new URL(`history/${file}`, dir));
+  } catch { /* no history dir yet */ }
+}
+
 async function writeHistory(dir: URL, ticker: string, fullDays: ChartDay[], pageSize: number): Promise<JsonRecord> {
   const { rows: days, dailyFrom } = sampleHistory(fullDays);
   const pages: string[] = [];
@@ -741,9 +777,6 @@ async function writeHistory(dir: URL, ticker: string, fullDays: ChartDay[], page
     await writeIfChanged(new URL(`history/${name}`, dir), { ticker, page: i + 1, pageSize, totalRows: total, headers: ['Date', 'Close', 'Adj Close', 'Volume'], rows });
     pages.push(`history/${name}`);
   }
-  try { // stale pages go only after the new ones are in place
-    for (const file of await readdir(new URL('history/', dir))) if (/^\d{3}\.json$/.test(file) && !pages.includes(`history/${file}`)) await rm(new URL(`history/${file}`, dir));
-  } catch { /* no history dir yet */ }
   return { pages, pageSize, totalRows: total, asOf: days[days.length - 1]?.date ?? null, granularity: { monthlyBefore: dailyFrom, dailyFrom }, source: 'Yahoo Finance public chart API (adjusted close); monthly rows (month-end close, summed volume) with daily rows for the last 31 days' };
 }
 
@@ -825,10 +858,15 @@ export async function processCompany(listing: Listing, config: UpdaterConfig, pr
   const reasons: string[] = [];
   if (!inRange(metrics.marketCap, config.marketCap)) reasons.push('MARKET_CAP');
   if (!inRange(metrics.dividendYield, config.dividendYield)) reasons.push('DIVIDEND_YIELD');
+  for (const period of PERIODS) {
+    if (config.performance[period] && !inRange(metrics[PERFORMANCE_KEYS[period]], config.performance[period] as Range)) reasons.push(`PERFORMANCE_${period}`);
+    if (config.totalReturn[period] && !inRange(metrics[TOTAL_RETURN_KEYS[period]], config.totalReturn[period] as Range)) reasons.push(`TOTAL_RETURN_${period}`);
+  }
   if (reasons.length) return { skipped: `filtered by ${reasons.join(', ')}` };
 
   const meta = { ...row, sources: { universe: SEC_TICKERS_URL, fundamentals: `${SEC_FACTS_URL}/CIK${toCik(listing.cik)}.json`, market: 'Yahoo Finance chart API', snapshot: 'Yahoo Finance quoteSummary' }, market, fundamentals: { asOf: rows[0]?.end ?? null, annual: rows }, history };
   await writeIfChanged(new URL('meta.json', dir), meta);
+  await pruneHistoryPages(dir, Array.isArray(history.pages) ? history.pages : []);
   void previous;
   return { row };
 }
@@ -932,11 +970,85 @@ export async function run(controls: Record<string, string | undefined>): Promise
   return { updated: results.length, skipped, failed, rows: companies.length };
 }
 
+const USAGE = `
+Stocks static data updater (Nasdaq, NYSE, Cboe)
+
+Sources:
+  universe      SEC company_tickers_exchange.json (ticker, CIK, exchange)
+  fundamentals  SEC EDGAR XBRL companyfacts, annual 10-K facts (Yahoo
+                fundamentals-timeseries fills gaps and covers IFRS filers)
+  history       Yahoo Finance public chart API (daily, published as monthly rows
+                with daily rows for the last 31 days)
+  snapshot      Yahoo Finance quoteSummary (market cap, TTM and forward valuation)
+
+Configuration: scripts/update-data.config.json defaults < advanced JSON (workflow
+only) < nonblank workflow inputs < environment variables below (all filters use
+AND logic):
+  MAX_FETCHES=0       all selected stocks; positive value is a resumable batch
+  REQUEST_SLEEP=1     seconds between request starts per worker lane
+  CONCURRENCY=3       parallel workers, each with its own request lane
+  MAX_RETRIES=2       retries after the initial request (integer >= 1)
+  EXCHANGES=Nasdaq,NYSE,CBOE   listing exchanges to include
+  TICKERS="AAPL MSFT"  ticker allowlist (BRK.B and BRK-B both work); blank = every stock on EXCHANGES
+  MARKET_CAP=:        market cap range in USD, K/M/B/T suffixes allowed (10B:)
+  DIVIDEND_YIELD=:    dividend yield percentage range
+  PERFORMANCE_YTD|1Y|3Y|5Y|10Y=min:max   price change ranges (%)
+  TOTAL_RETURN_YTD|1Y|3Y|5Y|10Y=min:max total return ranges (%)
+  HISTORY_RANGE=max   Yahoo history range (max, 10y, 5y, ...)
+  HISTORY_PAGE_SIZE=1000
+  SKIP_YAHOO=false    keep the published market data, refresh SEC fundamentals only
+  SEC_UA=             SEC User-Agent override (declare a contact); blank uses the built-in default (daggerok ETF feed daggerok@gmail.com)
+  VERBOSE=false
+  USE_SYSTEM_CA=auto  TLS trust store: auto restarts once with --use-system-ca on an untrusted-certificate error | true | false
+
+Examples:
+  TICKERS="AAPL MSFT JPM" ./scripts/update-data.ts
+  TICKERS= MARKET_CAP="10B:" DIVIDEND_YIELD="2:" ./scripts/update-data.ts
+  TOTAL_RETURN_1Y="20:" ./scripts/update-data.ts
+`;
+
+// --- TLS trust store (identical in every ETF repo) ---
+const SYSTEM_CA_MARKER = 'ETF_UPDATER_SYSTEM_CA';
+const CERT_ERROR = /UNABLE_TO_GET_ISSUER_CERT|UNABLE_TO_VERIFY_LEAF_SIGNATURE|SELF_SIGNED_CERT|CERT_HAS_EXPIRED|unable to get (?:local )?issuer certificate|self[- ]signed certificate|certificate has expired/i;
+
+export function isCertError(error: unknown): boolean {
+  const e = error as { code?: unknown; message?: unknown; cause?: unknown } | null;
+  return CERT_ERROR.test(`${String(e?.code ?? '')} ${String(e?.message ?? '')}`) || (e?.cause ? isCertError(e.cause) : false);
+}
+
+export function systemCaActive(env: Record<string, string | undefined> = process.env, execArgv: string[] = process.execArgv): boolean {
+  return execArgv.includes('--use-system-ca') || env.NODE_USE_SYSTEM_CA === '1' || env[SYSTEM_CA_MARKER] === '1';
+}
+
+export function reexecWithSystemCa(): never {
+  const child = Bun.spawnSync([process.execPath, '--use-system-ca', ...process.argv.slice(1)], {
+    env: { ...process.env, [SYSTEM_CA_MARKER]: '1' },
+    stdio: ['inherit', 'inherit', 'inherit'],
+  });
+  process.exit(child.exitCode ?? 1);
+}
+
+/** mode: auto (restart once on an untrusted-certificate error), true (restart now), false (never). */
+export function installSystemCa(mode: string, reexec: () => never = reexecWithSystemCa, active: boolean = systemCaActive()): void {
+  if (mode === 'false' || active) return;
+  if (mode === 'true') reexec();
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (...args: Parameters<typeof fetch>) => {
+    try { return await realFetch(...args); }
+    catch (error) {
+      if (!isCertError(error)) throw error;
+      console.error('[ notice   ] TLS certificate not trusted; restarting once with --use-system-ca');
+      return reexec();
+    }
+  }) as typeof fetch;
+}
+
 export async function runtimeControls(env: Record<string, string | undefined> = process.env): Promise<Record<string, string>> {
   const file = JSON.parse(await readFile(fileURLToPath(CONFIG_FILE_URL), 'utf8'));
   return resolveControls(file, {}, {}, env);
 }
 
 if ((import.meta as { main?: boolean }).main) {
-  await runtimeControls().then(run).catch((error) => { console.error(error instanceof Error ? error.stack : String(error)); process.exitCode = 1; });
+  if (process.argv.some((arg) => ['-h', '--help', 'help'].includes(arg))) console.log(USAGE.trim());
+  else await runtimeControls().then((controls) => { installSystemCa(controls.USE_SYSTEM_CA ?? 'auto'); return run(controls); }).catch((error) => { console.error(error instanceof Error ? error.stack : String(error)); process.exitCode = 1; });
 }

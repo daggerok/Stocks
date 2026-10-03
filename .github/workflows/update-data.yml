@@ -1,0 +1,193 @@
+name: Update Stocks data
+
+on:
+  schedule:
+    - cron: '0 0 * * 0'
+  workflow_dispatch:
+    inputs:
+      max_fetches:
+        description: "Batch size: 0 = all selected stocks, a positive value continues after the committed cursor; blank inherits scripts/update-data.config.json"
+        required: false
+        default: ""
+        type: string
+      request_sleep:
+        description: "Seconds between request starts of one worker lane; blank inherits scripts/update-data.config.json"
+        required: false
+        default: ""
+        type: string
+      concurrency:
+        description: "Parallel workers (each with its own request lane); blank inherits scripts/update-data.config.json"
+        required: false
+        default: ""
+        type: string
+      max_retries:
+        description: "Retries after the initial request (integer >= 1); blank inherits scripts/update-data.config.json"
+        required: false
+        default: ""
+        type: string
+      exchanges:
+        description: "Listing exchanges to include (Nasdaq,NYSE,CBOE); blank inherits scripts/update-data.config.json"
+        required: false
+        default: ""
+        type: string
+      tickers:
+        description: "Ticker allowlist separated by spaces, commas or semicolons (blank in the config = every stock on the exchanges); blank inherits scripts/update-data.config.json"
+        required: false
+        default: ""
+        type: string
+      market_cap:
+        description: "Market cap range in USD (min:max, K/M/B/T suffixes allowed); blank inherits scripts/update-data.config.json"
+        required: false
+        default: ""
+        type: string
+      dividend_yield:
+        description: "Dividend yield percentage range (min:max); blank inherits scripts/update-data.config.json"
+        required: false
+        default: ""
+        type: string
+      history_range:
+        description: "Yahoo history range (max, 10y, 5y, ...); blank inherits scripts/update-data.config.json"
+        required: false
+        default: ""
+        type: string
+      history_page_size:
+        description: "Rows per generated history page; blank inherits scripts/update-data.config.json"
+        required: false
+        default: ""
+        type: string
+      skip_yahoo:
+        description: "true keeps the published market data and refreshes SEC fundamentals only; blank inherits scripts/update-data.config.json"
+        required: false
+        default: ""
+        type: string
+      verbose:
+        description: "true prints per-stock retry and fallback notices; blank inherits scripts/update-data.config.json"
+        required: false
+        default: ""
+        type: string
+      performance_ytd:
+        description: "Price change YTD range in percent (min:max); blank inherits scripts/update-data.config.json"
+        required: false
+        default: ""
+        type: string
+      performance_1y:
+        description: "Price change 1Y range in percent (min:max); blank inherits scripts/update-data.config.json"
+        required: false
+        default: ""
+        type: string
+      performance_3y:
+        description: "Price change 3Y range in percent (min:max); blank inherits scripts/update-data.config.json"
+        required: false
+        default: ""
+        type: string
+      performance_5y:
+        description: "Price change 5Y range in percent (min:max); blank inherits scripts/update-data.config.json"
+        required: false
+        default: ""
+        type: string
+      performance_10y:
+        description: "Price change 10Y range in percent (min:max); blank inherits scripts/update-data.config.json"
+        required: false
+        default: ""
+        type: string
+      total_return_ytd:
+        description: "Total return YTD range in percent (min:max); blank inherits scripts/update-data.config.json"
+        required: false
+        default: ""
+        type: string
+      total_return_1y:
+        description: "Total return 1Y range in percent (min:max); blank inherits scripts/update-data.config.json"
+        required: false
+        default: ""
+        type: string
+      total_return_3y:
+        description: "Total return 3Y range in percent (min:max); blank inherits scripts/update-data.config.json"
+        required: false
+        default: ""
+        type: string
+      total_return_5y:
+        description: "Total return 5Y range in percent (min:max); blank inherits scripts/update-data.config.json"
+        required: false
+        default: ""
+        type: string
+      total_return_10y:
+        description: "Total return 10Y range in percent (min:max); blank inherits scripts/update-data.config.json"
+        required: false
+        default: ""
+        type: string
+      advanced:
+        description: 'JSON object of supported control overrides not exposed above (keys are UPPER_CASE control names, values are scalars); nonblank individual inputs win'
+        required: false
+        default: '{}'
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-data
+  cancel-in-progress: false
+
+jobs:
+  update-data:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Run updater unit tests
+        run: bun test
+      - name: Resolve file defaults and manual overrides
+        env:
+          DISPATCH_INPUTS: ${{ toJSON(inputs) }}
+          PROTECTED_SEC_UA: ${{ vars.SEC_UA }}
+        run: |
+          bun --eval '
+            import { resolveControls } from "./scripts/update-data.ts";
+            import { appendFile } from "node:fs/promises";
+            // schedule runs have no dispatch inputs: file defaults apply as-is
+            const inputs = JSON.parse(process.env.DISPATCH_INPUTS || "{}");
+            const advanced = JSON.parse(inputs.advanced || "{}");
+            const individual = Object.fromEntries(Object.entries(inputs)
+              .filter(([key]) => key !== "advanced")
+              .map(([key, value]) => [key.toUpperCase(), value]));
+            const file = await Bun.file("scripts/update-data.config.json").json();
+            // Protected repository Actions variables: highest precedence, applied only when nonblank (never printed).
+            const protectedVars = {};
+            if ((process.env.PROTECTED_SEC_UA ?? "").trim()) protectedVars.SEC_UA = process.env.PROTECTED_SEC_UA.trim();
+            const controls = resolveControls(file, advanced, individual, protectedVars);
+            await appendFile(process.env.GITHUB_ENV,
+              Object.entries(controls).map(([key, value]) => `${key}=${value}\n`).join(""));
+          '
+      - name: Generate api/stocks static data
+        run: bun ./scripts/update-data.ts
+      - name: Commit updated data
+        if: ${{ !cancelled() }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          git add api/stocks
+          if git diff --cached --quiet -- api/stocks; then
+            echo "api/stocks is already up to date"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore(data): update Stocks data"
+          # Runtime-only auth; no token/header stored in URL, file or Git config.
+          push() { git -c credential.helper= -c credential.helper='!f() { if test "$1" = get; then printf "username=x-access-token\npassword=%s\n" "$GITHUB_TOKEN"; fi; }; f' push; }
+          # main may have moved while the updater ran (merges, other pushes): rebase the data commit and retry
+          for attempt in 1 2 3 4; do
+            push && exit 0
+            echo "push rejected: rebasing onto origin/${GITHUB_REF_NAME} (attempt ${attempt})"
+            git pull --rebase origin "${GITHUB_REF_NAME}" || exit 1
+          done
+          exit 1

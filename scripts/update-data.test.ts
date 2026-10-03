@@ -1,12 +1,14 @@
 /// <reference types="bun" />
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
   annualSeries, buildAnnualRows, CONTROL_NAMES, dividendMetrics, fundamentalsMetrics, mergeAnnual, normalizeTicker, parseRange, parseSecTickers, priceReturns,
-  readConfig, resolveControls, run, sampleHistory, useApiRoot, valuationMetrics, type AnnualRow, type ChartDay, type Snapshot,
+  installSystemCa, isCertError, parseRanges, readConfig, resolveControls, run, runtimeControls, sampleHistory, useApiRoot, valuationMetrics, type AnnualRow, type ChartDay, type Snapshot,
 } from './update-data.ts';
 
 const fact = (end: string, val: number, extra: Record<string, unknown> = {}) => ({ start: `${Number(end.slice(0, 4)) - 1}-${end.slice(5)}`, end, val, form: '10-K', filed: `${end.slice(0, 4)}-12-31`, ...extra });
@@ -87,6 +89,16 @@ describe('fundamentals', () => {
     expect(m.netDebtToEbitda).toBeCloseTo(30 / (25 * 1.1 ** 5), 2);
     expect(m.payoutRatio).toBe(40);
     expect(m.roic).not.toBeNull();
+  });
+  test('D&A falls back to depreciation plus intangible amortization when no combined tag exists', () => {
+    const facts = syntheticFacts() as any;
+    delete facts.facts['us-gaap'].DepreciationDepletionAndAmortization;
+    expect(buildAnnualRows(facts)[0].ebitda).toBeNull();
+    const years = [2021, 2022, 2023, 2024, 2025, 2026];
+    facts.facts['us-gaap'].Depreciation = units(years.map((y) => fact(`${y}-12-31`, 3)));
+    expect(buildAnnualRows(facts)[0].ebitda).toBeCloseTo(20 * 1.1 ** 5 + 3, 6);
+    facts.facts['us-gaap'].AmortizationOfIntangibleAssets = units(years.map((y) => fact(`${y}-12-31`, 2)));
+    expect(buildAnnualRows(facts)[0].ebitda).toBeCloseTo(20 * 1.1 ** 5 + 5, 6);
   });
   test('missing data is null, never zero (a bank has no EBITDA or FCF)', () => {
     const rows = [{ ...mergeAnnual([], new Map([['2025-12-31', { revenue: 100, netIncome: 30 }]])).rows[0] }];
@@ -262,6 +274,134 @@ describe('updater run (mocked fetch)', () => {
     const table = parseSecTickers({ fields: ['cik', 'name', 'ticker', 'exchange'], data: [[1067983, 'BERKSHIRE', 'BRK.B', 'NYSE'], [5, 'NOEX', 'ZZZ', null]] });
     expect(table.get('BRK-B')?.exchange).toBe('NYSE');
     expect(table.has('ZZZ')).toBe(false);
+  });
+});
+
+describe('configuration parity: config file, README, --help and workflow', () => {
+  const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
+  const file = () => JSON.parse(read('scripts/update-data.config.json'));
+
+  test('scheduled path (empty inputs and advanced) equals the config defaults', () => {
+    const defaults = file();
+    expect(resolveControls(defaults, JSON.parse('{}'), {}, {})).toEqual(Object.fromEntries(Object.entries(defaults).map(([k, v]) => [k, String(v)])));
+  });
+
+  test('resolver rejects unknown keys, invalid values, non-scalars and newline injection', () => {
+    for (const value of [{ UNKNOWN: 1 }, { SEC_UA: 'x\nEVIL=yes' }, { CONCURRENCY: 0 }, { MAX_RETRIES: 0 }, { MAX_RETRIES: -1 }, { MAX_FETCHES: 1.5 }, { REQUEST_SLEEP: '-1' }, { VERBOSE: 'maybe' }, { SKIP_YAHOO: 'maybe' }, { MARKET_CAP: '1:2:3' }, { DIVIDEND_YIELD: '5:1' }, { PERFORMANCE_1Y: 'a:b' }, { TOTAL_RETURN_5Y: '9:1' }, { HISTORY_RANGE: 'x' }, { TICKERS: ['AAPL'] }, { TICKERS: { a: 1 } }, null, []]) {
+      expect(() => resolveControls(value)).toThrow();
+    }
+    expect(() => resolveControls({}, {}, { TICKERS: 'A\nB' })).toThrow();
+    expect(() => resolveControls({}, {}, {}, { SEC_UA: 'x\0bad' })).toThrow();
+    expect(() => resolveControls({}, 'not an object')).toThrow();
+  });
+
+  test('defaults: the watchlist, no filters, the standard SEC contact', () => {
+    const config = readConfig(resolveControls(file()));
+    expect(config.maxFetches).toBe(0);
+    expect(config.maxRetries).toBeGreaterThanOrEqual(1);
+    expect(config.historyRange).toBe('max');
+    expect(config.skipYahoo).toBe(false);
+    expect(config.tickers?.has('AAPL')).toBe(true);
+    expect(config.tickers?.has('BRK-B')).toBe(true);
+    expect(config.marketCap).toEqual({});
+    expect(config.performance).toEqual({});
+    expect(config.totalReturn).toEqual({});
+    expect(file().SEC_UA).toBe('daggerok ETF feed daggerok@gmail.com');
+    expect(config.secUa).toBe('daggerok ETF feed daggerok@gmail.com');
+    expect(parseRanges({ PERFORMANCE_1Y: '10:', PERFORMANCE_5Y: ':' }, 'PERFORMANCE')).toEqual({ '1Y': { min: 10, max: undefined } });
+  });
+
+  test('runtimeControls reads the config file and lets env override it', async () => {
+    expect((await runtimeControls({})).REQUEST_SLEEP).toBe('1');
+    expect((await runtimeControls({ REQUEST_SLEEP: '0', TICKERS: 'AAPL MSFT' })).TICKERS).toBe('AAPL MSFT');
+    expect((await runtimeControls({ TICKERS: '' })).TICKERS).toBe('');
+  });
+
+  test('config keys, CONTROL_NAMES, README and --help stay in sync', () => {
+    expect(Object.keys(file()).sort()).toEqual([...CONTROL_NAMES].sort());
+    for (const value of Object.values(file())) expect(typeof value).toBe('string');
+    const doc = read('README.md');
+    const section = doc.slice(doc.indexOf('### Update controls'), doc.indexOf('### Examples'));
+    const documented = new Set<string>();
+    for (const [, cell] of section.matchAll(/^\| ((?:`[A-Z0-9_]+`(?:, )?)+) \|/gm)) {
+      const tokens = [...cell.matchAll(/`([A-Z0-9_]+)`/g)].map((m) => m[1]);
+      const prefix = tokens[0].replace(/_YTD$/, '');
+      for (const token of tokens) documented.add(token.startsWith('_') ? `${prefix}${token}` : token);
+    }
+    expect([...documented].sort()).toEqual([...CONTROL_NAMES].sort());
+    expect(doc).toContain('scripts/update-data.config.json');
+    const help = spawnSync('bun', [new URL('./update-data.ts', import.meta.url).pathname, '--help'], { encoding: 'utf8' }).stdout;
+    for (const name of CONTROL_NAMES) {
+      const tenor = name.match(/^(PERFORMANCE|TOTAL_RETURN)_/);
+      expect(help).toContain(tenor ? `${tenor[1]}_YTD|1Y|3Y|5Y|10Y` : name);
+    }
+  });
+
+  test('workflow: inputs, schedule, fixed output dir and no direct interpolation', () => {
+    const yml = read('.github/workflows/update-data.yml');
+    const block = yml.slice(yml.indexOf('    inputs:'), yml.indexOf('\npermissions:'));
+    const names = [...block.matchAll(/^      (\w+):$/gm)].map((m) => m[1]);
+    expect(names.length).toBeLessThanOrEqual(25);
+    expect(names).toContain('advanced');
+    expect(block).toMatch(/advanced:[\s\S]*default: '\{\}'/);
+    for (const name of names.filter((n) => n !== 'advanced')) expect(CONTROL_NAMES).toContain(name.toUpperCase() as any);
+    expect(names).not.toContain('sec_ua');
+    expect(names).not.toContain('output_dir');
+    expect(yml).toContain("cron: '0 0 * * 0'");
+    expect(yml).not.toMatch(/^  push:/m);
+    expect(yml).toContain('toJSON(inputs)');
+    expect(yml).not.toMatch(/\$\{\{\s*inputs\./);
+    expect(yml).toContain('resolveControls');
+    expect(yml).toContain('vars.SEC_UA');
+    expect(yml).toContain('timeout-minutes: 30');
+    expect(yml).toContain('persist-credentials: false');
+    expect(yml).toContain('git add api/stocks\n');
+    expect(yml.match(/git add /g)?.length).toBe(1);
+  });
+
+  test('README structure and verification section', () => {
+    const doc = read('README.md');
+    const order = ['# Stocks', '## Using Bun', '## Updating the static Stocks data', '### Data sources', '### Metrics and caveats', '### Update controls', '### Examples', '## TypeScript and verification', '## Exchanges table', '## Sibling applications', '## License'];
+    let at = -1;
+    for (const heading of order) {
+      const next = doc.indexOf(`\n${heading}\n`, at);
+      expect(next > at || (heading === '# Stocks' && doc.startsWith(heading))).toBe(true);
+      at = Math.max(at, next);
+    }
+    for (const command of ['bun install --frozen-lockfile', 'bun test', 'bun build --target=bun scripts/update-data.ts --outfile=/dev/null', 'git diff --check']) expect(doc).toContain(command);
+  });
+
+  test('USE_SYSTEM_CA control: auto/true/false, case-insensitive, strict, default auto', () => {
+    expect(resolveControls(file()).USE_SYSTEM_CA).toBe('auto');
+    for (const mode of ['auto', 'true', 'false', 'AUTO', 'True', 'FALSE']) expect(resolveControls(file(), {}, {}, { USE_SYSTEM_CA: mode }).USE_SYSTEM_CA).toBe(mode.toLowerCase());
+    expect(() => resolveControls(file(), {}, {}, { USE_SYSTEM_CA: 'maybe' })).toThrow('USE_SYSTEM_CA');
+  });
+
+  test('isCertError recognizes untrusted-certificate errors only', () => {
+    expect(isCertError({ code: 'UNABLE_TO_GET_ISSUER_CERT_LOCALLY' })).toBe(true);
+    expect(isCertError(Object.assign(new Error('fetch failed'), { cause: { code: 'SELF_SIGNED_CERT_IN_CHAIN' } }))).toBe(true);
+    expect(isCertError({ code: 'ECONNRESET', message: 'socket hang up' })).toBe(false);
+    expect(isCertError(null)).toBe(false);
+  });
+
+  test('installSystemCa wraps fetch only in auto mode and restarts once on cert errors', async () => {
+    const original = globalThis.fetch;
+    let calls = 0;
+    const reexec = () => { calls += 1; return undefined as never; };
+    try {
+      installSystemCa('false', reexec, false);
+      expect(globalThis.fetch).toBe(original);
+      installSystemCa('auto', reexec, true);
+      expect(globalThis.fetch).toBe(original);
+      globalThis.fetch = (async () => { throw Object.assign(new Error('fetch failed'), { code: 'UNABLE_TO_GET_ISSUER_CERT_LOCALLY' }); }) as typeof fetch;
+      const failing = globalThis.fetch;
+      installSystemCa('auto', reexec, false);
+      expect(globalThis.fetch).not.toBe(failing);
+      await globalThis.fetch('https://example.invalid/');
+      expect(calls).toBe(1);
+    } finally {
+      globalThis.fetch = original;
+    }
   });
 });
 
