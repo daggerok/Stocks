@@ -1,0 +1,352 @@
+{
+  "ticker": "USCB",
+  "name": "USCB Financial Holdings, Inc.",
+  "exchange": "Nasdaq",
+  "sector": "Financial Services",
+  "industry": "Banks - Regional",
+  "cik": 1901637,
+  "currency": "USD",
+  "financialCurrency": "USD",
+  "dataFile": "./companies/USCB/meta.json",
+  "price": 22.55,
+  "asOfDate": "2026-10-02",
+  "fundamentalsAsOf": "2025-12-31",
+  "fundamentalsBasis": "SEC EDGAR XBRL annual 10-K facts with gaps filled from Yahoo fundamentals-timeseries; valuation multiples from the Yahoo quoteSummary TTM snapshot",
+  "metrics": {
+    "marketCap": 416599296,
+    "enterpriseValue": 591254272,
+    "price": 22.55,
+    "week52High": 23.886,
+    "week52Low": 16.36,
+    "beta": 0.46,
+    "sharesOutstanding": 18474470,
+    "pe": 14.46,
+    "forwardPe": 9.67,
+    "ps": 4.41,
+    "forwardPs": 3.36,
+    "pFcf": null,
+    "evEbitda": null,
+    "fcfToEbitda": null,
+    "pb": 1.78,
+    "dividendYield": 2.11,
+    "dividendRate": 0.475,
+    "dividendGrowth": 100,
+    "dividendGrowth3y": null,
+    "dividendGrowth5y": null,
+    "payoutRatio": 30,
+    "fcfPayout": 18.42,
+    "currentRatio": null,
+    "quickRatio": null,
+    "debtToEquity": 0.94,
+    "netDebtToEbitda": null,
+    "roic": null,
+    "revenueGrowth": 9.13,
+    "revenueGrowth3y": 9.49,
+    "revenueGrowth5y": null,
+    "epsGrowth": 7.26,
+    "epsGrowth3y": 9.97,
+    "epsGrowth5y": null,
+    "fcfGrowth": 23.11,
+    "fcfGrowth3y": 13.77,
+    "fcfGrowth5y": 27.22,
+    "ebitdaGrowth": null,
+    "ebitdaGrowth3y": null,
+    "ebitdaGrowth5y": null,
+    "capexGrowth": -3.5,
+    "capexGrowth3y": -23.36,
+    "capexGrowth5y": -2.68,
+    "assetsGrowth": 8.15,
+    "assetsGrowth3y": 10.2,
+    "assetsGrowth5y": 13.2,
+    "debtGrowth": 18.44,
+    "debtGrowth3y": 49.81,
+    "debtGrowth5y": null,
+    "netMargin": 28.93,
+    "grossMargin": null,
+    "ebitdaMargin": null,
+    "fcfMargin": 47.11,
+    "netMarginDelta": -0.92,
+    "netMarginDelta3y": -0.38,
+    "grossMarginDelta": null,
+    "grossMarginDelta3y": null,
+    "ebitdaMarginDelta": null,
+    "ebitdaMarginDelta3y": null,
+    "fcfMarginDelta": 5.35,
+    "fcfMarginDelta3y": 5.11,
+    "perfYtd": 22.42,
+    "perf1y": 30.5,
+    "perf3y": 114.56,
+    "perf5y": 83.33,
+    "perf10y": null,
+    "ytd": 24.74,
+    "tr1y": 33.72,
+    "tr3y": 126.87,
+    "tr5y": 93.85,
+    "tr10y": null,
+    "cagr3y": 31.4,
+    "cagr5y": 14.16,
+    "cagr10y": null,
+    "siAnn": 16.43,
+    "returnsBasis": "Yahoo chart API: performance from unadjusted closes, total return and CAGR from dividend- and split-adjusted closes",
+    "performanceAsOf": "2026-10-02"
+  },
+  "sources": {
+    "universe": "https://www.sec.gov/files/company_tickers_exchange.json",
+    "fundamentals": "https://data.sec.gov/api/xbrl/companyfacts/CIK0001901637.json",
+    "market": "Yahoo Finance chart API",
+    "snapshot": "Yahoo Finance quoteSummary"
+  },
+  "market": {
+    "price": 22.55,
+    "asOfDate": "2026-10-02",
+    "valuation": {
+      "marketCap": 416599296,
+      "enterpriseValue": 591254272,
+      "pe": 14.46,
+      "forwardPe": 9.67,
+      "ps": 4.41,
+      "forwardPs": 3.36,
+      "pFcf": null,
+      "evEbitda": null,
+      "fcfToEbitda": null,
+      "pb": 1.78,
+      "beta": 0.46,
+      "sharesOutstanding": 18474470
+    },
+    "returns": {
+      "perfYtd": 22.42,
+      "perf1y": 30.5,
+      "perf3y": 114.56,
+      "perf5y": 83.33,
+      "perf10y": null,
+      "ytd": 24.74,
+      "tr1y": 33.72,
+      "tr3y": 126.87,
+      "tr5y": 93.85,
+      "tr10y": null,
+      "cagr3y": 31.4,
+      "cagr5y": 14.16,
+      "cagr10y": null,
+      "siAnn": 16.43
+    },
+    "dividends": {
+      "dividendYield": 2.11,
+      "dividendRate": 0.475,
+      "dividendGrowth": 100,
+      "dividendGrowth3y": null,
+      "dividendGrowth5y": null
+    },
+    "annualDps": [
+      {
+        "year": 2026,
+        "dps": 0.375
+      },
+      {
+        "year": 2025,
+        "dps": 0.4
+      },
+      {
+        "year": 2024,
+        "dps": 0.2
+      }
+    ],
+    "recentDividends": [
+      {
+        "date": "2026-08-17",
+        "amount": 0.125
+      },
+      {
+        "date": "2026-05-15",
+        "amount": 0.125
+      },
+      {
+        "date": "2026-02-17",
+        "amount": 0.125
+      },
+      {
+        "date": "2025-11-14",
+        "amount": 0.1
+      },
+      {
+        "date": "2025-08-15",
+        "amount": 0.1
+      },
+      {
+        "date": "2025-05-15",
+        "amount": 0.1
+      },
+      {
+        "date": "2025-02-14",
+        "amount": 0.1
+      },
+      {
+        "date": "2024-11-15",
+        "amount": 0.05
+      },
+      {
+        "date": "2024-08-15",
+        "amount": 0.05
+      },
+      {
+        "date": "2024-05-14",
+        "amount": 0.05
+      },
+      {
+        "date": "2024-02-14",
+        "amount": 0.05
+      }
+    ],
+    "week52High": 23.886,
+    "week52Low": 16.36
+  },
+  "fundamentals": {
+    "asOf": "2025-12-31",
+    "annual": [
+      {
+        "end": "2025-12-31",
+        "revenue": 90222000,
+        "grossProfit": null,
+        "operatingIncome": null,
+        "ebitda": null,
+        "netIncome": 26100000,
+        "eps": 1.33,
+        "operatingCashFlow": 42805000,
+        "capex": 303000,
+        "fcf": 42502000,
+        "dividendsPaid": 7829000,
+        "assets": 2791540000,
+        "currentAssets": null,
+        "currentLiabilities": null,
+        "cash": 38477000,
+        "longInvestments": null,
+        "receivables": 11661000,
+        "debt": 203069000,
+        "equity": 217183000,
+        "taxRate": 0.27330437687938525
+      },
+      {
+        "end": "2024-12-31",
+        "revenue": 82676000,
+        "grossProfit": null,
+        "operatingIncome": null,
+        "ebitda": null,
+        "netIncome": 24674000,
+        "eps": 1.24,
+        "operatingCashFlow": 34837000,
+        "capex": 314000,
+        "fcf": 34523000,
+        "dividendsPaid": 3939000,
+        "assets": 2581216000,
+        "currentAssets": null,
+        "currentLiabilities": null,
+        "cash": 77035000,
+        "longInvestments": null,
+        "receivables": 10945000,
+        "debt": 171451000,
+        "equity": 215388000,
+        "taxRate": 0.2402623395018013
+      },
+      {
+        "end": "2023-12-31",
+        "revenue": 65971000,
+        "grossProfit": null,
+        "operatingIncome": null,
+        "ebitda": null,
+        "netIncome": 16545000,
+        "eps": 0.84,
+        "operatingCashFlow": 22546000,
+        "capex": 163000,
+        "fcf": 22383000,
+        "dividendsPaid": 0,
+        "assets": 2339093000,
+        "currentAssets": null,
+        "currentLiabilities": null,
+        "cash": 41062000,
+        "longInvestments": null,
+        "receivables": 10688000,
+        "debt": 194423000,
+        "equity": 191968000,
+        "taxRate": 0.2409157643604331
+      },
+      {
+        "end": "2022-12-31",
+        "revenue": 68728000,
+        "grossProfit": null,
+        "operatingIncome": null,
+        "ebitda": null,
+        "netIncome": 20141000,
+        "eps": 1,
+        "operatingCashFlow": 29537000,
+        "capex": 673000,
+        "fcf": 28864000,
+        "dividendsPaid": null,
+        "assets": 2085834000,
+        "currentAssets": null,
+        "currentLiabilities": null,
+        "cash": 54168000,
+        "longInvestments": null,
+        "receivables": 7546000,
+        "debt": 60395000,
+        "equity": 182428000,
+        "taxRate": 0.25637806904190513
+      },
+      {
+        "end": "2021-12-31",
+        "revenue": null,
+        "grossProfit": null,
+        "operatingIncome": null,
+        "ebitda": null,
+        "netIncome": 21077000,
+        "eps": null,
+        "operatingCashFlow": 22051000,
+        "capex": 633000,
+        "fcf": 21418000,
+        "dividendsPaid": 2077000,
+        "assets": 1853939000,
+        "currentAssets": null,
+        "currentLiabilities": null,
+        "cash": 46228000,
+        "longInvestments": null,
+        "receivables": null,
+        "debt": null,
+        "equity": 203897000,
+        "taxRate": 0.2384651515698956
+      },
+      {
+        "end": "2020-12-31",
+        "revenue": null,
+        "grossProfit": null,
+        "operatingIncome": null,
+        "ebitda": null,
+        "netIncome": 10820000,
+        "eps": null,
+        "operatingCashFlow": 13102000,
+        "capex": 347000,
+        "fcf": 12755000,
+        "dividendsPaid": 3127000,
+        "assets": 1501742000,
+        "currentAssets": null,
+        "currentLiabilities": null,
+        "cash": 47734000,
+        "longInvestments": null,
+        "receivables": null,
+        "debt": null,
+        "equity": 171001000,
+        "taxRate": 0.19301909307875895
+      }
+    ]
+  },
+  "history": {
+    "pages": [
+      "history/001.json"
+    ],
+    "pageSize": 1000,
+    "totalRows": 85,
+    "asOf": "2026-10-02",
+    "granularity": {
+      "monthlyBefore": "2026-09-02",
+      "dailyFrom": "2026-09-02"
+    },
+    "source": "Yahoo Finance public chart API (adjusted close); monthly rows (month-end close, summed volume) with daily rows for the last 31 days"
+  }
+}
