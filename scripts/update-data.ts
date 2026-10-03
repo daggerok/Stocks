@@ -723,24 +723,25 @@ const isoWeek = (date: string): string => {
   return `${d.getUTCFullYear()}-${Math.floor((d.getTime() - firstThursday.getTime()) / (7 * DAY_MS)) + 1}`;
 };
 
-/** Published history: weekly rows (last trading day of the week, summed volume) up to one year before the last day, daily rows after that. Returns are computed from the full daily series before sampling. */
-export function sampleHistory(days: ChartDay[]): { rows: ChartDay[]; dailyFrom: string | null } {
+/** Published history in three tiers: monthly rows (last trading day of the month, summed volume) older than 5 years before the last day, weekly rows from 5 years to 1 year back, daily rows for the last year. Returns are computed from the full daily series before sampling. */
+export function sampleHistory(days: ChartDay[]): { rows: ChartDay[]; weeklyFrom: string | null; dailyFrom: string | null } {
   const last = days[days.length - 1];
-  if (!last) return { rows: [], dailyFrom: null };
-  const cutoff = new Date(Date.parse(`${last.date}T00:00:00Z`) - 365 * DAY_MS).toISOString().slice(0, 10);
+  if (!last) return { rows: [], weeklyFrom: null, dailyFrom: null };
+  const back = (years: number) => new Date(Date.parse(`${last.date}T00:00:00Z`) - years * 365 * DAY_MS).toISOString().slice(0, 10);
+  const [weeklyCutoff, dailyCutoff] = [back(5), back(1)];
   const rows: ChartDay[] = [];
-  let week = '';
+  let bucket = '';
   for (const day of days) {
-    if (day.date > cutoff) { rows.push(day); continue; }
-    const key = isoWeek(day.date);
-    if (key === week) rows[rows.length - 1] = { ...day, volume: rows[rows.length - 1].volume + day.volume };
-    else { rows.push({ ...day }); week = key; }
+    if (day.date > dailyCutoff) { rows.push(day); continue; }
+    const key = day.date <= weeklyCutoff ? `m${day.date.slice(0, 7)}` : `w${isoWeek(day.date)}`;
+    if (key === bucket) rows[rows.length - 1] = { ...day, volume: rows[rows.length - 1].volume + day.volume };
+    else { rows.push({ ...day }); bucket = key; }
   }
-  return { rows, dailyFrom: days.find((d) => d.date > cutoff)?.date ?? null };
+  return { rows, weeklyFrom: days.find((d) => d.date > weeklyCutoff)?.date ?? null, dailyFrom: days.find((d) => d.date > dailyCutoff)?.date ?? null };
 }
 
 async function writeHistory(dir: URL, ticker: string, fullDays: ChartDay[], pageSize: number): Promise<JsonRecord> {
-  const { rows: days, dailyFrom } = sampleHistory(fullDays);
+  const { rows: days, weeklyFrom, dailyFrom } = sampleHistory(fullDays);
   const pages: string[] = [];
   const total = days.length;
   for (let i = 0; i * pageSize < total; i += 1) {
@@ -752,7 +753,7 @@ async function writeHistory(dir: URL, ticker: string, fullDays: ChartDay[], page
   try { // stale pages go only after the new ones are in place
     for (const file of await readdir(new URL('history/', dir))) if (/^\d{3}\.json$/.test(file) && !pages.includes(`history/${file}`)) await rm(new URL(`history/${file}`, dir));
   } catch { /* no history dir yet */ }
-  return { pages, pageSize, totalRows: total, asOf: days[days.length - 1]?.date ?? null, granularity: { weeklyBefore: dailyFrom, dailyFrom }, source: 'Yahoo Finance public chart API (adjusted close); weekly rows before the last year, daily after' };
+  return { pages, pageSize, totalRows: total, asOf: days[days.length - 1]?.date ?? null, granularity: { monthlyBefore: weeklyFrom, weeklyBefore: dailyFrom, dailyFrom }, source: 'Yahoo Finance public chart API (adjusted close); monthly rows older than 5 years, weekly from 5 years to 1 year back, daily for the last year' };
 }
 
 export type Outcome = { row: JsonRecord } | { skipped: string };
