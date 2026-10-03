@@ -782,6 +782,13 @@ async function writeHistory(dir: URL, ticker: string, fullDays: ChartDay[], page
 
 export type Outcome = { row: JsonRecord } | { skipped: string };
 
+/** Preferred shares, warrants, rights and units ("BAC-PB", "XYZ-WT", "ABC-R", "SPAC-UN") are not stocks of the catalog. */
+export function isOperatingTicker(ticker: string): boolean {
+  return !/-(P[A-Z]?|W[A-Z]*|R[A-Z]?|U[A-Z]?)$/.test(ticker);
+}
+
+const listNames = (names: string[], cap = 40): string => (names.length > cap ? `${names.slice(0, cap).join(', ')} and ${names.length - cap} more` : names.join(', '));
+
 export async function processCompany(listing: Listing, config: UpdaterConfig, previous: JsonRecord | null): Promise<Outcome> {
   const ticker = listing.ticker;
   const dir = companyDir(ticker);
@@ -796,7 +803,7 @@ export async function processCompany(listing: Listing, config: UpdaterConfig, pr
     const { period1, period2 } = historyPeriods(config.historyRange);
     const query = new URLSearchParams({ period1: String(period1), period2: String(period2), interval: '1d', events: 'div,split', includeAdjustedClose: 'true' });
     chart = parseChart(await fetchJson(`${YAHOO_CHART_URL}/${encodeURIComponent(ticker)}?${query}`, `[chart   ] ${ticker}`, config, { 'User-Agent': BROWSER_UA }));
-    if (!chart.days.length) throw new Error(`[chart   ] ${ticker}: no price history`);
+    if (!chart.days.length) return { skipped: 'no price history' };
   }
 
   // 2. SEC fundamentals
@@ -804,14 +811,18 @@ export async function processCompany(listing: Listing, config: UpdaterConfig, pr
   let fundamentalsSource: 'sec' | 'sec+yahoo' | 'yahoo' = 'sec';
   let fundamentalsNote = '';
   let secFailed = false;
+  let secMissing = false; // the CIK has no XBRL company facts at all (funds, trusts, non-filers)
   try {
     const facts = await fetchJson(`${SEC_FACTS_URL}/CIK${toCik(listing.cik)}.json`, `[sec     ] ${ticker}`, config);
     rows = buildAnnualRows(facts);
   } catch (error) {
-    if (!prevMeta) throw error; // nothing to fall back to
-    secFailed = true;
-    note(`[sec     ] ${ticker}: ${error instanceof Error ? error.message : String(error)} - keeping previous fundamentals`);
-    rows = prevMeta.fundamentals?.annual ?? [];
+    if (!prevMeta && /: 404 /.test(String(error))) secMissing = true;
+    else if (!prevMeta) throw error; // nothing to fall back to
+    else secFailed = true;
+    if (secFailed) {
+      note(`[sec     ] ${ticker}: ${error instanceof Error ? error.message : String(error)} - keeping previous fundamentals`);
+      rows = prevMeta?.fundamentals?.annual ?? [];
+    }
   }
   if (!config.skipYahoo && !secFailed) {
     try {
@@ -846,6 +857,8 @@ export async function processCompany(listing: Listing, config: UpdaterConfig, pr
   const parts: JsonRecord = { ...fundamentals, ...(market.valuation ?? {}), ...(market.returns ?? {}), ...(market.dividends ?? {}), price: market.price, week52High: market.week52High, week52Low: market.week52Low };
   if (parts.marketCap === undefined || parts.marketCap === null) parts.marketCap = null;
   const metrics = completeMetrics(parts, market.asOfDate ?? null);
+  if (metrics.marketCap === null) return { skipped: 'no market cap (unit, warrant, preferred share or note)' };
+  if (secMissing && !rows.length) return { skipped: 'no SEC company facts and no statements (fund, trust or non-filer)' };
 
   const row: JsonRecord = {
     ticker, name: snapshot?.name || prevMeta?.name || listing.name, exchange: listing.exchange, sector: snapshot?.sector ?? prevMeta?.sector ?? null, industry: snapshot?.industry ?? prevMeta?.industry ?? null,
@@ -900,7 +913,7 @@ export function indexDocument(companies: JsonRecord[]): JsonRecord {
   };
 }
 
-export async function run(controls: Record<string, string | undefined>): Promise<{ updated: number; skipped: number; failed: number; rows: number }> {
+export async function run(controls: Record<string, string | undefined>, options: { deadlineMs?: number } = {}): Promise<{ updated: number; skipped: number; failed: number; rows: number }> {
   const config = readConfig(controls);
   secUa = config.secUa;
   requestSleepSeconds = config.requestSleep;
@@ -917,31 +930,36 @@ export async function run(controls: Record<string, string | undefined>): Promise
     const listing = table.get(ticker);
     if (!listing) { if (config.tickers) { failed += 1; console.warn(`[universe] ${ticker}: not found in the SEC exchange table`); } continue; }
     if (!config.exchanges.has(listing.exchange.toUpperCase())) { if (config.tickers) console.warn(`[universe] ${ticker}: skipped, listed on ${listing.exchange}`); continue; }
+    if (!config.tickers && !isOperatingTicker(ticker)) continue; // an explicit TICKERS list always wins
     universe.push(listing);
   }
   console.log(`[universe] ${universe.length} stocks on ${[...config.exchanges].join(', ')}`);
 
+  // Rotation: full-universe runs continue after the committed cursor (a run that stops at MAX_FETCHES or the soft deadline resumes there);
+  // runs with an explicit TICKERS list never read or move it
+  const rotate = !config.tickers;
   const state = (await readJson(stateFile())) ?? {};
-  const cursor = config.maxFetches > 0 ? String(state.cursor ?? '') : '';
-  const at = cursor ? universe.findIndex((l) => l.ticker === cursor) : -1;
-  const queue = at >= 0 ? universe.slice(at + 1).concat(universe.slice(0, at + 1)) : universe.slice();
+  const cursor = rotate ? String(state.cursor ?? '') : '';
+  const at = cursor ? universe.findIndex((l) => l.ticker > cursor) : -1;
+  const queue = at > 0 ? universe.slice(at).concat(universe.slice(0, at)) : universe.slice();
   const total = config.maxFetches > 0 ? Math.min(config.maxFetches, queue.length) : queue.length;
   const results: JsonRecord[] = [];
   const started = Date.now();
   let processed = 0;
   let skipped = 0;
   let lastTicker: string | null = cursor || null;
+  const deadlineMs = options.deadlineMs ?? SOFT_DEADLINE_MS;
 
   const worker = async (): Promise<void> => {
     for (;;) {
       if (config.maxFetches > 0 && processed >= config.maxFetches) return;
-      if (Date.now() - started > SOFT_DEADLINE_MS) return;
+      if (Date.now() - started > deadlineMs) return;
       const listing = queue.shift();
       if (!listing) return;
+      lastTicker = listing.ticker;
       const n = ++processed;
       try {
         const out = await processCompany(listing, config, previous.get(listing.ticker) ?? null);
-        lastTicker = listing.ticker;
         if ('skipped' in out) { skipped += 1; console.log(`[${String(n).padStart(3)}/${total}] ${listing.ticker.padEnd(6)} skipped: ${out.skipped}`); continue; }
         results.push(out.row);
         const m = out.row.metrics;
@@ -960,11 +978,11 @@ export async function run(controls: Record<string, string | undefined>): Promise
   for (const row of results) byTicker.set(String(row.ticker), row);
   const companies = [...byTicker.values()].sort((a, b) => String(a.ticker).localeCompare(String(b.ticker)));
   await writeIfChanged(indexFile(), indexDocument(companies));
-  await writeIfChanged(stateFile(), { cursor: config.maxFetches > 0 ? lastTicker : null, savedAt: stamp() });
+  if (rotate) await writeIfChanged(stateFile(), { cursor: queue.length ? lastTicker : null, savedAt: stamp() });
   console.log(`[done    ] ${results.length} updated, ${skipped} skipped, ${failed} failed; index lists ${companies.length} companies`);
   if (added.length) {
-    console.log(`NEW STOCKS: ${added.join(', ')}`);
-    if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY, `NEW STOCKS: ${added.join(', ')}\n`, 'utf8');
+    console.log(`NEW STOCKS (${added.length}): ${listNames(added)}`);
+    if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY, `NEW STOCKS (${added.length}): ${listNames(added)}\n`, 'utf8');
   }
   if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY, `### Stocks data update\n\n- updated: ${results.length}\n- skipped: ${skipped}\n- failed: ${failed}\n- companies: ${companies.length}\n`, 'utf8');
   return { updated: results.length, skipped, failed, rows: companies.length };
