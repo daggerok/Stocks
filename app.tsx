@@ -1024,10 +1024,7 @@ function catalogIds(): number[] {
 }
 
 function getTabs(): TabInfo[] {
-  const tabs: TabInfo[] = [{ id: 'All', label: 'All Stocks', count: nonBlacklistedIds().length }];
-  const picked = selectedKeys().length;
-  if (picked > 0) tabs.push({ id: 'watchlist', label: 'Watchlist', count: picked });
-  return tabs;
+  return [{ id: 'All', label: 'All Stocks', count: nonBlacklistedIds().length }];
 }
 
 function getSelectedTabs(): TabInfo[] {
@@ -1043,6 +1040,9 @@ function getSelectedTabs(): TabInfo[] {
       });
     });
   }
+  // The Watchlist of ticked stocks lives in the second panel next to the detail tabs; the first panel stays as it was before any selection.
+  const picked = selectedKeys().length;
+  if (picked > 0) tabs.push({ id: 'watchlist', label: 'Watchlist', count: picked });
   return tabs;
 }
 
