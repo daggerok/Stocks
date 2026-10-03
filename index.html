@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Stocks of Nasdaq, NYSE and Cboe in one sortable table: dividends, FCF payout, liquidity and leverage ratios, growth, margins, ROIC, valuation multiples, performance and total returns. Independent unofficial tool; data comes from the static feed generated from SEC EDGAR and Yahoo Finance." />
+  <title>Stocks</title>
+  <link rel="icon" type="image/x-icon" href="./favicon.ico">
+
+  <!-- Inter font  -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- Tailwind (CDN, no build step for local Bun workflow) -->
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: { extend: { fontFamily: { sans: ['Inter', 'sans-serif'] } } }
+    }
+  </script>
+
+  <!-- Babel standalone: compile inline TypeScript in this single index.html, same no-build style as the daggerok ETF apps -->
+  <script src="https://unpkg.com/@babel/standalone@7.24.0/babel.min.js" integrity="sha384-wVDXnilITixWtkFWH+Xu4zp0L3R7zd39Il4szMJlz9M3Vhsuerfbxy5ojdJdqOEX" crossorigin="anonymous"></script>
+
+  <!-- Synchronous theme init (prevents flash, same strategy as Amplify / iShares) -->
+  <script>
+    (function () {
+      var dark = false;
+      try { dark = localStorage.getItem('stocks-theme') === 'dark'; } catch (e) {}
+      document.documentElement.classList.toggle('dark', dark);
+      document.documentElement.style.backgroundColor = dark ? '#020617' : '#f8fafc';
+    })();
+  </script>
+
+  <style>
+    @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+    .animate-fade-in{animation:fadeIn .3s ease-out}
+
+    /* Themed scrollbars (same slate palette as Amplify / iShares) */
+    .themed-scroll::-webkit-scrollbar{width:10px;height:10px}
+    .themed-scroll::-webkit-scrollbar-track{background:transparent}
+    .themed-scroll::-webkit-scrollbar-thumb{background-color:#cbd5e1;border-radius:8px;border:2px solid transparent;background-clip:padding-box}
+    .themed-scroll::-webkit-scrollbar-thumb:hover{background-color:#94a3b8}
+    .dark .themed-scroll::-webkit-scrollbar-thumb{background-color:#334155}
+    .dark .themed-scroll::-webkit-scrollbar-thumb:hover{background-color:#475569}
+    .themed-scroll::-webkit-scrollbar-corner{background:transparent}
+    .themed-scroll{scrollbar-width:thin;scrollbar-color:#cbd5e1 transparent}
+    .dark .themed-scroll{scrollbar-color:#334155 transparent}
+
+    .selected-row{background:#eff6ff}
+    .dark .selected-row{background:rgba(30,64,175,.22)}
+
+    /* Drag-and-drop zone interaction states (same as daggerok/iShares) */
+    .dz-active {
+      border-color: #3b82f6;
+      background: #eff6ff;
+    }
+    .dark .dz-active {
+      background: #1e293b;
+    }
+    .dz-loaded {
+      border-color: rgba(16, 185, 129, 0.5);
+    }
+    .dz-loaded .dz-label {
+      color: #059669;
+    }
+    .dark .dz-loaded .dz-label {
+      color: #34d399;
+    }
+    .dz-error {
+      border-color: rgba(244, 63, 94, 0.6);
+    }
+    .dz-error .dz-label {
+      color: #e11d48;
+    }
+    .dark .dz-error .dz-label {
+      color: #fb7185;
+    }
+
+    /*
+     * Scroll fix (also applied to daggerok/iShares): only the table scrolls.
+     * The JS layer sizes #table-scroll to the real viewport rest; overscroll
+     * containment stops wheel momentum from chaining to the document, which
+     * used to produce a small up/down page shift when the table was full.
+     */
+    #table-scroll{overscroll-behavior:contain}
+
+    /*
+     * Horizontal pinning for the catalog table: the Use checkbox and the
+     * Ticker stay visible while the remaining columns (including the row
+     * number) move horizontally. `position:sticky` is applied directly to the
+     * `th`/`td` — NOT to a nested wrapper. A sticky element can never move
+     * past the bounds of its own containing block, so a sticky *child* inside
+     * a plain `position:static` cell stops being visible the moment that
+     * cell's own (unscrolled) position scrolls past the viewport edge: the pin
+     * silently stops working exactly when it matters most. The same direct-cell
+     * rule pins the Watchlist Ticker column at the left edge.
+     *
+     * The colors are this repo's own Tailwind tokens, pre-blended to solid
+     * values: a sticky cell repaints on top of whatever column has scrolled
+     * behind it, so a translucent fill (this repo's `.selected-row` uses
+     * rgba(30,64,175,.22) in dark mode) would let that column's text show
+     * through. Base #172033 = slate-800/50 over slate-900, hover #1f2a3d =
+     * slate-700/30 over that, selected #19274e = rgba(30,64,175,.22) over
+     * that; light-mode #f8fafc / #eff6ff are already opaque.
+     */
+    #table-scroll table{border-collapse:separate;border-spacing:0;isolation:isolate}
+    #table-scroll tbody{position:relative;z-index:0}
+    #table-scroll tbody tr{position:relative;z-index:0}
+    #table-scroll .catalog-sticky-col{position:sticky;background:#fff;background-clip:padding-box}
+    #table-scroll thead .catalog-sticky-col{top:0;z-index:30;background:#f8fafc}
+    #table-scroll tbody .catalog-sticky-col{z-index:20}
+    #table-scroll .catalog-sticky-use{left:0;width:5rem;min-width:5rem}
+    #table-scroll .catalog-sticky-ticker{left:5rem;width:6rem;min-width:6rem;box-shadow:4px 0 6px -6px rgba(15,23,42,.7)}
+    /*
+     * Watchlist Ticker: the first data column there holds an exchange ticker
+     * for equities but a CUSIP/ISIN (or, for a few private/crypto positions,
+     * a longer provider code) for bonds and cash, so the pin gets a fixed
+     * width with defensive truncation instead of a ticker-sized column.
+     */
+    #table-scroll .watchlist-sticky-col{position:sticky;background:#fff;background-clip:padding-box}
+    #table-scroll thead .watchlist-sticky-col{top:0;z-index:30;background:#f8fafc}
+    #table-scroll tbody .watchlist-sticky-col{z-index:20}
+    #table-scroll .watchlist-sticky-ticker{left:0;width:10rem;min-width:10rem;max-width:10rem;overflow:hidden;text-overflow:ellipsis;box-shadow:4px 0 6px -6px rgba(15,23,42,.7)}
+    .dark #table-scroll .catalog-sticky-col,.dark #table-scroll .watchlist-sticky-col{background:#172033}
+    .dark #table-scroll thead .catalog-sticky-col,.dark #table-scroll thead .watchlist-sticky-col{background:#0f172a}
+    #table-scroll tbody tr:hover .catalog-sticky-col,#table-scroll tbody tr:hover .watchlist-sticky-col{background:#f8fafc}
+    #table-scroll tbody tr.selected-row .catalog-sticky-col{background:#eff6ff}
+    .dark #table-scroll tbody tr:hover .catalog-sticky-col,.dark #table-scroll tbody tr:hover .watchlist-sticky-col{background:#1f2a3d}
+    .dark #table-scroll tbody tr.selected-row .catalog-sticky-col{background:#19274e}
+
+    /* Detail navigation expands into place after a stock is selected. */
+    main.space-y-6 > #selected-tabs-panel{max-height:0;margin-top:0;overflow:hidden;opacity:0;transform:translateY(-10px);padding-top:0;padding-bottom:0;border-color:transparent;transition:max-height .32s ease,margin-top .32s ease,padding .32s ease,opacity .22s ease,transform .32s ease,border-color .22s ease}
+    main.space-y-6 > #selected-tabs-panel.is-visible{max-height:8rem;margin-top:1.5rem;padding-top:1rem;padding-bottom:1rem;opacity:1;transform:translateY(0);border-color:rgb(226 232 240)}
+    .dark main.space-y-6 > #selected-tabs-panel.is-visible{border-color:rgb(51 65 85)}
+
+    /*
+     * Blacklist manager: same smooth expand/collapse contract as the detail
+     * nav above. Its max-height is set inline by JS from scrollHeight, not by
+     * a fixed rem value, because the chip list (unlike the detail tabs) has no
+     * bounded height.
+     */
+    main.space-y-6 > #blacklist-panel{max-height:0;margin-top:0;overflow:hidden;opacity:0;transform:translateY(-10px);padding-top:0;padding-bottom:0;border-color:transparent;transition:max-height .32s ease,margin-top .32s ease,padding .32s ease,opacity .22s ease,transform .32s ease,border-color .22s ease}
+    main.space-y-6 > #blacklist-panel.is-visible{margin-top:1.5rem;padding-top:1rem;padding-bottom:1rem;opacity:1;transform:translateY(0);border-color:rgb(226 232 240)}
+    .dark main.space-y-6 > #blacklist-panel.is-visible{border-color:rgb(51 65 85)}
+
+    @keyframes tableRefresh{from{opacity:.32;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
+    #table-body.table-content-enter{animation:tableRefresh .22s ease-out}
+    @media (prefers-reduced-motion:reduce){#table-body.table-content-enter{animation:none}main.space-y-6 > #selected-tabs-panel{transition:none}main.space-y-6 > #blacklist-panel{transition:none}}
+
+    /* Filters bar, filter dropdowns (exchanges, sectors, columns), source badges */
+    .dd-root{position:relative}
+    /* Custom tooltip: one fixed element in <body>, above every other layer of the app */
+    .hub-tip{position:fixed;left:0;top:0;z-index:2147483000;max-width:min(22rem,calc(100vw - 16px));padding:.4rem .6rem;border-radius:.5rem;background:#0f172a;color:#f8fafc;border:1px solid #1e293b;font-size:.75rem;line-height:1.4;font-weight:500;white-space:pre-line;overflow-wrap:anywhere;box-shadow:0 8px 24px rgb(15 23 42 / .28);pointer-events:none;opacity:0;visibility:hidden;transition:opacity .12s ease,visibility 0s .12s}
+    .hub-tip.is-open{opacity:1;visibility:visible;transition:opacity .12s ease}
+    .dark .hub-tip{background:#1e293b;color:#f1f5f9;border-color:#475569;box-shadow:0 8px 24px rgb(0 0 0 / .5)}
+    @media (prefers-reduced-motion:reduce){.hub-tip,.hub-tip.is-open{transition:none}}
+    .dd-trigger{display:inline-flex;align-items:center;gap:.4rem;min-height:2.375rem;max-width:100%;padding:.5rem .75rem;border-radius:.5rem;border:1px solid #e2e8f0;background:#fff;color:#334155;font-size:.875rem;line-height:1.25rem;font-weight:500;cursor:pointer;transition:background-color .15s,border-color .15s,box-shadow .15s,color .15s}
+    .dd-trigger:hover{background:#f8fafc;border-color:#cbd5e1}
+    .dd-trigger:focus{outline:none}
+    .dd-trigger:focus-visible,.dd-trigger[aria-expanded="true"]{border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.2)}
+    .dd-trigger .dd-label{color:#64748b;font-weight:400;flex:none}
+    .dd-trigger .dd-value{font-weight:600;min-width:0;max-width:14rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .dd-trigger .dd-chev{flex:none;color:#94a3b8;transition:transform .18s ease}
+    .dd-trigger[aria-expanded="true"] .dd-chev{transform:rotate(180deg)}
+    .dd-trigger.is-filtered{background:#eff6ff;border-color:#bfdbfe;color:#1d4ed8}
+    .dd-trigger.is-filtered:hover{background:#dbeafe}
+    .dd-trigger.is-filtered .dd-label{color:#3b82f6}
+    .dd-trigger.is-filtered .dd-chev{color:#3b82f6}
+    .dd-badge{flex:none;font-size:.7rem;line-height:1;font-weight:600;padding:.2rem .45rem;border-radius:9999px;background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe}
+    .dd-badge[hidden]{display:none}
+    .dark .dd-trigger{background:#0f172a;border-color:#334155;color:#e2e8f0}
+    .dark .dd-trigger:hover{background:#1e293b;border-color:#475569}
+    .dark .dd-trigger:focus-visible,.dark .dd-trigger[aria-expanded="true"]{border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.3)}
+    .dark .dd-trigger .dd-label{color:#94a3b8}
+    .dark .dd-trigger.is-filtered{background:rgba(30,64,175,.22);border-color:rgba(59,130,246,.45);color:#93c5fd}
+    .dark .dd-trigger.is-filtered:hover{background:rgba(30,64,175,.32)}
+    .dark .dd-trigger.is-filtered .dd-label,.dark .dd-trigger.is-filtered .dd-chev{color:#60a5fa}
+    .dark .dd-badge{background:rgba(59,130,246,.2);color:#93c5fd;border-color:rgba(59,130,246,.4)}
+
+    .dd-panel{position:fixed;left:0;top:0;z-index:1000;display:flex;flex-direction:column;width:21rem;max-width:calc(100vw - 2rem);background:#fff;border:1px solid #e2e8f0;border-radius:.75rem;box-shadow:0 12px 30px rgb(15 23 42 / .16),0 2px 6px rgb(15 23 42 / .06);overflow:hidden;opacity:0;transform:translateY(-4px) scale(.98);transform-origin:top left;transition:opacity .14s ease,transform .14s ease}
+    .dd-panel.dd-panel-wide{width:23rem}
+    .dd-panel[hidden]{display:none}
+    .dd-panel.is-open{opacity:1;transform:none}
+    .dark .dd-panel{background:#0f172a;border-color:#334155;box-shadow:0 12px 30px rgb(0 0 0 / .5),0 2px 6px rgb(0 0 0 / .3)}
+    .dd-close{display:none}
+    .dd-backdrop{display:none}
+    .dd-search{position:relative;flex:none;display:block;padding:.625rem .625rem .25rem;background:inherit}
+    .dd-search svg{position:absolute;left:1.25rem;top:50%;margin-top:.0625rem;transform:translateY(-50%);color:#94a3b8;pointer-events:none}
+    .dd-input{width:100%;box-sizing:border-box;min-height:2.25rem;padding:.4rem 2rem .4rem 2.125rem;border-radius:.5rem;border:1px solid #e2e8f0;background:#fff;color:#0f172a;font-size:.875rem}
+    .dd-input::placeholder{color:#94a3b8}
+    .dd-input:focus{outline:none;border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.2)}
+    .dark .dd-input{background:#020617;border-color:#334155;color:#f1f5f9}
+    .dark .dd-input::placeholder{color:#64748b}
+    .dd-qclear{position:absolute;right:1.1rem;top:50%;margin-top:.0625rem;transform:translateY(-50%);width:1.25rem;height:1.25rem;display:flex;align-items:center;justify-content:center;border-radius:9999px;color:#94a3b8;font-size:.8rem;line-height:1;cursor:pointer}
+    .dd-qclear[hidden]{display:none}
+    .dd-qclear:hover{color:#334155;background:#f1f5f9}
+    .dark .dd-qclear:hover{color:#e2e8f0;background:#1e293b}
+    .dd-list{flex:1 1 auto;min-height:0;max-height:19rem;overflow-y:auto;overscroll-behavior:contain;padding:.375rem;scroll-behavior:smooth}
+    .dd-list:focus{outline:none}
+    .dd-opt{display:flex;align-items:center;gap:.5rem;min-height:2.125rem;padding:.3rem .5rem;border-radius:.5rem;font-size:.875rem;color:#334155;cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent}
+    .dd-opt.is-active{background:#eff6ff;box-shadow:inset 0 0 0 1px #bfdbfe}
+    .dd-opt .dd-name{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .dd-opt[aria-selected="true"] .dd-name{font-weight:600;color:#0f172a}
+    .dd-num{flex:none;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.75rem;color:#94a3b8}
+    .dd-check{flex:none;width:1rem;height:1rem;display:inline-flex;align-items:center;justify-content:center;color:#fff}
+    .dd-check svg{opacity:0;transform:scale(.6);transition:opacity .12s,transform .12s}
+    .dd-check{border:1.5px solid #cbd5e1;border-radius:.3rem;background:#fff;transition:background-color .12s,border-color .12s}
+    .dd-opt[aria-selected="true"] .dd-check{background:#2563eb;border-color:#2563eb}
+    .dd-opt[aria-selected="true"] .dd-check svg{opacity:1;transform:none}
+    .dd-only{flex:none;font-size:.7rem;line-height:1;font-weight:600;padding:.25rem .45rem;border-radius:.375rem;border:1px solid #e2e8f0;background:#fff;color:#2563eb;opacity:0;transition:opacity .12s}
+    .dd-opt:hover .dd-only,.dd-opt.is-active .dd-only{opacity:1}
+    .dd-only:hover{background:#dbeafe;border-color:#bfdbfe}
+    @media (hover:none){.dd-only{opacity:1}}
+    .dd-empty{padding:1.25rem .75rem;text-align:center;font-size:.8125rem;color:#94a3b8}
+    .dd-actions{flex:none;display:flex;flex-wrap:wrap;gap:.375rem;padding:.5rem .625rem .25rem}
+    .dd-meta{flex:none;display:flex;align-items:center;justify-content:space-between;gap:.5rem;padding:.125rem .625rem .5rem;border-bottom:1px solid #f1f5f9}
+    .dd-count{flex:1 1 auto;min-width:0;font-size:.75rem;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .dd-seltoggle{flex:none;font-size:.7rem;line-height:1;font-weight:600;padding:.3rem .55rem;border-radius:9999px;border:1px solid #e2e8f0;background:#fff;color:#475569;cursor:pointer;transition:background-color .12s,border-color .12s,color .12s}
+    .dd-seltoggle:hover{background:#f1f5f9}
+    .dd-seltoggle.is-on{background:#eff6ff;border-color:#bfdbfe;color:#1d4ed8}
+    .dd-seltoggle:focus-visible{outline:none;border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.2)}
+    .dd-zero .dd-name,.dd-zero .dd-num{opacity:.5}
+    .dd-act{flex:none;font-size:.75rem;font-weight:500;padding:.3rem .65rem;border-radius:9999px;border:1px solid #e2e8f0;background:#fff;color:#334155;cursor:pointer;transition:background-color .12s,border-color .12s}
+    .dd-act:hover{background:#f1f5f9;border-color:#cbd5e1}
+    .dd-act:focus-visible{outline:none;border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.2)}
+    .dark .dd-opt{color:#e2e8f0}
+    .dark .dd-opt.is-active{background:rgba(30,64,175,.28);box-shadow:inset 0 0 0 1px rgba(59,130,246,.4)}
+    .dark .dd-opt[aria-selected="true"] .dd-name{color:#fff}
+    .dark .dd-check{border-color:#475569;background:#020617}
+    .dark .dd-opt[aria-selected="true"] .dd-check{background:#2563eb;border-color:#2563eb}
+    .dark .dd-only{background:#0f172a;border-color:#334155;color:#93c5fd}
+    .dark .dd-only:hover{background:rgba(59,130,246,.2);border-color:rgba(59,130,246,.4)}
+    .dark .dd-meta{border-bottom-color:#1e293b}
+    .dark .dd-seltoggle{background:#0f172a;border-color:#334155;color:#cbd5e1}
+    .dark .dd-seltoggle:hover{background:#1e293b}
+    .dark .dd-seltoggle.is-on{background:rgba(30,64,175,.28);border-color:rgba(59,130,246,.45);color:#93c5fd}
+    .dark .dd-count{color:#94a3b8}
+    .dark .dd-act{background:#0f172a;border-color:#334155;color:#e2e8f0}
+    .dark .dd-act:hover{background:#1e293b;border-color:#475569}
+    @media (max-width:639px){
+      .dd-backdrop{position:fixed;inset:0;z-index:999;background:rgba(2,6,23,.45);opacity:0;transition:opacity .2s ease}
+      .dd-backdrop.is-open{display:block;opacity:1}
+      .dd-panel,.dd-panel.dd-panel-wide{position:fixed;left:0;right:0;bottom:0;top:auto;margin:0;width:auto;max-width:none;max-height:82vh;max-height:82dvh;border-radius:1rem 1rem 0 0;border-width:1px 0 0;transform:translateY(100%);transform-origin:bottom;transition:opacity .2s ease,transform .24s cubic-bezier(.2,.8,.2,1);padding-bottom:env(safe-area-inset-bottom)}
+      .dd-panel.is-open{transform:none}
+      .dd-search{padding:1.1rem .75rem .25rem}
+      .dd-panel::before{content:"";position:absolute;left:50%;top:.4rem;width:2.25rem;height:.25rem;margin-left:-1.125rem;border-radius:9999px;background:#cbd5e1;z-index:1}
+      .dark .dd-panel::before{background:#475569}
+      .dd-search .dd-input{padding-right:5rem}
+      .dd-qclear{right:3.4rem}
+      .dd-close{display:flex;align-items:center;justify-content:center;position:absolute;right:1.1rem;top:50%;margin-top:.4rem;transform:translateY(-50%);width:2rem;height:2rem;border-radius:9999px;color:#64748b;font-size:.9rem;line-height:1}
+      .dd-close:hover{background:#f1f5f9}
+      .dark .dd-close:hover{background:#1e293b}
+      .dd-act{padding:.45rem .75rem;font-size:.8125rem}
+      .dd-list{max-height:none}
+      .dd-opt{min-height:2.75rem;font-size:.9375rem}
+      .dd-input{font-size:1rem}
+    }
+    @media (prefers-reduced-motion:reduce){.dd-panel,.dd-backdrop,.dd-trigger .dd-chev,.dd-check svg{transition:none}.dd-list{scroll-behavior:auto}}
+    .sg-panel{position:absolute;left:0;right:0;top:100%;margin-top:.5rem;z-index:60;max-height:20rem;overflow-y:auto;padding:.375rem;background:#fff;border:1px solid #e2e8f0;border-radius:.75rem;box-shadow:0 12px 30px rgb(15 23 42 / .16),0 2px 6px rgb(15 23 42 / .06);opacity:0;transform:translateY(-4px) scale(.98);transform-origin:top left;transition:opacity .14s ease,transform .14s ease}
+    .sg-panel[hidden]{display:none}
+    .sg-panel.is-open{opacity:1;transform:none}
+    .dark .sg-panel{background:#0f172a;border-color:#334155;box-shadow:0 12px 30px rgb(0 0 0 / .5),0 2px 6px rgb(0 0 0 / .3)}
+    .sg-kind{flex:none;min-width:4.25rem;text-align:center;font-size:.65rem;line-height:1;font-weight:600;padding:.25rem .45rem;border-radius:9999px;border:1px solid}
+    .sg-exchange{background:#f0f9ff;color:#0369a1;border-color:#bae6fd}
+    .sg-sector{background:#ecfdf5;color:#047857;border-color:#a7f3d0}
+    .dark .sg-exchange{background:rgba(14,165,233,.15);color:#7dd3fc;border-color:rgba(14,165,233,.35)}
+    .dark .sg-sector{background:rgba(16,185,129,.15);color:#6ee7b7;border-color:rgba(16,185,129,.35)}
+    .sg-hint{padding:.4rem .5rem .2rem;font-size:.7rem;color:#94a3b8}
+    @media (prefers-reduced-motion:reduce){.sg-panel{transition:none}}
+    .src-badge{display:inline-block;font-size:.65rem;line-height:1;padding:.2rem .4rem;border-radius:9999px;border:1px solid;font-weight:600;letter-spacing:.02em}
+    .src-official{background:#ecfdf5;color:#047857;border-color:#a7f3d0}
+    .src-mixed{background:#f0f9ff;color:#0369a1;border-color:#bae6fd}
+    .src-estimate{background:#fffbeb;color:#b45309;border-color:#fde68a}
+    .src-none{background:#f1f5f9;color:#64748b;border-color:#e2e8f0}
+    .dark .src-official{background:rgba(16,185,129,.15);color:#6ee7b7;border-color:rgba(16,185,129,.35)}
+    .dark .src-mixed{background:rgba(14,165,233,.15);color:#7dd3fc;border-color:rgba(14,165,233,.35)}
+    .dark .src-estimate{background:rgba(245,158,11,.15);color:#fcd34d;border-color:rgba(245,158,11,.35)}
+    .dark .src-none{background:rgba(100,116,139,.2);color:#94a3b8;border-color:rgba(100,116,139,.4)}
+    .stale-cell{opacity:.55}
+  </style>
+<style id="catalog-summary-styles">
+    #app-subtitle:empty { display: none; }
+    #ticker-count { cursor: help; font-family: inherit; }
+    #ticker-count:focus-visible { outline: 2px solid #3b82f6; outline-offset: 3px; }
+    #app-summary[hidden] { display: none; }
+    #app-summary {
+      box-sizing: border-box; position: fixed; z-index: 1100; display: block;
+      width: min(42rem, calc(100vw - 2rem)); max-height: min(70vh, 32rem);
+      overflow: auto; overflow-wrap: anywhere; padding: 1rem;
+      border: 1px solid #cbd5e1; border-radius: .75rem;
+      background: #fff; color: #334155; font-size: .875rem; line-height: 1.5;
+      box-shadow: 0 12px 30px rgb(15 23 42 / .2);
+    }
+    .dark #app-summary { background: #0f172a; color: #cbd5e1; border-color: #475569; }
+  </style>
+</head>
+<body class="min-h-screen font-sans bg-slate-50 text-slate-900 dark:bg-slate-900 dark:text-slate-100 transition-colors duration-300">
+  <div class="min-h-screen flex flex-col animate-fade-in">
+
+    <header class="bg-white dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 px-4 sm:px-8 py-3 flex flex-wrap justify-between items-center gap-3 z-40 shadow-xs shrink-0">
+      <div class="flex flex-1 flex-wrap items-center gap-x-3 gap-y-1.5 min-w-0">
+        <div class="flex items-start gap-3 min-w-0">
+          <svg class="w-6 h-6 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M22 7l-8.5 8.5-5-5L2 17" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7h6v6" />
+          </svg>
+          <h1 class="min-w-0 text-xl font-bold tracking-tight text-slate-900 dark:text-white leading-tight">Stocks</h1>
+        </div>
+        <span id="app-subtitle" class="basis-full sm:basis-auto text-sm text-slate-500 dark:text-slate-400"></span>
+      </div>
+      <div class="flex items-center gap-3 shrink-0">
+        <span id="load-warning" hidden class="bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-700/50 text-xs font-semibold px-3 py-1.5 rounded-full"></span>
+        <button type="button" aria-controls="app-summary" aria-expanded="false" aria-label="Stock catalog information" id="ticker-count" class="bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 text-sm font-semibold px-3.5 py-1.5 rounded-full border border-blue-200 dark:border-blue-500/30">
+          Loading…
+        </button>
+        <span id="app-summary" role="region" aria-label="Stock catalog information" hidden>
+          Search every stock, select stocks via the “Use” checkbox, then open the Watchlist tab.
+        </span>
+        <button id="theme-toggle" class="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700 transition text-base leading-none" title="Toggle Theme">🌙</button>
+      </div>
+    </header>
+
+    <main class="flex-1 w-full max-w-full p-4 sm:p-8 space-y-6">
+
+      <!-- Search, Tabs & Action Bar -->
+      <div class="relative z-50 flex flex-wrap items-center gap-x-2.5 gap-y-2.5 bg-white dark:bg-slate-800/80 px-3 py-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm backdrop-blur">
+
+        <div class="relative flex items-center w-full lg:w-auto lg:flex-1 lg:min-w-[8rem] lg:max-w-sm">
+          <input
+            type="text"
+            id="search-input"
+            placeholder="Search stocks..." title="Search by ticker, company, exchange, sector or industry"
+            disabled
+            class="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 border border-slate-200 dark:border-slate-700 rounded-lg pl-4 pr-8 py-2 w-full focus:outline-none focus:border-blue-500 text-sm placeholder-slate-400 dark:placeholder-slate-500 disabled:opacity-50 disabled:cursor-not-allowed transition"
+          />
+          <button
+            type="button"
+            id="search-clear-btn"
+            class="hidden absolute right-2.5 top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center rounded-full text-slate-400 hover:text-slate-700 dark:text-slate-500 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition text-sm leading-none focus:outline-none"
+            title="Clear search filter"
+            aria-label="Clear search filter"
+          >✕</button>
+          <div id="search-suggest" class="sg-panel" role="listbox" aria-label="Filter suggestions" hidden></div>
+        </div>
+
+        <!-- Catalog tabs: All Stocks and the Watchlist of selected stocks (exchange and sector are filters, see the bar below). -->
+        <div id="tabs-bar" class="hidden flex items-center gap-1.5 py-1 shrink-0"></div>
+
+<div class="dd-root">
+          <button type="button" id="exchange-btn" class="dd-trigger" aria-haspopup="dialog" aria-expanded="false" aria-controls="exchange-panel"><span class="dd-label">Exchanges:</span><span class="dd-value" id="exchange-summary">...</span><span class="dd-badge" id="exchange-badge" hidden></span><svg class="dd-chev" viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 8 5 5 5-5"/></svg></button>
+          <div id="exchange-panel" class="dd-panel" hidden></div>
+        </div>
+        <div class="dd-root">
+          <button type="button" id="sector-btn" class="dd-trigger" aria-haspopup="dialog" aria-expanded="false" aria-controls="sector-panel"><span class="dd-label">Sectors:</span><span class="dd-value" id="sector-summary">...</span><span class="dd-badge" id="sector-badge" hidden></span><svg class="dd-chev" viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 8 5 5 5-5"/></svg></button>
+          <div id="sector-panel" class="dd-panel dd-panel-wide" hidden></div>
+        </div>
+        <div class="dd-root">
+          <button type="button" id="columns-btn" class="dd-trigger" aria-haspopup="dialog" aria-expanded="false" aria-controls="columns-panel"><span class="dd-label">Columns:</span><span class="dd-value" id="columns-summary">...</span><span class="dd-badge" id="columns-badge" hidden></span><svg class="dd-chev" viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 8 5 5 5-5"/></svg></button>
+          <div id="columns-panel" class="dd-panel" hidden></div>
+        </div>
+        <label class="inline-flex items-center gap-2 text-slate-600 dark:text-slate-300 cursor-pointer" title="Hide stocks whose prices are older than the given number of days or have no known as-of date">
+          <input type="checkbox" id="stale-toggle" class="w-4 h-4 accent-blue-600 cursor-pointer" />
+          <span class="whitespace-nowrap">Hide stale &gt;</span>
+          <input type="number" id="stale-days" min="1" max="3650" value="10" class="w-12 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 border border-slate-200 dark:border-slate-700 rounded-lg px-1 text-center py-2 text-sm focus:outline-none focus:border-blue-500" />
+          <span>d</span>
+        </label>
+        <span id="load-progress" class="empty:hidden text-xs text-slate-500 dark:text-slate-400" aria-live="polite"></span>
+
+
+        <div class="flex flex-wrap items-center gap-1.5 w-full lg:w-auto lg:ml-auto justify-end shrink-0">
+          <button id="copy-btn" disabled class="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 px-3 py-2 rounded-lg text-sm font-medium transition active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-200 dark:hover:bg-slate-700 disabled:hover:bg-slate-100 dark:disabled:hover:bg-slate-800">Copy Tickers</button>
+          <button id="export-csv-btn" disabled class="bg-blue-600 hover:bg-blue-500 text-white px-3 py-2 rounded-lg text-sm font-medium transition active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-blue-600">Export .csv</button>
+          <button id="export-txt-btn" disabled class="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-2 rounded-lg text-sm font-medium transition active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-emerald-600">Export .txt</button>
+          <button id="reset-btn" disabled class="bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-700/50 px-3 py-2 rounded-lg text-sm font-medium transition active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-rose-200 dark:hover:bg-rose-800/60 disabled:hover:bg-rose-100 dark:disabled:hover:bg-rose-900/40">Clear</button>
+          <button id="blacklist-btn" class="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 px-3 py-2 rounded-lg text-sm font-medium transition active:scale-95 hover:bg-slate-200 dark:hover:bg-slate-700" title="Manage the blacklist of stocks hidden from All Stocks (kept in browser localStorage)" aria-expanded="false">Blacklist</button>
+        </div>
+
+      </div>
+
+      <div id="blacklist-panel" class="bg-white dark:bg-slate-800/80 px-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm backdrop-blur">
+        <div class="flex flex-col sm:flex-row sm:items-center gap-2.5">
+          <input type="text" id="blacklist-input" placeholder="Add tickers to blacklist (e.g. BRK-B, GOOG)" class="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 w-full sm:w-80 focus:outline-none focus:border-blue-500 text-sm placeholder-slate-400 dark:placeholder-slate-500 transition" />
+          <div class="flex flex-wrap items-center gap-2.5">
+            <button id="blacklist-add-btn" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition active:scale-95">Add</button>
+            <button id="blacklist-clear-btn" class="bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-700/50 px-3 py-2 rounded-lg text-sm font-medium transition active:scale-95 hover:bg-rose-200 dark:hover:bg-rose-800/60">Clear Blacklist</button>
+          </div>
+        </div>
+        <div id="blacklist-chips" class="flex flex-wrap gap-1.5 mt-3"></div>
+        <p id="blacklist-empty" class="text-xs text-slate-400 dark:text-slate-500 mt-3">The blacklist is empty. Blacklisted stocks disappear from All Stocks (and from selection), and are kept in your browser localStorage.</p>
+      </div>
+
+      <nav id="selected-tabs-panel" class="bg-white dark:bg-slate-800/80 px-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm backdrop-blur" aria-label="Selected stock detail views">
+        <div id="selected-tabs-bar" class="flex flex-wrap items-center justify-center gap-1.5 overflow-x-auto py-1 w-full max-w-full themed-scroll"></div>
+      </nav>
+
+      <div class="bg-white dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm backdrop-blur overflow-hidden">
+        <div id="table-scroll" class="overflow-x-auto overflow-y-auto themed-scroll">
+          <table class="w-full text-left whitespace-nowrap">
+            <thead id="table-head" class="bg-slate-50 dark:bg-slate-900/95 text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wider border-b border-slate-200 dark:border-slate-700 sticky top-0 z-20 backdrop-blur">
+              <tr>
+                <th class="py-3.5 px-4 w-12 text-center" title="Row index">#</th>
+                <th class="py-3.5 px-4" title="Column 1">Column 1</th>
+              </tr>
+            </thead>
+            <tbody id="table-body" class="divide-y divide-slate-100 dark:divide-slate-700/50 text-sm">
+              <tr>
+                <td colspan="10" class="py-12 text-center text-slate-400 dark:text-slate-500">Loading the stock catalog…</td>
+              </tr>
+            </tbody>
+          </table>
+          <div id="static-load-sentinel" class="hidden py-3 text-center text-xs text-slate-500 dark:text-slate-400 cursor-pointer" aria-live="polite">
+            <span id="static-load-status"></span>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <footer class="px-4 sm:px-8 pb-8 text-xs text-slate-500 dark:text-slate-400 space-y-2">
+      <p>
+        Stocks is an independent, unofficial tool and is not affiliated with, endorsed by or sponsored by any exchange, issuer or data provider. The static feed is generated from SEC EDGAR XBRL filings and Yahoo Finance.
+        Annual fundamentals come from the latest fiscal year, valuation multiples from a trailing-twelve-month snapshot, returns from daily prices; unavailable values are shown as a dash, never as zero. Nothing here is investment advice.
+      </p>
+      <p>MIT License · <a href="https://github.com/daggerok/Stocks" target="_blank" rel="noopener noreferrer" class="font-semibold text-blue-600 dark:text-blue-400 hover:underline">daggerok/Stocks</a> · <a href="https://daggerok.github.io/ETFs/" target="_blank" rel="noopener noreferrer" class="text-blue-600 dark:text-blue-400 hover:underline">ETFs</a></p>
+    </footer>
+  </div>
+
+  <script type="text/babel" data-presets="typescript" src="./app.tsx"></script>
+<script id="catalog-summary-behavior">
+    (() => {
+      const trigger = document.getElementById('ticker-count');
+      const panel = document.getElementById('app-summary');
+      if (!trigger || !panel) return;
+      document.body.appendChild(panel); // top layer: the header's stacking context must not put it under later panels
+      let pinned = false;
+      let closeTimer;
+      const position = () => {
+        const rect = trigger.getBoundingClientRect();
+        panel.style.left = `${Math.max(16, Math.min(rect.right - panel.offsetWidth, innerWidth - panel.offsetWidth - 16))}px`;
+        panel.style.top = `${Math.max(16, Math.min(rect.bottom + 8, innerHeight - panel.offsetHeight - 16))}px`;
+      };
+      const show = () => {
+        clearTimeout(closeTimer);
+        panel.hidden = false;
+        trigger.setAttribute('aria-expanded', 'true');
+        position();
+      };
+      const hide = () => {
+        clearTimeout(closeTimer);
+        panel.hidden = true;
+        trigger.setAttribute('aria-expanded', 'false');
+      };
+      const scheduleHide = () => {
+        clearTimeout(closeTimer);
+        closeTimer = setTimeout(() => {
+          const focused = document.activeElement;
+          if (!pinned && !trigger.matches(':hover') && !panel.matches(':hover') &&
+              focused !== trigger && !panel.contains(focused)) hide();
+        }, 150);
+      };
+      trigger.addEventListener('pointerenter', event => { if (event.pointerType !== 'touch') show(); });
+      panel.addEventListener('pointerenter', () => clearTimeout(closeTimer));
+      trigger.addEventListener('pointerleave', scheduleHide);
+      panel.addEventListener('pointerleave', scheduleHide);
+      trigger.addEventListener('focus', show);
+      panel.addEventListener('focusin', show);
+      trigger.addEventListener('blur', scheduleHide);
+      panel.addEventListener('focusout', scheduleHide);
+      trigger.addEventListener('click', () => { pinned = !pinned; if (pinned) show(); else hide(); });
+      document.addEventListener('keydown', event => {
+        if (event.key !== 'Escape') return;
+        pinned = false;
+        if (panel.contains(document.activeElement)) trigger.focus();
+        hide();
+      });
+      document.addEventListener('pointerdown', event => {
+        if (!trigger.contains(event.target) && !panel.contains(event.target)) { pinned = false; hide(); }
+      });
+      addEventListener('resize', () => { if (!panel.hidden) position(); });
+      addEventListener('scroll', () => { if (!panel.hidden) position(); }, { passive: true });
+      if (typeof ResizeObserver === 'function') new ResizeObserver(() => { if (!panel.hidden) position(); }).observe(panel);
+    })();
+  </script>
+</body>
+</html>
