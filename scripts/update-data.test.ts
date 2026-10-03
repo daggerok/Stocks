@@ -125,23 +125,22 @@ describe('market data', () => {
     expect(r.tr10y).toBeNull();
     expect(r.cagr3y).toBeNull(); // only about 2.5 years of history: no anchor day 3 years back
   });
-  test('history is monthly beyond 5 years, weekly to 1 year back and daily after, with volume summed per bucket', () => {
+  test('history is monthly with daily rows for the last 31 days, and volume is summed per month', () => {
     const long: ChartDay[] = [];
-    for (let i = 0; i <= 9 * 365; i += 1) long.push({ date: new Date(Date.UTC(2017, 0, 1) + i * 86_400_000).toISOString().slice(0, 10), close: 1, adjClose: 1, volume: 1 });
-    const { rows, weeklyFrom, dailyFrom } = sampleHistory(long);
-    const [w, d] = [weeklyFrom as string, dailyFrom as string];
-    expect(w < d).toBe(true);
-    const monthly = rows.filter((r) => r.date <= w);
-    const weekly = rows.filter((r) => r.date > w && r.date <= d);
-    const daily = rows.filter((r) => r.date > d);
+    for (let i = 0; i <= 9 * 365; i += 1) long.push({ date: new Date(Date.UTC(2017, 0, 1) + i * 86_400_000).toISOString().slice(0, 10), close: i, adjClose: i, volume: 1 });
+    const { rows, dailyFrom } = sampleHistory(long);
+    const d = dailyFrom as string;
+    const monthly = rows.filter((r) => r.date < d);
+    const daily = rows.filter((r) => r.date >= d);
     expect(new Set(monthly.map((r) => r.date.slice(0, 7))).size).toBe(monthly.length);
-    expect(daily).toHaveLength(long.filter((r) => r.date > d).length);
-    expect(weekly.length).toBeGreaterThan(200);
-    expect(weekly.length).toBeLessThan(230);
+    expect(monthly.length).toBeGreaterThan(100);
+    expect(monthly.length).toBeLessThan(112);
+    expect(daily).toHaveLength(long.filter((r) => r.date >= d).length);
+    expect(daily.length).toBeLessThanOrEqual(31);
     expect(rows.reduce((s, r) => s + r.volume, 0)).toBe(long.length); // nothing is lost, only merged
+    expect(monthly[1].close).toBe(long.filter((r) => r.date.startsWith(monthly[1].date.slice(0, 7))).at(-1)!.close); // month-end close
     expect(rows[rows.length - 1].date).toBe(long[long.length - 1].date);
-    expect(rows.length).toBeLessThan(long.length / 5);
-    expect(sampleHistory([])).toEqual({ rows: [], weeklyFrom: null, dailyFrom: null });
+    expect(sampleHistory([])).toEqual({ rows: [], dailyFrom: null });
   });
   test('dividend yield, growth and the honest zero of a non-payer', () => {
     const d = [2021, 2022, 2023, 2024].flatMap((y) => [1, 4, 7, 10].map((m) => ({ date: `${y}-${String(m).padStart(2, '0')}-15`, amount: 0.25 * (1 + (y - 2021) * 0.1) })));
