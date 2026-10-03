@@ -2601,7 +2601,7 @@ function setFilter(scope: string, key: string, value: string): void {
   rerenderKeepingFilterFocus();
 }
 
-/** Typing applies the filter after a short pause (FILTER_DEBOUNCE_MS); leaving the input applies it at once. */
+/** Typing applies the filter after a short pause (FILTER_DEBOUNCE_MS), also when the input loses focus meanwhile; Enter applies it at once (a re-render on blur would swallow the click on a header). */
 function scheduleFilter(scope: string, key: string, value: string): void {
   const id = `${scope}:${key}`;
   const pending = filterTimers.get(id);
@@ -3491,10 +3491,6 @@ function bindEvents(): void {
   el.tableHead.addEventListener('input', (event: any) => {
     const target = event.target;
     if (target && target.dataset && target.dataset.filterCol !== undefined) scheduleFilter(target.dataset.filterScope, target.dataset.filterCol, target.value);
-  });
-  el.tableHead.addEventListener('change', (event: any) => {
-    const target = event.target;
-    if (target && target.dataset && target.dataset.filterCol !== undefined) flushFilter(target.dataset.filterScope, target.dataset.filterCol, target.value);
   });
   el.tableHead.addEventListener('keydown', (event: any) => {
     const target = event.target;
