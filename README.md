@@ -61,7 +61,9 @@ Caveats:
 - Share classes (GOOG and GOOGL, BRK-B) share one set of fundamentals and differ only in market data
 - Price history is published as month-end rows with daily rows for the last 31 days; returns are computed from the full daily series before that sampling
 - NYSE Arca has no stock rows in the SEC company table; Arca-listed stocks are not covered
-- A stock whose Yahoo quote type is not `EQUITY` (ETFs, funds) is skipped
+- A stock whose Yahoo quote type is not `EQUITY` (ETFs, funds) is skipped; so is a security without a market cap (SPAC units and warrants, baby bonds, preferred shares) and a CIK that has no SEC company facts and no Yahoo statements (closed-end funds, trusts)
+- SPAC shells and other new listings without a full fiscal year stay in the catalog with unavailable fundamentals; filter them by sector or industry
+- The feed holds about 6,000 stocks, roughly 35 KB each plus a 17 MB `index.json`; it stays under the 1 GB GitHub Pages size limit, and a weekly run rewrites most files, so the Git history grows by tens of MB per run
 
 ### Update controls
 
@@ -69,12 +71,12 @@ Keep this table, `scripts/update-data.config.json`, `CONTROL_NAMES` and `--help`
 
 | Control | Default | Meaning |
 | --- | --: | --- |
-| `MAX_FETCHES` | `0` (all) | Batch size: with a positive value the updater continues after the committed cursor in `api/stocks/update-state.json`; empty or `0` is a full pass |
+| `MAX_FETCHES` | `0` (all) | Batch size: with a positive value the updater stops after that many stocks and the next full-universe run continues after the committed cursor in `api/stocks/update-state.json`; empty or `0` is a full pass (a run that hits the 25-minute soft deadline also saves the cursor) |
 | `REQUEST_SLEEP` | `1` | Minimum delay in seconds between request starts of one worker lane, including retries |
-| `CONCURRENCY` | `3` | Number of parallel workers; each worker owns a request lane paced by `REQUEST_SLEEP` |
+| `CONCURRENCY` | `24` | Number of parallel workers; each worker owns a request lane paced by `REQUEST_SLEEP`; 24 lanes refresh about 6 stocks per second, so the whole universe fits one 25-minute run |
 | `MAX_RETRIES` | `2` | Integer >= 1; retries after the initial request; only network errors and HTTP 403/408/425/429/5xx are retried with exponential backoff |
 | `EXCHANGES` | `Nasdaq,NYSE,CBOE` | Listing exchanges to include, as named in the SEC company table |
-| `TICKERS` | the watchlist | Space-, comma- or semicolon-separated ticker allowlist (`BRK.B` and `BRK-B` both work); blank means every stock listed on `EXCHANGES` |
+| `TICKERS` | empty (all) | Space-, comma- or semicolon-separated ticker allowlist (`BRK.B` and `BRK-B` both work); blank means every stock listed on `EXCHANGES`; a run with `TICKERS` never reads or moves the rotation cursor |
 | `MARKET_CAP` | `:` | Market cap range in USD (strict `min:max`); each bound may use `K`, `M`, `B` or `T`, for example `10B:` |
 | `DIVIDEND_YIELD` | `:` | Dividend-yield percentage range |
 | `HISTORY_RANGE` | `max` | Yahoo chart range for the price history (`max`, `10y`, `5y`, ...); a limited range is requested with explicit `period1` and `period2` |
@@ -86,13 +88,14 @@ Keep this table, `scripts/update-data.config.json`, `CONTROL_NAMES` and `--help`
 | `PERFORMANCE_YTD`, `_1Y`, `_3Y`, `_5Y`, `_10Y` | `:` | Cumulative price change ranges in % (`min:max`) |
 | `TOTAL_RETURN_YTD`, `_1Y`, `_3Y`, `_5Y`, `_10Y` | `:` | Cumulative total return ranges in % (`min:max`) |
 
-`TICKERS` combines with the market cap, yield and return filters using AND logic; it does not override them. A stock without a value for an active range does not match it. Filtered or bounded runs (`TICKERS`, `MAX_FETCHES`, any range filter, `SKIP_YAHOO`) never shrink the feed: stocks that are not selected, are skipped by a filter or fail keep their published row and data files, and `api/stocks/index.json` always lists every stock that has a `companies/*/meta.json`. To widen the feed beyond the watchlist, run with `TICKERS=` (blank) and optionally a `MARKET_CAP` floor
+`TICKERS` combines with the market cap, yield and return filters using AND logic; it does not override them. A stock without a value for an active range does not match it. Filtered or bounded runs (`TICKERS`, `MAX_FETCHES`, any range filter, `SKIP_YAHOO`) never shrink the feed: stocks that are not selected, are skipped by a filter or fail keep their published row and data files, and `api/stocks/index.json` always lists every stock that has a `companies/*/meta.json`. The default run covers the whole universe: every Nasdaq, NYSE and Cboe listing of the SEC table except preferred shares, warrants, rights and units (tickers ending in `-P*`, `-W*`, `-R*`, `-U*`) and except securities Yahoo reports without a market cap or as funds. Narrow it with `TICKERS` or a `MARKET_CAP` floor
 
 ### Examples
 
 ```bash
 TICKERS="AAPL MSFT JPM XOM" ./scripts/update-data.ts
-MAX_FETCHES=50 TICKERS= MARKET_CAP="10B:" ./scripts/update-data.ts
+MAX_FETCHES=500 ./scripts/update-data.ts
+MARKET_CAP="10B:" ./scripts/update-data.ts
 DIVIDEND_YIELD="2:" TOTAL_RETURN_5Y="50:" ./scripts/update-data.ts
 SKIP_YAHOO=true ./scripts/update-data.ts
 ```

@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
   annualSeries, buildAnnualRows, completeMetrics, CONTROL_NAMES, dividendMetrics, fundamentalsMetrics, installSystemCa, isCertError, mergeAnnual,
-  normalizeTicker, parseChart, parseRange, parseRanges, parseSecTickers, parseSummary, parseYahooAnnual, priceReturns, readConfig, resolveControls,
+  isOperatingTicker, normalizeTicker, parseChart, parseRange, parseRanges, parseSecTickers, parseSummary, parseYahooAnnual, priceReturns, readConfig, resolveControls,
   run, runtimeControls, sampleHistory, useApiRoot, valuationMetrics, type ChartDay, type Snapshot,
 } from './update-data.ts';
 
@@ -88,7 +88,9 @@ describe('controls', () => {
     expect(config.maxFetches).toBe(0);
     expect(config.historyRange).toBe('max');
     expect(config.skipYahoo).toBe(false);
-    expect(config.tickers?.has('AAPL') && config.tickers.has('BRK-B') && !config.tickers.has('BRKB')).toBe(true);
+    expect(config.tickers).toBeNull(); // blank = the whole universe
+    expect(config.concurrency).toBe(24);
+    expect([...(readConfig({ TICKERS: 'aapl, brk.b;MSFT' }).tickers ?? [])].sort()).toEqual(['AAPL', 'BRK-B', 'MSFT']);
     expect(config.marketCap).toEqual({});
     expect(config.performance).toEqual({});
     expect(config.secUa).toBe('daggerok ETF feed daggerok@gmail.com');
@@ -156,6 +158,8 @@ describe('parsing', () => {
     expect(table.get('BRK-B')?.exchange).toBe('NYSE');
     expect(table.has('ZZZ')).toBe(false);
     expect(() => parseSecTickers({ fields: ['cik'], data: [] })).toThrow('unexpected shape');
+    for (const ticker of ['BAC-PB', 'XYZ-WT', 'ABC-WS', 'ABC-R', 'SPAC-UN', 'SPAC-U']) expect(isOperatingTicker(ticker)).toBe(false);
+    for (const ticker of ['AAPL', 'BRK-B', 'BF-B', 'LEN-A']) expect(isOperatingTicker(ticker)).toBe(true);
   });
 
   test('XBRL: annual 10-K facts only, tags merged across eras, D&A fallback, derived EBITDA and FCF', () => {
@@ -291,13 +295,17 @@ describe('pipeline', () => {
   const mockFetch = (async (input: RequestInfo | URL) => {
     const url = String(input);
     const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
-    if (url.includes('company_tickers_exchange')) return json({ fields: ['cik', 'name', 'ticker', 'exchange'], data: [[1, 'AAA INC', 'AAA', 'Nasdaq'], [2, 'BBB INC', 'BBB', 'NYSE'], [3, 'CCC FUND', 'CCC', 'NYSE'], [4, 'DDD OTC', 'DDD', 'OTC']] });
+    if (url.includes('company_tickers_exchange')) return json({ fields: ['cik', 'name', 'ticker', 'exchange'], data: [[1, 'AAA INC', 'AAA', 'Nasdaq'], [2, 'BBB INC', 'BBB', 'NYSE'], [3, 'CCC FUND', 'CCC', 'NYSE'], [4, 'DDD OTC', 'DDD', 'OTC'], [5, 'EEE WARRANT', 'EEE', 'Nasdaq'], [6, 'FFF TRUST', 'FFF', 'NYSE'], [7, 'GGG PREFERRED', 'GGG-PA', 'NYSE']] });
     if (url.startsWith('https://fc.yahoo.com')) return new Response('', { status: 404, headers: { 'set-cookie': 'A3=abc; Path=/' } });
     if (url.includes('getcrumb')) return new Response('crumb123', { status: 200 });
-    if (url.includes('quoteSummary')) return json(summary(url.includes('/CCC') ? 'ETF' : 'EQUITY'));
+    if (url.includes('quoteSummary')) {
+      const body = summary(url.includes('/CCC') ? 'ETF' : 'EQUITY');
+      if (url.includes('/EEE')) delete (body.quoteSummary.result[0].price as any).marketCap; // a warrant has no market cap
+      return json(body);
+    }
     if (url.includes('/v8/finance/chart/')) return failChartFor && url.includes(`/${failChartFor}?`) ? new Response('boom', { status: 500 }) : json(chartPayload());
     if (url.includes('fundamentals-timeseries')) return json({ timeseries: { result: [] } });
-    if (url.includes('companyfacts')) return json(syntheticFacts());
+    if (url.includes('companyfacts')) return url.includes('CIK0000000006') ? new Response('nope', { status: 404 }) : json(syntheticFacts()); // FFF has no XBRL facts
     return new Response('not found', { status: 404 });
   }) as typeof fetch;
 
@@ -317,8 +325,8 @@ describe('pipeline', () => {
   const readIndex = async () => JSON.parse(await readFile(join(dir, 'index.json'), 'utf8'));
   const readText = (path: string) => readFile(join(dir, path), 'utf8');
 
-  test('publishes the contract; funds and non-listed exchanges are skipped', async () => {
-    expect(await run(controls())).toMatchObject({ updated: 2, skipped: 1, failed: 0 });
+  test('publishes the contract; funds, warrants, preferreds, fund-like filers and other exchanges are left out', async () => {
+    expect(await run(controls())).toMatchObject({ updated: 2, skipped: 3, failed: 0 });
     const index = await readIndex();
     expect(index.companies.map((c: any) => c.ticker)).toEqual(['AAA', 'BBB']);
     const metrics = index.companies[0].metrics;
@@ -344,6 +352,23 @@ describe('pipeline', () => {
     await run(controls());
     expect((await readIndex()).generatedAt).toBe('2000-01-01T00:00:00Z');
     expect(await readText('companies/AAA/meta.json')).toBe(meta);
+  });
+
+  test('rotation: a bounded run resumes after its cursor, a deadline run saves it, TICKERS runs never move it', async () => {
+    const cursor = async () => JSON.parse(await readText('update-state.json')).cursor;
+    await run(controls({ MAX_FETCHES: '1' }));
+    expect((await readIndex()).companies.map((c: any) => c.ticker)).toEqual(['AAA']);
+    expect(await cursor()).toBe('AAA');
+    await run(controls({ TICKERS: 'AAA' }));
+    expect(await cursor()).toBe('AAA');
+    await run(controls({ MAX_FETCHES: '1' }));
+    expect((await readIndex()).companies.map((c: any) => c.ticker)).toEqual(['AAA', 'BBB']);
+    await run(controls({ MAX_FETCHES: '1' })); // the rest of the universe is skipped stocks, the cursor wraps around
+    await rm(join(dir, 'update-state.json'), { force: true });
+    await run(controls({ CONCURRENCY: '1' }), { deadlineMs: 1 }); // stops after the first stock, cursor kept for the next run
+    expect(await cursor()).not.toBeNull();
+    await run(controls());
+    expect(await cursor()).toBeNull();
   });
 
   test('a failed source keeps the stock exactly as published', async () => {
