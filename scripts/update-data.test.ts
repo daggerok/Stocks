@@ -294,6 +294,7 @@ describe('pipeline', () => {
 
   const mockFetch = (async (input: RequestInfo | URL) => {
     const url = String(input);
+    await new Promise((r) => setTimeout(r, 2)); // every response takes longer than the 1 ms deadline of the rotation test
     const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
     if (url.includes('company_tickers_exchange')) return json({ fields: ['cik', 'name', 'ticker', 'exchange'], data: [[1, 'AAA INC', 'AAA', 'Nasdaq'], [2, 'BBB INC', 'BBB', 'NYSE'], [3, 'CCC FUND', 'CCC', 'NYSE'], [4, 'DDD OTC', 'DDD', 'OTC'], [5, 'EEE WARRANT', 'EEE', 'Nasdaq'], [6, 'FFF TRUST', 'FFF', 'NYSE'], [7, 'GGG PREFERRED', 'GGG-PA', 'NYSE']] });
     if (url.startsWith('https://fc.yahoo.com')) return new Response('', { status: 404, headers: { 'set-cookie': 'A3=abc; Path=/' } });
