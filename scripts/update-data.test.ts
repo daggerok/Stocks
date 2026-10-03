@@ -135,6 +135,7 @@ describe('controls', () => {
     expect(names).not.toContain('output_dir');
     expect(yml).toContain("cron: '0 0 * * 0'");
     expect(yml).toContain('toJSON(inputs)');
+    expect(yml).toContain('JSON.parse(process.env.DISPATCH_INPUTS || "{}") || {}'); // toJSON(inputs) is "null" on scheduled runs
     expect(yml).not.toMatch(/\$\{\{\s*inputs\./);
     for (const part of ['resolveControls', 'vars.SEC_UA', 'timeout-minutes: 30', 'persist-credentials: false', 'git add api/stocks\n']) expect(yml).toContain(part);
     expect(yml.match(/git add /g)?.length).toBe(1);
