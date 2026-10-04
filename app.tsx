@@ -1345,9 +1345,14 @@ const BASE_FILTER_COLUMNS: CatalogColumn[] = [
   { key: 'marketCap', label: 'Market Cap', kind: 'num', fmt: 'money' },
 ];
 
-/** The columns of the catalog table in display order: the fixed ones and the visible groups. */
+/** Every catalog column in display order, shown or not: the filters work on all of them. */
+function allCatalogColumns(): CatalogColumn[] {
+  return BASE_FILTER_COLUMNS.concat(COLS.map(col => ({ key: col.key, label: col.label, kind: col.fmt === 'basis' ? 'basis' : col.fmt === 'date' ? 'date' : 'num', fmt: col.fmt })));
+}
+
+/** The columns of the catalog table in display order: the fixed ones and the columns checked in the Columns menu. */
 function catalogFilterColumns(): CatalogColumn[] {
-  return BASE_FILTER_COLUMNS.concat(visibleCols().map(col => ({ key: col.key, label: col.label, kind: col.fmt === 'basis' ? 'basis' : col.fmt === 'date' ? 'date' : 'num', fmt: col.fmt })));
+  return allCatalogColumns().filter(col => !state.hiddenCols.has(col.key));
 }
 
 /** Lower-case text of a catalog cell, exactly what the table shows. */
@@ -1399,15 +1404,15 @@ type ActiveFilter = { col: CatalogColumn; type: ColType; test: (num: number, tex
 let catalogFilterCache: { sig: string; list: ActiveFilter[] } | null = null;
 
 function catalogFilterSig(): string {
-  return [store ? store.version : 0, JSON.stringify(state.filters.catalog || {}), JSON.stringify(state.typeOverrides.catalog || {}), hiddenColsSig(), Math.floor(Date.now() / DAY_MS)].join('|');
+  return [store ? store.version : 0, JSON.stringify(state.filters.catalog || {}), JSON.stringify(state.typeOverrides.catalog || {}), Math.floor(Date.now() / DAY_MS)].join('|');
 }
 
-/** Compiled filters of the visible catalog columns; an expression that does not parse is ignored (the input shows the error). */
+/** Compiled filters of all catalog columns, also the hidden ones; an expression that does not parse is ignored (the input shows the error). */
 function activeCatalogFilters(): ActiveFilter[] {
   const sig = catalogFilterSig();
   if (catalogFilterCache && catalogFilterCache.sig === sig) return catalogFilterCache.list;
   const list: ActiveFilter[] = [];
-  catalogFilterColumns().forEach(col => {
+  allCatalogColumns().forEach(col => {
     const expression = filterExpressionFor('catalog', col.key);
     if (!expression.trim()) return;
     const type = catalogColumnType(col);
@@ -2549,7 +2554,7 @@ function currentFilterScope(): string {
 }
 
 function activeFilterCount(scope: string): number {
-  const keys = scope === 'catalog' ? catalogFilterColumns().map(col => col.key) : Object.keys(state.filters[scope] || {});
+  const keys = scope === 'catalog' ? allCatalogColumns().map(col => col.key) : Object.keys(state.filters[scope] || {});
   return keys.filter(key => filterExpressionFor(scope, key).trim() !== '').length;
 }
 
@@ -2621,7 +2626,7 @@ function clearAllFilters(scope: string): void {
 
 function detectedTypeFor(scope: string, key: string): ColType {
   if (scope === 'catalog') {
-    const col = catalogFilterColumns().find(item => item.key === key);
+    const col = allCatalogColumns().find(item => item.key === key);
     return col ? detectedCatalogType(col) : 'string';
   }
   const info = gridTypeCache[scope];
