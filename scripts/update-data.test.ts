@@ -480,7 +480,7 @@ describe('network', () => {
     expect(globalThis.fetch).toBe(mockFetch);
     installSystemCa('auto', reexec, true);
     expect(globalThis.fetch).toBe(mockFetch);
-    globalThis.fetch = (async () => { throw Object.assign(new Error('fetch failed'), { code: 'UNABLE_TO_GET_ISSUER_CERT_LOCALLY' }); }) as typeof fetch;
+    globalThis.fetch = (async () => { throw Object.assign(new Error('fetch failed'), { code: 'UNABLE_TO_GET_ISSUER_CERT_LOCALLY' }); }) as unknown as typeof fetch;
     const failing = globalThis.fetch;
     installSystemCa('auto', reexec, false);
     expect(globalThis.fetch).not.toBe(failing);
