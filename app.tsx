@@ -229,6 +229,8 @@ const el = {
   tableHead: byId('table-head'),
   tableBody: byId('table-body'),
   tableScroll: byId('table-scroll'),
+  busyOverlay: byId('busy-overlay'),
+  busyLabel: byId('busy-label'),
   staticLoadSentinel: byId('static-load-sentinel'),
   staticLoadStatus: byId('static-load-status'),
 };
@@ -1118,11 +1120,38 @@ async function readIndex(base: string): Promise<any> {
   return loaded;
 }
 
+// ---- busy overlay: spinner over the table while data loads or more rows are mounted ----
+
+let busyCount = 0;
+
+function setBusy(on: boolean, label = ''): void {
+  busyCount = Math.max(0, busyCount + (on ? 1 : -1));
+  if (on && label) el.busyLabel.textContent = label;
+  el.busyOverlay.hidden = busyCount === 0;
+}
+
+/** Shows the spinner, lets it paint, then runs the (synchronous, blocking) work. */
+function withBusy(label: string, work: () => void): void {
+  setBusy(true, label);
+  requestAnimationFrame(() => setTimeout(() => {
+    try { work(); } finally { setBusy(false); }
+  }, 0));
+}
+
+let chunkGrowing = false;
+
+function growCatalogChunkBusy(): void {
+  if (chunkGrowing || !isCatalogTab(state.activeTab) || catalogRenderedCount >= catalogVisibleIds.length) return;
+  chunkGrowing = true;
+  withBusy('Loading more rows…', () => { try { growCatalogChunk(); } finally { chunkGrowing = false; } });
+}
+
 /**
  * Startup: the cached index first (first paint), then the network copy is
  * revalidated; the table is rebuilt only when generatedAt moved.
  */
 async function loadCatalog(): Promise<void> {
+  setBusy(true, 'Loading the stock feed…');
   el.tableBody.innerHTML = `<tr><td colspan="10" class="py-12 text-center text-slate-400 dark:text-slate-500">Loading the stock catalog…</td></tr>`;
   const cached = await Promise.race([
     idbGet(cacheKey()),
@@ -1171,6 +1200,7 @@ async function loadCatalog(): Promise<void> {
   renderLoadProgress();
   renderSubtitle();
   render();
+  setBusy(false);
 }
 
 function renderLoadProgress(): void {
@@ -1246,6 +1276,7 @@ async function loadNextHistoryPage(): Promise<void> {
   if (!entry || entry.loading || entry.nextPage >= entry.manifest.pages.length) return;
   entry.loading = true;
   renderStaticLoadSentinel();
+  setBusy(true, 'Loading more rows…');
   try {
     const page = await fetchPage(key, entry.manifest.pages[entry.nextPage]);
     if (!entry.headers.length && page.headers.length) entry.headers = page.headers;
@@ -1257,6 +1288,7 @@ async function loadNextHistoryPage(): Promise<void> {
   } finally {
     entry.loading = false;
     renderStaticLoadSentinel();
+    setBusy(false);
   }
 }
 
@@ -3709,7 +3741,7 @@ function bindEvents(): void {
       blacklistTickers([blacklistButton.dataset.blacklist || '']);
       return;
     }
-    if (target.closest('#catalog-more-row')) growCatalogChunk();
+    if (target.closest('#catalog-more-row')) growCatalogChunkBusy();
   });
 
   // Column filters and type badges live in the table header (delegated: the header is rebuilt on every render).
@@ -3760,7 +3792,7 @@ function bindEvents(): void {
   el.tableScroll.addEventListener('scroll', () => {
     const distanceToBottom = el.tableScroll.scrollHeight - el.tableScroll.scrollTop - el.tableScroll.clientHeight;
     if (isCatalogTab(state.activeTab)) {
-      if (distanceToBottom < 600) growCatalogChunk();
+      if (distanceToBottom < 600) growCatalogChunkBusy();
       return;
     }
     if (state.activeTab === 'detail:history' && distanceToBottom < 600) void loadNextHistoryPage();
@@ -3791,6 +3823,8 @@ function init(): void {
   void loadCatalog().catch(error => {
     const message = error instanceof Error ? error.message : String(error);
     state.loading = false;
+    busyCount = 0;
+    el.busyOverlay.hidden = true;
     el.tickerCount.textContent = 'Error';
     el.tableBody.innerHTML = `<tr><td colspan="10" class="py-12 text-center text-rose-500 dark:text-rose-300">${escapeHtml(`Unable to load the stock feed: ${message}`)}</td></tr>`;
   });

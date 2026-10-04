@@ -38,6 +38,15 @@
     @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
     .animate-fade-in{animation:fadeIn .3s ease-out}
 
+    /* Busy overlay: covers the table while data loads or a chunk is mounted, swallows wheel/touch/clicks so nobody scrolls half-ready rows */
+    .busy-overlay{position:absolute;inset:0;z-index:40;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.6rem;background:rgba(248,250,252,.72);color:#475569;font-size:.75rem;touch-action:none;cursor:progress}
+    .busy-overlay[hidden]{display:none}
+    .busy-spinner{width:34px;height:34px;border-radius:50%;border:3px solid rgba(100,116,139,.3);border-top-color:#3b82f6;animation:busySpin .8s linear infinite}
+    @keyframes busySpin{to{transform:rotate(360deg)}}
+    @media (prefers-color-scheme:dark){.busy-overlay{background:rgba(15,23,42,.7);color:#cbd5e1}}
+    html.dark .busy-overlay{background:rgba(15,23,42,.7);color:#cbd5e1}
+    @media (prefers-reduced-motion:reduce){.busy-spinner{animation-duration:2.4s}}
+
     /* Themed scrollbars (same slate palette as Amplify / iShares) */
     .themed-scroll::-webkit-scrollbar{width:10px;height:10px}
     .themed-scroll::-webkit-scrollbar-track{background:transparent}
@@ -425,7 +434,8 @@
         <div id="selected-tabs-bar" class="flex flex-wrap items-center justify-center gap-1.5 overflow-x-auto py-1 w-full max-w-full themed-scroll"></div>
       </nav>
 
-      <div class="bg-white dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm backdrop-blur overflow-hidden">
+      <div class="bg-white dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm backdrop-blur overflow-hidden relative">
+        <div id="busy-overlay" class="busy-overlay" role="status" aria-live="polite"><div class="busy-spinner"></div><span id="busy-label">Loading the stock feed…</span></div>
         <div id="table-scroll" class="overflow-x-auto overflow-y-auto themed-scroll">
           <table class="w-full text-left whitespace-nowrap">
             <thead id="table-head" class="bg-slate-50 dark:bg-slate-900/95 text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wider border-b border-slate-200 dark:border-slate-700 sticky top-0 z-20 backdrop-blur">
