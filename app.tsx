@@ -57,12 +57,6 @@ const DETAIL_TABS: Array<{ key: string; label: string }> = [
 
 const NUMERIC_HISTORY_HEADERS = ['Close', 'Adj Close', 'Volume'];
 
-const GROUPS = [
-  'Valuation', 'Dividends', 'Balance sheet', 'Growth 1Y', 'Growth 3Y CAGR', 'Growth 5Y CAGR', 'Margins',
-  'Margin change 1Y', 'Margin change 3Y', 'Performance', 'Total return', 'Market', 'Data',
-];
-const DEFAULT_HIDDEN_GROUPS = ['Growth 3Y CAGR', 'Growth 5Y CAGR', 'Margin change 1Y', 'Margin change 3Y', 'Performance', 'Market'];
-
 const GROWTH_NAMES: Array<[string, string, string]> = [
   ['revenue', 'Revenue', 'revenue'],
   ['eps', 'EPS', 'diluted EPS'],
@@ -241,7 +235,7 @@ type AppState = {
   blacklist: Set<string>;
   hiddenExchanges: Set<string>;
   hiddenSectors: Set<string>; // sectors unchecked in the sector filter ('' is the "no sector" bucket)
-  hiddenGroups: Set<string>; // column groups unchecked in the Columns menu
+  hiddenCols: Set<string>; // columns unchecked in the Columns menu (keys of COLS); empty by default = every column shown
   hideStale: boolean;
   staleDays: number;
   filters: Record<string, Record<string, string>>; // scope (catalog, fundamentals, dividends, history) -> column key -> filter expression
@@ -261,7 +255,7 @@ const state: AppState = {
   blacklist: new Set(),
   hiddenExchanges: new Set(),
   hiddenSectors: new Set(),
-  hiddenGroups: new Set(DEFAULT_HIDDEN_GROUPS),
+  hiddenCols: new Set(),
   hideStale: false,
   staleDays: DEFAULT_STALE_DAYS,
   filters: {},
@@ -1308,8 +1302,8 @@ function hiddenSectorsSig(): string {
   return [...state.hiddenSectors].sort().join(',');
 }
 
-function hiddenGroupsSig(): string {
-  return [...state.hiddenGroups].sort().join(',');
+function hiddenColsSig(): string {
+  return [...state.hiddenCols].sort().join(',');
 }
 
 function isStaleId(id: number): boolean {
@@ -1405,7 +1399,7 @@ type ActiveFilter = { col: CatalogColumn; type: ColType; test: (num: number, tex
 let catalogFilterCache: { sig: string; list: ActiveFilter[] } | null = null;
 
 function catalogFilterSig(): string {
-  return [store ? store.version : 0, JSON.stringify(state.filters.catalog || {}), JSON.stringify(state.typeOverrides.catalog || {}), hiddenGroupsSig(), Math.floor(Date.now() / DAY_MS)].join('|');
+  return [store ? store.version : 0, JSON.stringify(state.filters.catalog || {}), JSON.stringify(state.typeOverrides.catalog || {}), hiddenColsSig(), Math.floor(Date.now() / DAY_MS)].join('|');
 }
 
 /** Compiled filters of the visible catalog columns; an expression that does not parse is ignored (the input shows the error). */
@@ -1695,7 +1689,7 @@ function applySectorSelection(selected: Set<string>): void {
 }
 
 function applyColumnSelection(selected: Set<string>): void {
-  state.hiddenGroups = new Set(GROUPS.filter(group => !selected.has(group)));
+  state.hiddenCols = new Set(COLS.filter(col => !selected.has(col.key)).map(col => col.key));
   persistViewFilters();
   render();
 }
@@ -1705,18 +1699,19 @@ function filterSummary(selected: number, total: number): string {
 }
 
 function columnItems(): DropdownItem[] {
-  return GROUPS.map(group => ({ id: group, label: group, count: COLS.filter(col => col.group === group).length, selected: !state.hiddenGroups.has(group) }));
+  // One row per column, first to last as in the table; the number is the position and the group name is searchable
+  return COLS.map((col, index) => ({ id: col.key, label: `${col.group} - ${col.label}`, count: index + 1, selected: !state.hiddenCols.has(col.key) }));
 }
 
 function renderFilters(): void {
   if (document.activeElement !== el.staleDays) el.staleDays.value = String(state.staleDays);
   el.staleToggle.checked = state.hideStale;
 
-  const groupsShown = GROUPS.length - state.hiddenGroups.size;
-  el.columnsSummary.textContent = filterSummary(groupsShown, GROUPS.length);
-  el.columnsBadge.hidden = groupsShown === GROUPS.length;
-  el.columnsBadge.textContent = `${groupsShown}/${GROUPS.length}`;
-  el.columnsBtn.classList.toggle('is-filtered', groupsShown < GROUPS.length);
+  const colsShown = COLS.length - state.hiddenCols.size;
+  el.columnsSummary.textContent = filterSummary(colsShown, COLS.length);
+  el.columnsBadge.hidden = colsShown === COLS.length;
+  el.columnsBadge.textContent = `${colsShown}/${COLS.length}`;
+  el.columnsBtn.classList.toggle('is-filtered', colsShown < COLS.length);
 
   const sig = [store ? store.version : 0, hiddenExchangesSig(), blacklistVersion, hiddenSectorsSig()].join('|');
   if (sig === filtersSig) return;
@@ -2420,7 +2415,7 @@ function formatByFmt(fmt: CellFormat | 'text', value: number): string {
 }
 
 function visibleCols(): Col[] {
-  return COLS.filter(col => !state.hiddenGroups.has(col.group));
+  return COLS.filter(col => !state.hiddenCols.has(col.key));
 }
 
 function cellHtml(col: Col, id: number): string {
@@ -2495,7 +2490,7 @@ function renderCatalogTable(): void {
   const ids = catalogIds();
   catalogVisibleIds = ids;
   const cols = visibleCols();
-  const sig = [state.activeTab, state.sortKey, state.sortDir, catalogQuery(), hiddenSectorsSig(), hiddenExchangesSig(), hiddenGroupsSig(), state.hideStale, state.staleDays, store ? store.version : 0, blacklistVersion, catalogFilterSig()].join('|');
+  const sig = [state.activeTab, state.sortKey, state.sortDir, catalogQuery(), hiddenSectorsSig(), hiddenExchangesSig(), hiddenColsSig(), state.hideStale, state.staleDays, store ? store.version : 0, blacklistVersion, catalogFilterSig()].join('|');
   if (sig !== catalogChunkSig) {
     catalogChunkSig = sig;
     catalogRenderedCount = CATALOG_CHUNK;
@@ -3248,7 +3243,7 @@ function persistViewFilters(): void {
   lsSet(VIEW_FILTERS_KEY, JSON.stringify({
     hiddenExchanges: [...state.hiddenExchanges],
     hiddenSectors: [...state.hiddenSectors],
-    hiddenGroups: [...state.hiddenGroups],
+    hiddenCols: [...state.hiddenCols],
     hideStale: state.hideStale,
     staleDays: state.staleDays,
   }));
@@ -3327,7 +3322,7 @@ function restoreViewFilters(): void {
   if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return;
   if (Array.isArray(saved.hiddenExchanges)) state.hiddenExchanges = new Set(saved.hiddenExchanges.filter((name: unknown) => typeof name === 'string'));
   if (Array.isArray(saved.hiddenSectors)) state.hiddenSectors = new Set(saved.hiddenSectors.filter((name: unknown) => typeof name === 'string'));
-  if (Array.isArray(saved.hiddenGroups)) state.hiddenGroups = new Set(saved.hiddenGroups.filter((name: unknown) => typeof name === 'string' && GROUPS.includes(name)));
+  if (Array.isArray(saved.hiddenCols)) state.hiddenCols = new Set(saved.hiddenCols.filter((key: unknown) => typeof key === 'string' && COLS.some(col => col.key === key)));
   state.hideStale = saved.hideStale === true;
   const days = Number(saved.staleDays);
   if (Number.isFinite(days) && days >= 1 && days <= 3650) state.staleDays = Math.floor(days);
@@ -3440,8 +3435,8 @@ function bindEvents(): void {
     trigger: el.columnsBtn,
     panel: el.columnsPanel,
     title: 'Columns',
-    noun: 'column groups',
-    unit: 'columns',
+    noun: 'columns',
+    unit: 'column position',
     getItems: columnItems,
     onChange: applyColumnSelection,
   });
