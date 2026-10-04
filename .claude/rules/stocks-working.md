@@ -20,3 +20,8 @@ Same as the ETF contract in `../ETFs/.claude/rules/etf-updater-contract.md` (con
 
 ## UI
 Look and behavior follow `../ETFs/.claude/rules/ui-standard.md` (column types and filters, Columns menu with locked Use and Ticker, short `Filters: on` label, toolbar order). Stocks keeps its filter state in `state.filters`, `typeOverrides`, `hiddenCols` (not `columnFilterState`/CSS-position hiding) and its own `DAY_MS` engine constant; when the shared blocks change, port the change here by hand and run both Stocks browser tests
+
+## Owner preferences on structure and tooling (2026-10-04, same as the ETFs repos)
+- No top-level `data/` folder: a static table lives inside `scripts/update-data.ts`, JSON state the updater writes lives in `api/stocks/`, test data is tiny and inline in the test, `update-data.config.json` holds only control defaults
+- No Python anywhere: edit with the Edit tool or a throwaway Bun/TypeScript script kept outside the repo
+- The structure is fixed: no new folder or file because it is convenient; check whether a file is really used at runtime before moving it, delete obsolete investigation artifacts instead of relocating them
