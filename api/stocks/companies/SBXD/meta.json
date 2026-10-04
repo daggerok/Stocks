@@ -9,7 +9,7 @@
   "financialCurrency": "USD",
   "dataFile": "./companies/SBXD/meta.json",
   "price": 11.39,
-  "asOfDate": "2026-10-01",
+  "asOfDate": "2026-10-02",
   "fundamentalsAsOf": "2025-12-31",
   "fundamentalsBasis": "SEC EDGAR XBRL annual 10-K facts with gaps filled from Yahoo fundamentals-timeseries; valuation multiples from the Yahoo quoteSummary TTM snapshot",
   "metrics": {
@@ -88,7 +88,7 @@
     "cagr10y": null,
     "siAnn": null,
     "returnsBasis": "Yahoo chart API: performance from unadjusted closes, total return and CAGR from dividend- and split-adjusted closes",
-    "performanceAsOf": "2026-10-01"
+    "performanceAsOf": "2026-10-02"
   },
   "sources": {
     "universe": "https://www.sec.gov/files/company_tickers_exchange.json",
@@ -98,7 +98,7 @@
   },
   "market": {
     "price": 11.39,
-    "asOfDate": "2026-10-01",
+    "asOfDate": "2026-10-02",
     "valuation": {
       "marketCap": 289932448,
       "enterpriseValue": 73655280,
@@ -195,8 +195,8 @@
       "history/001.json"
     ],
     "pageSize": 1000,
-    "totalRows": 4,
-    "asOf": "2026-10-01",
+    "totalRows": 5,
+    "asOf": "2026-10-02",
     "granularity": {
       "monthlyBefore": "2026-09-28",
       "dailyFrom": "2026-09-28"
