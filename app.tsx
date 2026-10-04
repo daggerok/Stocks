@@ -1345,6 +1345,16 @@ const BASE_FILTER_COLUMNS: CatalogColumn[] = [
   { key: 'marketCap', label: 'Market Cap', kind: 'num', fmt: 'money' },
 ];
 
+/** Ticker (and the # and Use cells in front of it) can never be hidden; every other column is optional. */
+const MANDATORY_COLUMN = 'ticker';
+
+/** One row of the Columns menu per column, first to last as in the table; Use and Ticker are listed but locked. */
+function menuColumns(): Array<{ key: string; label: string; locked: boolean }> {
+  return [{ key: 'use', label: 'Stock - Use', locked: true }]
+    .concat(BASE_FILTER_COLUMNS.map(col => ({ key: col.key, label: `Stock - ${col.label}`, locked: col.key === MANDATORY_COLUMN })))
+    .concat(COLS.map(col => ({ key: col.key, label: `${col.group} - ${col.label}`, locked: false })));
+}
+
 /** Every catalog column in display order, shown or not: the filters work on all of them. */
 function allCatalogColumns(): CatalogColumn[] {
   return BASE_FILTER_COLUMNS.concat(COLS.map(col => ({ key: col.key, label: col.label, kind: col.fmt === 'basis' ? 'basis' : col.fmt === 'date' ? 'date' : 'num', fmt: col.fmt })));
@@ -1694,7 +1704,7 @@ function applySectorSelection(selected: Set<string>): void {
 }
 
 function applyColumnSelection(selected: Set<string>): void {
-  state.hiddenCols = new Set(COLS.filter(col => !selected.has(col.key)).map(col => col.key));
+  state.hiddenCols = new Set(menuColumns().filter(col => !col.locked && !selected.has(col.key)).map(col => col.key));
   persistViewFilters();
   render();
 }
@@ -1705,18 +1715,19 @@ function filterSummary(selected: number, total: number): string {
 
 function columnItems(): DropdownItem[] {
   // One row per column, first to last as in the table; the number is the position and the group name is searchable
-  return COLS.map((col, index) => ({ id: col.key, label: `${col.group} - ${col.label}`, count: index + 1, selected: !state.hiddenCols.has(col.key) }));
+  return menuColumns().map((col, index) => ({ id: col.key, label: col.label, count: index + 1, selected: col.locked || !state.hiddenCols.has(col.key), locked: col.locked }));
 }
 
 function renderFilters(): void {
   if (document.activeElement !== el.staleDays) el.staleDays.value = String(state.staleDays);
   el.staleToggle.checked = state.hideStale;
 
-  const colsShown = COLS.length - state.hiddenCols.size;
-  el.columnsSummary.textContent = filterSummary(colsShown, COLS.length);
-  el.columnsBadge.hidden = colsShown === COLS.length;
-  el.columnsBadge.textContent = `${colsShown}/${COLS.length}`;
-  el.columnsBtn.classList.toggle('is-filtered', colsShown < COLS.length);
+  const colsTotal = menuColumns().length;
+  const colsShown = colsTotal - state.hiddenCols.size;
+  el.columnsSummary.textContent = filterSummary(colsShown, colsTotal);
+  el.columnsBadge.hidden = colsShown === colsTotal;
+  el.columnsBadge.textContent = `${colsShown}/${colsTotal}`;
+  el.columnsBtn.classList.toggle('is-filtered', colsShown < colsTotal);
 
   const sig = [store ? store.version : 0, hiddenExchangesSig(), blacklistVersion, hiddenSectorsSig()].join('|');
   if (sig === filtersSig) return;
@@ -1750,7 +1761,7 @@ function renderFilters(): void {
 
 // ---- filter dropdowns: one reusable MultiSelect (exchanges, sectors, columns) -------
 
-type DropdownItem = { id: string; label: string; count: number; selected: boolean; badges?: string };
+type DropdownItem = { id: string; label: string; count: number; selected: boolean; badges?: string; locked?: boolean }; // locked: always selected, cannot be toggled
 
 type Dropdown = { refresh(): void; open(query?: string): void; close(restoreFocus?: boolean): void; isOpen(): boolean };
 
@@ -1858,12 +1869,12 @@ function createDropdown(cfg: DropdownConfig): Dropdown {
     const keepScroll = list.scrollTop;
     list.innerHTML = shown.length
       ? shown.map((item, i) => `
-        <div class="dd-opt${item.count === 0 ? ' dd-zero' : ''}" role="option" id="${optionId(i)}" data-id="${escapeHtml(item.id)}" aria-selected="${item.selected}">
+        <div class="dd-opt${item.count === 0 ? ' dd-zero' : ''}${item.locked ? ' dd-locked' : ''}" role="option" id="${optionId(i)}" data-id="${escapeHtml(item.id)}" aria-selected="${item.selected}"${item.locked ? ' aria-disabled="true" title="Always shown"' : ''}>
           <span class="dd-check">${DD_TICK}</span>
           <span class="dd-name" title="${escapeHtml(item.label)}">${escapeHtml(item.label)}</span>
           ${item.badges || ''}
           <span class="dd-num" title="${escapeHtml(cfg.unit)}">${item.count}</span>
-          <button type="button" class="dd-only" data-only tabindex="-1" aria-label="Only ${escapeHtml(item.label)}">Only</button>
+          ${item.locked ? '' : `<button type="button" class="dd-only" data-only tabindex="-1" aria-label="Only ${escapeHtml(item.label)}">Only</button>`}
         </div>`).join('')
       : `<div class="dd-empty">${selectedOnly && !query.trim() ? `Nothing selected` : `No ${escapeHtml(cfg.noun)} match “${escapeHtml(query.trim())}”`}</div>`;
     list.scrollTop = keepScroll;
@@ -1886,6 +1897,7 @@ function createDropdown(cfg: DropdownConfig): Dropdown {
     else if (op === 'reset') next = new Set(all.map(item => item.id));
     else if (op === 'flip') { if (next.has(id)) next.delete(id); else next.add(id); }
     else if (op === 'only') next = new Set([id]);
+    all.forEach(item => { if (item.locked) next.add(item.id); }); // locked rows stay selected whatever the operation
     cfg.onChange(next);
     refresh();
   }
@@ -2453,21 +2465,21 @@ function stockRowHtml(id: number, index: number, cols: Col[]): string {
             </div>
           </td>
           <td class="catalog-sticky-col catalog-sticky-ticker py-2.5 px-4 font-mono font-semibold text-blue-600 dark:text-blue-400">${escapeHtml(key)}</td>
-          <td class="py-2.5 px-4 text-slate-700 dark:text-slate-300 font-medium" title="${escapeHtml(s.name[id])}">${escapeHtml(s.name[id])}</td>
-          <td class="py-2.5 px-4 text-slate-600 dark:text-slate-300">${escapeHtml(s.exchangeText[id] || DASH)}</td>
-          <td class="py-2.5 px-4 text-slate-600 dark:text-slate-300">${escapeHtml(s.sectorText[id] || DASH)}</td>
-          <td class="py-2.5 px-4 text-slate-600 dark:text-slate-300" title="${escapeHtml(s.industryText[id])}">${escapeHtml(s.industryText[id] || DASH)}</td>
-          <td class="${numCls}">${formatPrice(s.num.price[id])}</td>
-          <td class="${numCls}">${formatMoney(s.num.marketCap[id])}</td>
+          ${state.hiddenCols.has('name') ? '' : `<td class="py-2.5 px-4 text-slate-700 dark:text-slate-300 font-medium" title="${escapeHtml(s.name[id])}">${escapeHtml(s.name[id])}</td>`}
+          ${state.hiddenCols.has('exchange') ? '' : `<td class="py-2.5 px-4 text-slate-600 dark:text-slate-300">${escapeHtml(s.exchangeText[id] || DASH)}</td>`}
+          ${state.hiddenCols.has('sector') ? '' : `<td class="py-2.5 px-4 text-slate-600 dark:text-slate-300">${escapeHtml(s.sectorText[id] || DASH)}</td>`}
+          ${state.hiddenCols.has('industry') ? '' : `<td class="py-2.5 px-4 text-slate-600 dark:text-slate-300" title="${escapeHtml(s.industryText[id])}">${escapeHtml(s.industryText[id] || DASH)}</td>`}
+          ${state.hiddenCols.has('price') ? '' : `<td class="${numCls}">${formatPrice(s.num.price[id])}</td>`}
+          ${state.hiddenCols.has('marketCap') ? '' : `<td class="${numCls}">${formatMoney(s.num.marketCap[id])}</td>`}
           ${cols.map(col => cellHtml(col, id)).join('')}
         </tr>
       `;
 }
 
-const FIXED_COLUMNS = 9; // #, Use, Ticker, Company, Exchange, Sector, Industry, Price, Market Cap
+const FIXED_COLUMNS = 3; // #, Use, Ticker
 
 function catalogColspan(): number {
-  return FIXED_COLUMNS + visibleCols().length;
+  return FIXED_COLUMNS + BASE_FILTER_COLUMNS.filter(col => col.key !== MANDATORY_COLUMN && !state.hiddenCols.has(col.key)).length + visibleCols().length;
 }
 
 function catalogMoreRowHtml(remaining: number): string {
@@ -3327,7 +3339,7 @@ function restoreViewFilters(): void {
   if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return;
   if (Array.isArray(saved.hiddenExchanges)) state.hiddenExchanges = new Set(saved.hiddenExchanges.filter((name: unknown) => typeof name === 'string'));
   if (Array.isArray(saved.hiddenSectors)) state.hiddenSectors = new Set(saved.hiddenSectors.filter((name: unknown) => typeof name === 'string'));
-  if (Array.isArray(saved.hiddenCols)) state.hiddenCols = new Set(saved.hiddenCols.filter((key: unknown) => typeof key === 'string' && COLS.some(col => col.key === key)));
+  if (Array.isArray(saved.hiddenCols)) state.hiddenCols = new Set(saved.hiddenCols.filter((key: unknown) => typeof key === 'string' && menuColumns().some(col => col.key === key && !col.locked)));
   state.hideStale = saved.hideStale === true;
   const days = Number(saved.staleDays);
   if (Number.isFinite(days) && days >= 1 && days <= 3650) state.staleDays = Math.floor(days);
