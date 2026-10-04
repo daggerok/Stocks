@@ -2576,7 +2576,7 @@ function renderFilterControls(): void {
   el.filtersBtn.disabled = !scope;
   el.filtersBtn.setAttribute('aria-pressed', String(state.showFilters));
   el.filtersBtn.classList.toggle('is-filtered', count > 0);
-  el.filtersSummary.textContent = state.showFilters ? 'shown' : 'hidden';
+  el.filtersSummary.textContent = state.showFilters ? 'on' : 'off';
   el.filtersBadge.hidden = count === 0;
   el.filtersBadge.textContent = String(count);
   el.clearFiltersBtn.hidden = count === 0;
