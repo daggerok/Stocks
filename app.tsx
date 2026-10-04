@@ -1874,7 +1874,7 @@ function createDropdown(cfg: DropdownConfig): Dropdown {
           <span class="dd-name" title="${escapeHtml(item.label)}">${escapeHtml(item.label)}</span>
           ${item.badges || ''}
           <span class="dd-num" title="${escapeHtml(cfg.unit)}">${item.count}</span>
-          ${item.locked ? '' : `<button type="button" class="dd-only" data-only tabindex="-1" aria-label="Only ${escapeHtml(item.label)}">Only</button>`}
+          ${item.locked ? `<span class="dd-only dd-only-ghost" aria-hidden="true">Only</span>` : `<button type="button" class="dd-only" data-only tabindex="-1" aria-label="Only ${escapeHtml(item.label)}">Only</button>`}
         </div>`).join('')
       : `<div class="dd-empty">${selectedOnly && !query.trim() ? `Nothing selected` : `No ${escapeHtml(cfg.noun)} match “${escapeHtml(query.trim())}”`}</div>`;
     list.scrollTop = keepScroll;
