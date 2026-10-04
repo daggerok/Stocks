@@ -35,3 +35,7 @@ you need any packages install them as dependency" — then, once offered
 `typescript` as a devDependency for proper checking, corrected further:
 "we must not have any tsconfigs in our repos", "we want to use bun", "we
 doesnt need to install typescript - its supported out of the box by bun".
+
+## One sanctioned type check (2026-10-04)
+
+The no-tsc rule stays for this repo. The owner approved ONE exception: `../ETFs/.claude/tools/tc/check.sh <repo-dir>`, a throwaway `tsc --strict` that lives outside every repo and mirrors IntelliJ, used to find and fix the errors IntelliJ shows. Details and the fixed patterns: `ts-ide-errors.md`. Still forbidden: `tsconfig.json`, a `typescript` dependency, ad-hoc `bunx tsc` flags, `@ts-ignore`
