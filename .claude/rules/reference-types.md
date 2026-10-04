@@ -32,3 +32,7 @@ grep -n '<reference types=' scripts/update-data.ts
 ```
 
 and confirm the line still appears, unchanged, at its original position.
+
+## Each file references every type set it uses (2026-10-04)
+
+IntelliJ without a tsconfig sees only the types a file references. A file that calls `Bun.*` needs `/// <reference types="bun" />`, one that uses `node:*` needs `node`. Add a second line, never replace or move the existing one. Verify with `../ETFs/.claude/tools/tc/check.sh .` (see `ts-ide-errors.md`)
