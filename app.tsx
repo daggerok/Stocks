@@ -1457,8 +1457,9 @@ function filterCatalogIds(): number[] {
     if (terms.length) {
       let ok = true;
       for (let t = 0; t < terms.length; t++) {
-        const text = terms[t].field ? s.fields[terms[t].field][i] : s.search[i];
-        if (!text.includes(terms[t].value)) { ok = false; break; }
+        const term = terms[t];
+        const text = term.field ? s.fields[term.field][i] : s.search[i];
+        if (!text.includes(term.value)) { ok = false; break; }
       }
       if (!ok) continue;
     }
@@ -2972,7 +2973,7 @@ function fundamentalsGrid(meta: any): { cols: GridCol[]; rows: any[] } {
   const cols: GridCol[] = [{ label: 'Period', key: 'c0', numeric: false }].concat(FUNDAMENTAL_COLS.map((col, i) => ({ label: col.label, key: `c${i + 1}`, numeric: true })));
   const source = (): Array<{ raw: any[]; cells: string[] }> => annual.map(item => ({
     raw: [item.end].concat(FUNDAMENTAL_COLS.map(col => item[col.key])),
-    cells: [String(item.end)].concat(FUNDAMENTAL_COLS.map(col => (col.fmt === 'eps' ? (numberOrNull(item[col.key]) === null ? DASH : numberOrNull(item[col.key]).toFixed(2)) : formatMoney(item[col.key])))),
+    cells: [String(item.end)].concat(FUNDAMENTAL_COLS.map(col => (col.fmt === 'eps' ? (numberOrNull(item[col.key])?.toFixed(2) ?? DASH) : formatMoney(item[col.key])))),
   }));
   return { cols, rows: gridView(cols, annual, source, 'fundamentals') };
 }
@@ -2988,10 +2989,10 @@ function dividendRows(meta: any): Array<{ raw: any[]; cells: string[] }> {
   const market = meta && meta.market ? meta.market : {};
   const out: Array<{ raw: any[]; cells: string[] }> = [];
   (Array.isArray(market.recentDividends) ? market.recentDividends : []).forEach((item: any) => {
-    out.push({ raw: ['Payment', item.date, item.amount], cells: ['Payment', String(item.date), numberOrNull(item.amount) === null ? DASH : numberOrNull(item.amount).toFixed(4)] });
+    out.push({ raw: ['Payment', item.date, item.amount], cells: ['Payment', String(item.date), numberOrNull(item.amount)?.toFixed(4) ?? DASH] });
   });
   (Array.isArray(market.annualDps) ? market.annualDps : []).forEach((item: any) => {
-    out.push({ raw: ['Year', String(item.year), item.dps], cells: ['Year', String(item.year), numberOrNull(item.dps) === null ? DASH : numberOrNull(item.dps).toFixed(4)] });
+    out.push({ raw: ['Year', String(item.year), item.dps], cells: ['Year', String(item.year), numberOrNull(item.dps)?.toFixed(4) ?? DASH] });
   });
   return out;
 }
