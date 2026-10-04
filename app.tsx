@@ -1134,8 +1134,22 @@ function setBusy(on: boolean, label = ''): void {
 function withBusy(label: string, work: () => void): void {
   setBusy(true, label);
   requestAnimationFrame(() => setTimeout(() => {
-    try { work(); } finally { setBusy(false); }
+    try {
+      work();
+      void el.tableScroll.offsetHeight; // style + layout of the new rows happen now, under the spinner
+    } finally {
+      // hide only after the frame with the new rows has been produced
+      requestAnimationFrame(() => setTimeout(() => setBusy(false), 0));
+    }
   }, 0));
+}
+
+/** A user action that re-renders the whole table: the spinner shows while it runs (and only if it takes longer than a blink). */
+function renderBusy(keepRows = true, after?: () => void): void {
+  withBusy('Updating the table…', () => {
+    render(keepRows);
+    if (after) after();
+  });
 }
 
 let chunkGrowing = false;
@@ -1684,8 +1698,7 @@ function renderTabButtons(container: any, tabs: TabInfo[], alwaysShow: boolean):
       applySortForTab(state.activeTab);
       syncSearchInput();
       persistSiteState();
-      render();
-      maybeLoadMoreRows();
+      renderBusy(true, maybeLoadMoreRows);
     });
   });
 
@@ -1759,19 +1772,19 @@ function applyExchangeSelection(selected: Set<string>): void {
   const known = exchangeItems.map(item => item.id);
   state.hiddenExchanges = new Set(known.filter(name => !selected.has(name)));
   persistViewFilters();
-  render();
+  renderBusy();
 }
 
 function applySectorSelection(selected: Set<string>): void {
   state.hiddenSectors = new Set(sectorItems.map(item => item.id).filter(name => !selected.has(name)));
   persistViewFilters();
-  render();
+  renderBusy();
 }
 
 function applyColumnSelection(selected: Set<string>): void {
   state.hiddenCols = new Set(menuColumns().filter(col => !col.locked && !selected.has(col.key)).map(col => col.key));
   persistViewFilters();
-  render();
+  renderBusy();
 }
 
 function filterSummary(selected: number, total: number): string {
@@ -2600,7 +2613,7 @@ function bindSortHeaders(): void {
         state.sortDir = ASC_FIRST_KEYS.includes(key) ? 'asc' : 'desc';
       }
       rememberSortForCurrentTab();
-      render(false);
+      renderBusy(false);
     });
   });
 }
@@ -2745,12 +2758,44 @@ function renderCatalogTable(): void {
     el.tableBody.innerHTML = html;
   }
 
+  renderCatalogStatus(ids);
+  renderSubtitle();
+}
+
+function renderCatalogStatus(ids: number[]): void {
   const selected = selectedKeys().length;
   const queryText = catalogQuery() ? ` matching “${catalogQuery()}”` : '';
   const rankText = state.stickyRank && ids.length ? ` # = rank among ${catalogBaseline().ids.length.toLocaleString('en-US')} before the column filters.` : '';
   setStatus(`Showing ${ids.length} stock${ids.length === 1 ? '' : 's'}${queryText}.${selected ? ` ${selected} selected.` : ' No stocks selected yet.'}${rankText}`, selected ? 'success' : 'info');
   el.tickerCount.textContent = `${ids.length.toLocaleString('en-US')} stocks`;
+}
+
+/**
+ * Selecting a stock on a catalog tab whose rows do not depend on the selection (everything but the watchlist)
+ * changes one row, the Use-all checkbox, the tabs and the status line: patch those in place instead of
+ * rebuilding and re-laying-out every mounted row. Returns false when a full render is needed.
+ */
+function patchSelectionInPlace(key: string): boolean {
+  if (!isCatalogTab(state.activeTab) || state.activeTab === 'watchlist' || !store) return false;
+  const tab = state.activeTab;
+  ensureValidTab();
+  if (state.activeTab !== tab) return false;
+  const selected = state.selected.has(key);
+  const row = el.tableBody.querySelector(`tr[data-key="${CSS.escape(key)}"]`) as HTMLElement | null;
+  if (row) {
+    row.classList.toggle('selected-row', selected);
+    const box = row.querySelector('input[data-checkbox]') as HTMLInputElement | null;
+    if (box) box.checked = selected;
+  }
+  const useAll = el.tableHead.querySelector('#select-all-checkbox') as HTMLInputElement | null;
+  if (useAll) {
+    const keys = store.ticker;
+    useAll.checked = catalogVisibleIds.length > 0 && catalogVisibleIds.every(id => state.selected.has(keys[id]));
+  }
+  renderTabs();
+  renderCatalogStatus(catalogVisibleIds);
   renderSubtitle();
+  return true;
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -2836,7 +2881,7 @@ function clearAllFilters(scope: string): void {
   filterTimers.clear();
   state.filters[scope] = {};
   persistColumnFilters();
-  render();
+  renderBusy();
 }
 
 function detectedTypeFor(scope: string, key: string): ColType {
@@ -2859,7 +2904,7 @@ function cycleColumnType(scope: string, key: string, reset: boolean): void {
   else map[key] = next;
   state.typeOverrides[scope] = map;
   persistColumnTypes();
-  render();
+  renderBusy();
 }
 
 type GridCol = { label: string; key: string; numeric: boolean };
@@ -3225,8 +3270,7 @@ function afterSelectionChange(): void {
   updateActiveStockFallback();
   persistSelection();
   ensureValidTab();
-  render();
-  prefetchActiveMeta();
+  renderBusy(true, prefetchActiveMeta);
 }
 
 /** Loads the active stock's meta.json in the background so the detail tab counts fill in. */
@@ -3244,7 +3288,10 @@ function toggleStock(key: string): void {
     state.selected.add(key);
     state.activeKey = key;
   }
-  afterSelectionChange();
+  updateActiveStockFallback();
+  persistSelection();
+  if (patchSelectionInPlace(key)) prefetchActiveMeta();
+  else afterSelectionChange();
   const activeKey = state.activeKey;
   if (activeKey && state.activeTab.startsWith('detail:')) {
     void loadMeta(activeKey).then(meta => {
@@ -3321,7 +3368,7 @@ function clearSelectionAndSearch(): void {
   syncSearchInput();
   el.tableScroll.scrollTop = 0;
   el.tableScroll.scrollLeft = 0;
-  render(false);
+  renderBusy(false);
 }
 
 function blacklistTickers(rawTickers: string[]): void {
@@ -3714,7 +3761,7 @@ function bindEvents(): void {
   el.staleToggle.addEventListener('change', () => {
     state.hideStale = Boolean(el.staleToggle.checked);
     persistViewFilters();
-    render();
+    renderBusy();
   });
   el.staleDays.addEventListener('input', () => {
     const days = Math.floor(Number(el.staleDays.value));
@@ -3748,12 +3795,12 @@ function bindEvents(): void {
   el.filtersBtn.addEventListener('click', () => {
     state.showFilters = !state.showFilters;
     lsSet(SHOW_FILTERS_KEY, String(state.showFilters));
-    render();
+    renderBusy();
   });
   el.rankBtn.addEventListener('click', () => {
     state.stickyRank = !state.stickyRank;
     lsSet(STICKY_RANK_KEY, String(state.stickyRank));
-    render();
+    renderBusy();
   });
   el.clearFiltersBtn.addEventListener('click', () => {
     const scope = currentFilterScope();
