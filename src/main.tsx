@@ -1341,14 +1341,15 @@ async function ensureHistory(key: string, manifest: any): Promise<void> {
   await loadNextHistoryPage();
 }
 
-async function loadNextHistoryPage(): Promise<void> {
+/** blocking: the spinner covers the table while the page loads (the reader is waiting at the end); a prefetch runs without it. */
+async function loadNextHistoryPage(blocking = true): Promise<void> {
   const key = state.activeKey;
   if (!key) return;
   const entry = sheetState.get(key);
   if (!entry || entry.loading || entry.nextPage >= entry.manifest.pages.length) return;
   entry.loading = true;
   renderStaticLoadSentinel();
-  setBusy(true, 'Loading more rows…');
+  if (blocking) setBusy(true, 'Loading more rows…');
   try {
     const page = await fetchPage(key, entry.manifest.pages[entry.nextPage]);
     if (!entry.headers.length && page.headers.length) entry.headers = page.headers;
@@ -1360,7 +1361,7 @@ async function loadNextHistoryPage(): Promise<void> {
   } finally {
     entry.loading = false;
     renderStaticLoadSentinel();
-    setBusy(false);
+    if (blocking) setBusy(false);
   }
 }
 
@@ -2815,6 +2816,54 @@ function prependCatalogChunk(): void {
 
 let chunkPrepending = false;
 
+/** Share of the mounted rows the reader has scrolled past at which the next chunk is prepared in the background. */
+const PREFETCH_AT = 0.5;
+
+/** How far the bottom of the viewport is through the mounted rows (0 = their top, 1 = their bottom; a spacer above does not count). */
+function scrolledShare(): number {
+  const box = el.tableScroll;
+  const spacerPx = isCatalogTab(state.activeTab) ? catalogRenderedFrom * catalogRowHeight : 0;
+  const mountedPx = box.scrollHeight - spacerPx;
+  return mountedPx > 0 ? (box.scrollTop + box.clientHeight - spacerPx) / mountedPx : 0;
+}
+
+function whenIdle(task: () => void): void {
+  const idle = (window as unknown as { requestIdleCallback?: (cb: () => void, options?: { timeout: number }) => number }).requestIdleCallback;
+  if (typeof idle === 'function') idle.call(window, task, { timeout: 400 });
+  else setTimeout(task, 80);
+}
+
+let prefetchQueued = false;
+
+/**
+ * The rows of the catalog are already in memory, mounting them is the cost (markup, then a layout of the whole table). Once the
+ * reader is past half of the mounted rows (below) or in the upper half of them with rows missing above, the next chunk is
+ * mounted when the browser is idle, with no spinner and no blocked input, so by the time the end is reached it is already
+ * there. The chunk adds rows, the share scrolled drops under the threshold, and the next prefetch waits for the next half.
+ */
+function prefetchCatalogRows(): void {
+  if (prefetchQueued || chunkGrowing || chunkPrepending) return;
+  const direction = (): 'down' | 'up' | null => {
+    const box = el.tableScroll;
+    const spacerPx = catalogRenderedFrom * catalogRowHeight;
+    const mountedPx = box.scrollHeight - spacerPx;
+    if (mountedPx <= 0) return null;
+    const below = catalogRenderedCount < catalogVisibleIds.length && scrolledShare() > PREFETCH_AT;
+    const above = catalogRenderedFrom > 0 && (box.scrollTop - spacerPx) / mountedPx < 1 - PREFETCH_AT;
+    if (below && above) return (mountedPx - (box.scrollTop + box.clientHeight - spacerPx)) < (box.scrollTop - spacerPx) ? 'down' : 'up'; // the nearer end first
+    return below ? 'down' : above ? 'up' : null;
+  };
+  if (!direction()) return;
+  prefetchQueued = true;
+  whenIdle(() => {
+    prefetchQueued = false;
+    if (!isCatalogTab(state.activeTab) || chunkGrowing || chunkPrepending) return;
+    const now = direction(); // the reader may have moved on while the browser was busy
+    if (now === 'down') growCatalogChunk();
+    else if (now === 'up') prependCatalogChunk();
+  });
+}
+
 /** The viewport is entirely inside the spacer (a jump up, the scrollbar dragged, Home): mount the window around the rows that belong there. */
 function remountCatalogWindowAtScrollBusy(): void {
   if (chunkPrepending || chunkGrowing) return;
@@ -4081,15 +4130,17 @@ function bindEvents(): void {
   el.tableScroll.addEventListener('scroll', () => {
     const distanceToBottom = el.tableScroll.scrollHeight - el.tableScroll.scrollTop - el.tableScroll.clientHeight;
     if (isCatalogTab(state.activeTab)) {
+      // the reader outran the prefetch: grow or remount now, under the spinner
       if (distanceToBottom < 600) growCatalogChunkBusy();
-      else if (catalogRenderedFrom > 0) {
-        const spacerPx = catalogRenderedFrom * catalogRowHeight;
-        if (el.tableScroll.scrollTop + el.tableScroll.clientHeight < spacerPx) remountCatalogWindowAtScrollBusy();
-        else if (el.tableScroll.scrollTop - spacerPx < 600) prependCatalogChunkBusy();
-      }
+      else if (catalogRenderedFrom > 0 && el.tableScroll.scrollTop + el.tableScroll.clientHeight < catalogRenderedFrom * catalogRowHeight) remountCatalogWindowAtScrollBusy();
+      else if (catalogRenderedFrom > 0 && el.tableScroll.scrollTop - catalogRenderedFrom * catalogRowHeight < 600) prependCatalogChunkBusy();
+      else prefetchCatalogRows();
       return;
     }
-    if (state.activeTab === 'detail:history' && distanceToBottom < 600) void loadNextHistoryPage();
+    if (state.activeTab === 'detail:history') {
+      if (distanceToBottom < 600) void loadNextHistoryPage();
+      else if (scrolledShare() > PREFETCH_AT) void loadNextHistoryPage(false); // prefetch the next page while the reader is still halfway through this one
+    }
   }, { passive: true });
 
   window.addEventListener('resize', fitTableHeight);
