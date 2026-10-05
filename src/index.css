@@ -39,6 +39,11 @@
   }
 }
 
+/* Tailwind v4 moved space-x/space-y from margin-top / margin-left on the following siblings to margin-bottom / margin-right on every child but the last.
+   The panels below set their own margin-top (and collapse to 0), so the v3 behaviour is restored for the classes this app uses. */
+.space-y-6 > :not(:last-child) { margin-block-end: 0; }
+.space-y-6 > :not([hidden]) ~ :not([hidden]) { margin-top: 1.5rem; }
+
     @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
     .animate-fade-in{animation:fadeIn .3s ease-out}
 

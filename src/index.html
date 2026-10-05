@@ -53,7 +53,7 @@
     <main class="flex-1 w-full max-w-full p-4 sm:p-8 space-y-6">
 
       <!-- Search, Tabs & Action Bar -->
-      <div class="relative z-50 flex flex-wrap items-center gap-x-2.5 gap-y-2.5 bg-white dark:bg-slate-800/80 px-3 py-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm backdrop-blur">
+      <div class="relative z-50 flex flex-wrap items-center gap-x-2.5 gap-y-2.5 bg-white dark:bg-slate-800/80 px-3 py-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xs backdrop-blur-sm">
 
         <div class="relative flex items-center w-full lg:w-auto lg:flex-1 lg:min-w-[8rem] lg:max-w-sm">
           <input
@@ -61,12 +61,12 @@
             id="search-input"
             placeholder="Search stocks..." title="Search by ticker, company, exchange, sector or industry"
             disabled
-            class="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 border border-slate-200 dark:border-slate-700 rounded-lg pl-4 pr-8 py-2 w-full focus:outline-none focus:border-blue-500 text-sm placeholder-slate-400 dark:placeholder-slate-500 disabled:opacity-50 disabled:cursor-not-allowed transition"
+            class="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 border border-slate-200 dark:border-slate-700 rounded-lg pl-4 pr-8 py-2 w-full focus:outline-hidden focus:border-blue-500 text-sm placeholder-slate-400 dark:placeholder-slate-500 disabled:opacity-50 disabled:cursor-not-allowed transition"
           />
           <button
             type="button"
             id="search-clear-btn"
-            class="hidden absolute right-2.5 top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center rounded-full text-slate-400 hover:text-slate-700 dark:text-slate-500 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition text-sm leading-none focus:outline-none"
+            class="hidden absolute right-2.5 top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center rounded-full text-slate-400 hover:text-slate-700 dark:text-slate-500 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition text-sm leading-none focus:outline-hidden"
             title="Clear search filter"
             aria-label="Clear search filter"
           >✕</button>
@@ -94,7 +94,7 @@
         <label class="inline-flex items-center gap-2 text-slate-600 dark:text-slate-300 cursor-pointer" title="Hide stocks whose prices are older than the given number of days or have no known as-of date">
           <input type="checkbox" id="stale-toggle" class="w-4 h-4 accent-blue-600 cursor-pointer" />
           <span class="whitespace-nowrap">Hide stale &gt;</span>
-          <input type="number" id="stale-days" min="1" max="3650" value="10" class="w-12 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 border border-slate-200 dark:border-slate-700 rounded-lg px-1 text-center py-2 text-sm focus:outline-none focus:border-blue-500" />
+          <input type="number" id="stale-days" min="1" max="3650" value="10" class="w-12 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 border border-slate-200 dark:border-slate-700 rounded-lg px-1 text-center py-2 text-sm focus:outline-hidden focus:border-blue-500" />
           <span>d</span>
         </label>
         <span id="load-progress" class="empty:hidden text-xs text-slate-500 dark:text-slate-400" aria-live="polite"></span>
@@ -110,9 +110,9 @@
 
       </div>
 
-      <div id="blacklist-panel" class="bg-white dark:bg-slate-800/80 px-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm backdrop-blur">
+      <div id="blacklist-panel" class="bg-white dark:bg-slate-800/80 px-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xs backdrop-blur-sm">
         <div class="flex flex-col sm:flex-row sm:items-center gap-2.5">
-          <input type="text" id="blacklist-input" placeholder="Add tickers to blacklist (e.g. BRK-B, GOOG)" class="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 w-full sm:w-80 focus:outline-none focus:border-blue-500 text-sm placeholder-slate-400 dark:placeholder-slate-500 transition" />
+          <input type="text" id="blacklist-input" placeholder="Add tickers to blacklist (e.g. BRK-B, GOOG)" class="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 w-full sm:w-80 focus:outline-hidden focus:border-blue-500 text-sm placeholder-slate-400 dark:placeholder-slate-500 transition" />
           <div class="flex flex-wrap items-center gap-2.5">
             <button id="blacklist-add-btn" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition active:scale-95">Add</button>
             <button id="blacklist-clear-btn" class="bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-700/50 px-3 py-2 rounded-lg text-sm font-medium transition active:scale-95 hover:bg-rose-200 dark:hover:bg-rose-800/60">Clear Blacklist</button>
@@ -122,15 +122,15 @@
         <p id="blacklist-empty" class="text-xs text-slate-400 dark:text-slate-500 mt-3">The blacklist is empty. Blacklisted stocks disappear from All Stocks (and from selection), and are kept in your browser localStorage.</p>
       </div>
 
-      <nav id="selected-tabs-panel" class="bg-white dark:bg-slate-800/80 px-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm backdrop-blur" aria-label="Selected stock detail views">
+      <nav id="selected-tabs-panel" class="bg-white dark:bg-slate-800/80 px-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xs backdrop-blur-sm" aria-label="Selected stock detail views">
         <div id="selected-tabs-bar" class="flex flex-wrap items-center justify-center gap-1.5 overflow-x-auto py-1 w-full max-w-full themed-scroll"></div>
       </nav>
 
-      <div class="bg-white dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm backdrop-blur overflow-hidden relative">
+      <div class="bg-white dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xs backdrop-blur-sm overflow-hidden relative">
         <div id="busy-overlay" class="busy-overlay" role="status" aria-live="polite"><div class="busy-spinner"></div><span id="busy-label">Loading the stock feed…</span></div>
         <div id="table-scroll" class="overflow-x-auto overflow-y-auto themed-scroll">
           <table class="w-full text-left whitespace-nowrap">
-            <thead id="table-head" class="bg-slate-50 dark:bg-slate-900/95 text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wider border-b border-slate-200 dark:border-slate-700 sticky top-0 z-20 backdrop-blur">
+            <thead id="table-head" class="bg-slate-50 dark:bg-slate-900/95 text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wider border-b border-slate-200 dark:border-slate-700 sticky top-0 z-20 backdrop-blur-sm">
               <tr>
                 <th class="py-3.5 px-4 w-12 text-center" title="Row index">#</th>
                 <th class="py-3.5 px-4" title="Column 1">Column 1</th>
