@@ -48,6 +48,7 @@
     .busy-overlay[hidden]{display:none}
     .busy-spinner{width:34px;height:34px;border-radius:50%;border:3px solid rgba(100,116,139,.3);border-top-color:#3b82f6;animation:busySpin .8s linear infinite}
     @keyframes busySpin{to{transform:rotate(360deg)}}
+    .busy-overlay.is-instant{animation-delay:0s}
     html.dark .busy-overlay{background:rgba(15,23,42,.7);color:#cbd5e1}
     @media (prefers-reduced-motion:reduce){.busy-spinner{animation-duration:2.4s}}
 

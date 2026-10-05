@@ -1124,15 +1124,16 @@ async function readIndex(base: string): Promise<any> {
 
 let busyCount = 0;
 
-function setBusy(on: boolean, label = ''): void {
+function setBusy(on: boolean, label = '', instant = false): void {
   busyCount = Math.max(0, busyCount + (on ? 1 : -1));
   if (on && label) el.busyLabel.textContent = label;
+  if (on && busyCount === 1) el.busyOverlay.classList.toggle('is-instant', instant); // instant: no 150 ms grace period, for work that is known to be slow
   el.busyOverlay.hidden = busyCount === 0;
 }
 
 /** Shows the spinner, lets it paint, then runs the (synchronous, blocking) work. */
-function withBusy(label: string, work: () => void): void {
-  setBusy(true, label);
+function withBusy(label: string, work: () => void, instant = false): void {
+  setBusy(true, label, instant);
   requestAnimationFrame(() => setTimeout(() => {
     try {
       work();
@@ -1157,7 +1158,7 @@ let chunkGrowing = false;
 function growCatalogChunkBusy(): void {
   if (chunkGrowing || !isCatalogTab(state.activeTab) || catalogRenderedCount >= catalogVisibleIds.length) return;
   chunkGrowing = true;
-  withBusy('Loading more rows…', () => { try { growCatalogChunk(); } finally { chunkGrowing = false; } });
+  withBusy('Loading more rows…', () => { try { growCatalogChunk(); } finally { chunkGrowing = false; } }, true);
 }
 
 /**
