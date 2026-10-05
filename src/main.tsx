@@ -47,8 +47,9 @@ const LOCAL_BASE = './api/stocks/';
 const REMOTE_BASE = 'https://daggerok.github.io/Stocks/api/stocks/';
 const INDEX_TIMEOUT_MS = 30000;
 const FETCH_TIMEOUT_MS = 30000; // meta.json and history pages (headers and body)
-const CATALOG_CHUNK = 200; // rows of the first render and of a window mounted around a saved position
-const CATALOG_SCROLL_CHUNK = 600; // rows added per scroll step, up or down: fewer, larger steps mean fewer spinner flashes
+const CATALOG_WINDOW = 160; // catalog rows in the DOM at most (see the window block above catalogSpacerHtml)
+const CATALOG_MARGIN = 40; // rows between the viewport and an end of the window at which the window moves
+const CATALOG_STEP = 40; // the window moves in whole steps of this many rows
 const DEFAULT_STALE_DAYS = 10;
 const IDB_NAME = 'stocks';
 const IDB_STORE = 'indexes';
@@ -1165,14 +1166,6 @@ function renderBusy(keepRows = true, after?: () => void): void {
     render(keepRows);
     if (after) after();
   });
-}
-
-let chunkGrowing = false;
-
-function growCatalogChunkBusy(): void {
-  if (chunkGrowing || !isCatalogTab(state.activeTab) || catalogRenderedCount >= catalogVisibleIds.length) return;
-  chunkGrowing = true;
-  withBusy('Loading more rows…', () => { try { growCatalogChunk(); } finally { chunkGrowing = false; } }, true);
 }
 
 /**
@@ -2764,13 +2757,22 @@ function catalogColspan(): number {
   return FIXED_COLUMNS + BASE_FILTER_COLUMNS.filter(col => col.key !== MANDATORY_COLUMN && !state.hiddenCols.has(col.key)).length + visibleCols().length;
 }
 
-function catalogMoreRowHtml(remaining: number): string {
-  return `<tr id="catalog-more-row" class="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/30 transition"><td colspan="${catalogColspan()}" class="py-3 text-center text-xs text-slate-400 dark:text-slate-500">Scroll or click to load more rows… (${remaining.toLocaleString('en-US')} remaining)</td></tr>`;
+/**
+ * The catalog keeps at most CATALOG_WINDOW rows in the DOM, however long the list is. Rows before and after the window are one
+ * spacer row each (as tall as the rows they stand for), so the scrollbar and the scroll offsets stay true. Mounting costs about
+ * 6 microseconds per cell and every mounted row is laid out again with each change, so a DOM that only grows (1400 rows = 0.9 s per
+ * rebuild) gets slower the further the reader scrolls; a fixed window costs the same at row 50 and at row 5000.
+ */
+function catalogSpacerHtml(side: 'top' | 'bottom', rows: number): string {
+  return `<tr id="catalog-${side}-spacer" aria-hidden="true"><td colspan="${catalogColspan()}" style="height:${Math.round(rows * catalogRowHeight)}px;padding:0;border:0"></td></tr>`;
 }
 
-/** One row as tall as the rows that are not mounted above the window, so the scroll position and the scrollbar stay true. */
-function catalogSpacerHtml(rows: number): string {
-  return `<tr id="catalog-top-spacer" aria-hidden="true"><td colspan="${catalogColspan()}" style="height:${Math.round(rows * catalogRowHeight)}px;padding:0;border:0"></td></tr>`;
+function catalogWindowHtml(from: number, to: number, cols: Col[]): string {
+  const ids = catalogVisibleIds;
+  let html = from > 0 ? catalogSpacerHtml('top', from) : '';
+  for (let i = from; i < to; i++) html += stockRowHtml(ids[i], i, cols);
+  if (to < ids.length) html += catalogSpacerHtml('bottom', ids.length - to);
+  return html;
 }
 
 function measureCatalogRowHeight(): void {
@@ -2779,127 +2781,135 @@ function measureCatalogRowHeight(): void {
   if (height > 10) catalogRowHeight = height;
 }
 
-/**
- * Mounts the window of rows around one row of the catalog instead of every row above it (a saved view at row 1900 used to
- * mount 1900 rows and lay them all out): the rows before the window are one spacer row, scrolling up mounts them back.
- */
-function mountCatalogWindow(center: number): void {
-  const ids = catalogVisibleIds;
+/** Replaces the mounted rows with [from, to) from scratch (a jump, a new sort or filter, a restored position). */
+function mountCatalogRows(from: number, to: number): void {
   measureCatalogRowHeight();
-  catalogRenderedFrom = Math.max(0, center - CATALOG_CHUNK);
-  catalogRenderedCount = Math.min(ids.length, center + CATALOG_CHUNK);
-  const cols = visibleCols();
-  let html = catalogRenderedFrom > 0 ? catalogSpacerHtml(catalogRenderedFrom) : '';
-  for (let i = catalogRenderedFrom; i < catalogRenderedCount; i++) html += stockRowHtml(ids[i], i, cols);
-  if (catalogRenderedCount < ids.length) html += catalogMoreRowHtml(ids.length - catalogRenderedCount);
-  el.tableBody.innerHTML = html;
-}
-
-/** Scrolling up towards the spacer: mounts the previous chunk above the window and keeps the rows under the pointer where they were. */
-function prependCatalogChunk(): void {
-  if (!isCatalogTab(state.activeTab) || catalogRenderedFrom <= 0) return;
-  const ids = catalogVisibleIds;
-  const spacer = el.tableBody.querySelector('#catalog-top-spacer') as HTMLElement | null;
-  const firstRow = el.tableBody.querySelector('tr[data-key]') as HTMLElement | null;
-  if (!spacer || !firstRow) return;
-  const before = firstRow.getBoundingClientRect().top;
-  const from = Math.max(0, catalogRenderedFrom - CATALOG_SCROLL_CHUNK);
-  const cols = visibleCols();
-  let html = '';
-  for (let i = from; i < catalogRenderedFrom; i++) html += stockRowHtml(ids[i], i, cols);
   catalogRenderedFrom = from;
-  if (from === 0) spacer.remove();
-  else (spacer.firstElementChild as HTMLElement).style.height = `${Math.round(from * catalogRowHeight)}px`;
-  firstRow.insertAdjacentHTML('beforebegin', html);
-  el.tableScroll.scrollTop += firstRow.getBoundingClientRect().top - before;
+  catalogRenderedCount = to;
+  el.tableBody.innerHTML = catalogWindowHtml(from, to, visibleCols());
+  rememberCatalogColumnWidths();
 }
 
-let chunkPrepending = false;
-
-/** Share of the mounted rows the reader has scrolled past at which the next chunk is prepared in the background. */
-const PREFETCH_AT = 0.5;
-
-/** How far the bottom of the viewport is through the mounted rows (0 = their top, 1 = their bottom; a spacer above does not count). */
-function scrolledShare(): number {
-  const box = el.tableScroll;
-  const spacerPx = isCatalogTab(state.activeTab) ? catalogRenderedFrom * catalogRowHeight : 0;
-  const mountedPx = box.scrollHeight - spacerPx;
-  return mountedPx > 0 ? (box.scrollTop + box.clientHeight - spacerPx) / mountedPx : 0;
+/** Mounts the window around one row of the catalog (a saved scroll position). */
+function mountCatalogWindow(center: number): void {
+  const len = catalogVisibleIds.length;
+  const from = Math.max(0, Math.min(len - CATALOG_WINDOW, center - Math.floor(CATALOG_WINDOW / 2)));
+  mountCatalogRows(from, Math.min(len, from + CATALOG_WINDOW));
 }
-
-function whenIdle(task: () => void): void {
-  const idle = (window as unknown as { requestIdleCallback?: (cb: () => void, options?: { timeout: number }) => number }).requestIdleCallback;
-  if (typeof idle === 'function') idle.call(window, task, { timeout: 400 });
-  else setTimeout(task, 80);
-}
-
-let prefetchQueued = false;
 
 /**
- * The rows of the catalog are already in memory, mounting them is the cost (markup, then a layout of the whole table). Once the
- * reader is past half of the mounted rows (below) or in the upper half of them with rows missing above, the next chunk is
- * mounted when the browser is idle, with no spinner and no blocked input, so by the time the end is reached it is already
- * there. The chunk adds rows, the share scrolled drops under the threshold, and the next prefetch waits for the next half.
+ * Moves the window to [newFrom, newTo): rows that leave are removed, rows that enter are added at that end, the rows in
+ * between stay (no rebuild); the row at the top of the viewport is kept at the same place on the screen.
  */
-function prefetchCatalogRows(): void {
-  if (prefetchQueued || chunkGrowing || chunkPrepending) return;
-  const direction = (): 'down' | 'up' | null => {
-    const box = el.tableScroll;
-    const spacerPx = catalogRenderedFrom * catalogRowHeight;
-    const mountedPx = box.scrollHeight - spacerPx;
-    if (mountedPx <= 0) return null;
-    const below = catalogRenderedCount < catalogVisibleIds.length && scrolledShare() > PREFETCH_AT;
-    const above = catalogRenderedFrom > 0 && (box.scrollTop - spacerPx) / mountedPx < 1 - PREFETCH_AT;
-    if (below && above) return (mountedPx - (box.scrollTop + box.clientHeight - spacerPx)) < (box.scrollTop - spacerPx) ? 'down' : 'up'; // the nearer end first
-    return below ? 'down' : above ? 'up' : null;
-  };
-  if (!direction()) return;
-  prefetchQueued = true;
-  whenIdle(() => {
-    prefetchQueued = false;
-    if (!isCatalogTab(state.activeTab) || chunkGrowing || chunkPrepending) return;
-    const now = direction(); // the reader may have moved on while the browser was busy
-    if (now === 'down') growCatalogChunk();
-    else if (now === 'up') prependCatalogChunk();
+function slideCatalogWindow(newFrom: number, newTo: number): void {
+  const oldFrom = catalogRenderedFrom;
+  const oldTo = catalogRenderedCount;
+  if (newFrom === oldFrom && newTo === oldTo) return;
+  if (newTo <= oldFrom || newFrom >= oldTo) { mountCatalogRows(newFrom, newTo); return; } // nothing in common: a jump
+  const ids = catalogVisibleIds;
+  const cols = visibleCols();
+  const tbody = el.tableBody;
+  const rows = Array.from(tbody.querySelectorAll('tr[data-key]')) as HTMLElement[]; // rows[k] is the row oldFrom + k
+  const kept = rows.slice(Math.max(0, newFrom - oldFrom), Math.min(rows.length, newTo - oldFrom));
+  if (!kept.length) { mountCatalogRows(newFrom, newTo); return; }
+  const headBottom = el.tableHead.getBoundingClientRect().bottom;
+  const anchor = kept.find(row => row.getBoundingClientRect().bottom > headBottom) || kept[0];
+  const anchorTop = anchor.getBoundingClientRect().top;
+  for (let i = oldFrom; i < Math.min(newFrom, oldTo); i++) rows[i - oldFrom].remove();
+  for (let i = Math.max(newTo, oldFrom); i < oldTo; i++) rows[i - oldFrom].remove();
+  if (newFrom < oldFrom) {
+    let html = '';
+    for (let i = newFrom; i < oldFrom; i++) html += stockRowHtml(ids[i], i, cols);
+    kept[0].insertAdjacentHTML('beforebegin', html);
+  }
+  if (newTo > oldTo) {
+    let html = '';
+    for (let i = oldTo; i < newTo; i++) html += stockRowHtml(ids[i], i, cols);
+    kept[kept.length - 1].insertAdjacentHTML('afterend', html);
+  }
+  const top = tbody.querySelector('#catalog-top-spacer') as HTMLElement | null;
+  const bottom = tbody.querySelector('#catalog-bottom-spacer') as HTMLElement | null;
+  if (newFrom > 0) {
+    if (top) (top.firstElementChild as HTMLElement).style.height = `${Math.round(newFrom * catalogRowHeight)}px`;
+    else tbody.insertAdjacentHTML('afterbegin', catalogSpacerHtml('top', newFrom));
+  } else if (top) top.remove();
+  if (newTo < ids.length) {
+    if (bottom) (bottom.firstElementChild as HTMLElement).style.height = `${Math.round((ids.length - newTo) * catalogRowHeight)}px`;
+    else tbody.insertAdjacentHTML('beforeend', catalogSpacerHtml('bottom', ids.length - newTo));
+  } else if (bottom) bottom.remove();
+  catalogRenderedFrom = newFrom;
+  catalogRenderedCount = newTo;
+  el.tableScroll.scrollTop += anchor.getBoundingClientRect().top - anchorTop;
+  rememberCatalogColumnWidths();
+}
+
+/** Called while scrolling: when the viewport gets within CATALOG_MARGIN rows of an end of the window, the window moves (in steps) to keep the viewport in its middle. */
+function ensureCatalogWindow(): void {
+  if (!isCatalogTab(state.activeTab)) return;
+  const len = catalogVisibleIds.length;
+  if (!len) return;
+  const box = el.tableScroll;
+  const first = Math.max(0, Math.min(len - 1, Math.floor(box.scrollTop / catalogRowHeight)));
+  const visible = Math.ceil(box.clientHeight / catalogRowHeight);
+  const last = Math.min(len - 1, first + visible);
+  const needAbove = catalogRenderedFrom > 0 && first - CATALOG_MARGIN < catalogRenderedFrom;
+  const needBelow = catalogRenderedCount < len && last + CATALOG_MARGIN >= catalogRenderedCount;
+  if (!needAbove && !needBelow) return;
+  const around = Math.floor((CATALOG_WINDOW - visible) / 2);
+  let newFrom = Math.max(0, Math.floor((first - around) / CATALOG_STEP) * CATALOG_STEP);
+  const newTo = Math.min(len, newFrom + CATALOG_WINDOW);
+  if (newTo - newFrom < CATALOG_WINDOW) newFrom = Math.max(0, newTo - CATALOG_WINDOW);
+  slideCatalogWindow(newFrom, newTo);
+}
+
+let catalogWindowFrame = 0;
+
+function scheduleCatalogWindow(): void {
+  if (catalogWindowFrame) return;
+  catalogWindowFrame = requestAnimationFrame(() => {
+    catalogWindowFrame = 0;
+    ensureCatalogWindow();
   });
 }
 
-/** The viewport is entirely inside the spacer (a jump up, the scrollbar dragged, Home): mount the window around the rows that belong there. */
-function remountCatalogWindowAtScrollBusy(): void {
-  if (chunkPrepending || chunkGrowing) return;
-  chunkPrepending = true;
-  withBusy('Loading more rows…', () => {
-    try {
-      const top = el.tableScroll.scrollTop;
-      mountCatalogWindow(Math.floor(top / catalogRowHeight));
-      el.tableScroll.scrollTop = top; // rows are as tall as the spacer assumed: the same offset shows the same rows
-    } finally {
-      chunkPrepending = false;
+/**
+ * Column widths come from the mounted rows (automatic table layout), so rows scrolling in and out would make the columns
+ * breathe. A column only ever grows: the widest width seen is kept as its minimum for as long as the column exists.
+ */
+const catalogColumnWidths = new Map<string, number>();
+
+function catalogColumnKey(th: HTMLElement): string {
+  const sorter = th.querySelector('button[data-sort]') as HTMLElement | null;
+  return sorter && sorter.dataset.sort ? sorter.dataset.sort : '';
+}
+
+function applyCatalogColumnWidths(): void {
+  el.tableHead.querySelectorAll('tr:first-child th').forEach((cell: Element) => {
+    const th = cell as HTMLElement;
+    const width = catalogColumnWidths.get(catalogColumnKey(th));
+    if (width) th.style.minWidth = `${width}px`;
+  });
+}
+
+function rememberCatalogColumnWidths(): void {
+  el.tableHead.querySelectorAll('tr:first-child th').forEach((cell: Element) => {
+    const th = cell as HTMLElement;
+    const key = catalogColumnKey(th);
+    if (!key) return;
+    const width = th.getBoundingClientRect().width;
+    if (width > (catalogColumnWidths.get(key) || 0) + 0.5) {
+      catalogColumnWidths.set(key, width);
+      th.style.minWidth = `${width}px`;
     }
-  }, true);
+  });
 }
 
-function prependCatalogChunkBusy(): void {
-  if (chunkPrepending || chunkGrowing || catalogRenderedFrom <= 0) return;
-  chunkPrepending = true;
-  withBusy('Loading more rows…', () => { try { prependCatalogChunk(); } finally { chunkPrepending = false; } }, true);
-}
+/** History pages: how far the bottom of the viewport is through the rows (0 = the top, 1 = the bottom). */
+const PREFETCH_AT = 0.5;
 
-/** Scroll/click extension of the mounted catalog chunk (bounded DOM, rows appended in place). */
-function growCatalogChunk(): void {
-  if (!isCatalogTab(state.activeTab)) return;
-  const ids = catalogVisibleIds;
-  const from = Math.min(ids.length, catalogRenderedCount);
-  if (from >= ids.length) return;
-  const to = Math.min(ids.length, from + CATALOG_SCROLL_CHUNK);
-  catalogRenderedCount = to;
-  const more = el.tableBody.querySelector('#catalog-more-row');
-  if (more) more.remove();
-  const cols = visibleCols();
-  let html = '';
-  for (let i = from; i < to; i++) html += stockRowHtml(ids[i], i, cols);
-  if (to < ids.length) html += catalogMoreRowHtml(ids.length - to);
-  el.tableBody.insertAdjacentHTML('beforeend', html);
+function scrolledShare(): number {
+  const box = el.tableScroll;
+  return box.scrollHeight > 0 ? (box.scrollTop + box.clientHeight) / box.scrollHeight : 0;
 }
 
 function renderCatalogTable(): void {
@@ -2910,7 +2920,7 @@ function renderCatalogTable(): void {
   if (sig !== catalogChunkSig) {
     catalogChunkSig = sig;
     catalogRenderedFrom = 0;
-    catalogRenderedCount = CATALOG_CHUNK;
+    catalogRenderedCount = CATALOG_WINDOW;
   }
   const mounted = Math.min(ids.length, catalogRenderedCount);
   const mountedFrom = Math.min(catalogRenderedFrom, mounted);
@@ -2931,6 +2941,7 @@ function renderCatalogTable(): void {
     ? filterRowHtml('catalog', filterColumns.map(col => ({ key: col.key, label: col.label, type: catalogColumnType(col), extraClass: col.key === 'ticker' ? 'catalog-sticky-col catalog-sticky-ticker' : '' })), filterLeading)
     : '';
   el.tableHead.innerHTML = headerRow + filterRow;
+  applyCatalogColumnWidths();
   bindSortHeaders();
   bindSelectAllCheckbox();
 
@@ -2942,13 +2953,11 @@ function renderCatalogTable(): void {
         : state.activeTab === 'watchlist' ? 'No selected stocks match your search and filters.' : 'No stocks match your search and filters.';
     el.tableBody.innerHTML = `<tr><td colspan="${catalogColspan()}" class="py-12 text-center text-slate-400 dark:text-slate-500">${escapeHtml(message)}</td></tr>`;
   } else {
-    let html = mountedFrom > 0 ? catalogSpacerHtml(mountedFrom) : '';
-    for (let i = mountedFrom; i < mounted; i++) html += stockRowHtml(ids[i], i, cols);
-    if (mounted < ids.length) html += catalogMoreRowHtml(ids.length - mounted);
-    el.tableBody.innerHTML = html;
+    el.tableBody.innerHTML = catalogWindowHtml(mountedFrom, mounted, cols);
   }
 
   measureCatalogRowHeight();
+  rememberCatalogColumnWidths();
   renderCatalogStatus(ids);
   renderSubtitle();
 }
@@ -4079,7 +4088,6 @@ function bindEvents(): void {
       blacklistTickers([blacklistButton.dataset.blacklist || '']);
       return;
     }
-    if (target.closest('#catalog-more-row')) growCatalogChunkBusy();
   });
 
   // Column filters and type badges live in the table header (delegated: the header is rebuilt on every render).
@@ -4130,11 +4138,7 @@ function bindEvents(): void {
   el.tableScroll.addEventListener('scroll', () => {
     const distanceToBottom = el.tableScroll.scrollHeight - el.tableScroll.scrollTop - el.tableScroll.clientHeight;
     if (isCatalogTab(state.activeTab)) {
-      // the reader outran the prefetch: grow or remount now, under the spinner
-      if (distanceToBottom < 600) growCatalogChunkBusy();
-      else if (catalogRenderedFrom > 0 && el.tableScroll.scrollTop + el.tableScroll.clientHeight < catalogRenderedFrom * catalogRowHeight) remountCatalogWindowAtScrollBusy();
-      else if (catalogRenderedFrom > 0 && el.tableScroll.scrollTop - catalogRenderedFrom * catalogRowHeight < 600) prependCatalogChunkBusy();
-      else prefetchCatalogRows();
+      scheduleCatalogWindow();
       return;
     }
     if (state.activeTab === 'detail:history') {
