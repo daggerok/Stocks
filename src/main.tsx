@@ -39,6 +39,7 @@ const COLUMN_TYPES_KEY = 'stocks-column-types';
 const SHOW_FILTERS_KEY = 'stocks-show-filters';
 const STICKY_RANK_KEY = 'stocks-sticky-rank';
 const FILTER_DEBOUNCE_MS = 250;
+const SEARCH_DEBOUNCE_MS = 200;
 const LOCAL_BASE = './api/stocks/';
 const REMOTE_BASE = 'https://daggerok.github.io/Stocks/api/stocks/';
 const INDEX_TIMEOUT_MS = 30000;
@@ -2838,7 +2839,12 @@ function syncHeadHeight(): void {
 }
 
 /** Re-renders the table after a filter change and puts the caret back into the filter input that was being edited. */
-function rerenderKeepingFilterFocus(): void {
+function rerenderKeepingFilterFocus(busy: boolean): void {
+  if (busy) withBusy('Updating the table…', rerenderKeepingFilterFocusNow);
+  else rerenderKeepingFilterFocusNow();
+}
+
+function rerenderKeepingFilterFocusNow(): void {
   const active: any = document.activeElement;
   const key = active && active.dataset ? active.dataset.filterCol : undefined;
   const scope = active && active.dataset ? active.dataset.filterScope : undefined;
@@ -2853,13 +2859,13 @@ function rerenderKeepingFilterFocus(): void {
 
 const filterTimers: Map<string, any> = new Map();
 
-function setFilter(scope: string, key: string, value: string): void {
+function setFilter(scope: string, key: string, value: string, busy = false): void {
   const next = { ...(state.filters[scope] || {}) };
   if (value.trim() === '') delete next[key];
   else next[key] = value;
   state.filters[scope] = next;
   persistColumnFilters();
-  rerenderKeepingFilterFocus();
+  rerenderKeepingFilterFocus(busy);
 }
 
 /** Typing applies the filter after a short pause (FILTER_DEBOUNCE_MS), also when the input loses focus meanwhile; Enter applies it at once (a re-render on blur would swallow the click on a header). */
@@ -2867,7 +2873,7 @@ function scheduleFilter(scope: string, key: string, value: string): void {
   const id = `${scope}:${key}`;
   const pending = filterTimers.get(id);
   if (pending !== undefined) clearTimeout(pending);
-  filterTimers.set(id, setTimeout(() => { filterTimers.delete(id); if (filterExpressionFor(scope, key) !== value) setFilter(scope, key, value); }, FILTER_DEBOUNCE_MS));
+  filterTimers.set(id, setTimeout(() => { filterTimers.delete(id); if (filterExpressionFor(scope, key) !== value) setFilter(scope, key, value, true); }, FILTER_DEBOUNCE_MS));
 }
 
 function flushFilter(scope: string, key: string, value: string): void {
@@ -3696,10 +3702,13 @@ function bindEvents(): void {
     applyTheme(dark);
   });
 
+  // The query is stored at once; the table is rebuilt after a short pause in typing, under the spinner (a rebuild costs 0.1-0.8 s at 1000+ mounted rows).
+  let searchTimer: ReturnType<typeof setTimeout> | undefined;
   el.searchInput.addEventListener('input', () => {
     setCurrentQuery(el.searchInput.value.trim());
     updateSearchClearBtn();
-    render();
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => renderBusy(), SEARCH_DEBOUNCE_MS);
   });
 
   el.searchClearBtn.addEventListener('click', () => {
@@ -3708,7 +3717,7 @@ function bindEvents(): void {
     persistSearches();
     updateSearchClearBtn();
     if (typeof el.searchInput.focus === 'function') el.searchInput.focus();
-    render();
+    renderBusy();
   });
 
   el.copyBtn.addEventListener('click', copyTickers);
