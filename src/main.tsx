@@ -2904,7 +2904,7 @@ function cycleColumnType(scope: string, key: string, reset: boolean): void {
   else map[key] = next;
   state.typeOverrides[scope] = map;
   persistColumnTypes();
-  renderBusy();
+  render();
 }
 
 type GridCol = { label: string; key: string; numeric: boolean };
@@ -3878,3 +3878,65 @@ function init(): void {
 }
 
 init();
+
+// ---- header summary popover: hover, focus or click on the stock count opens it ----
+
+(() => {
+  const trigger = document.getElementById('ticker-count');
+  const panel = document.getElementById('app-summary');
+  if (!trigger || !panel) return;
+  document.body.appendChild(panel); // top layer: the header's stacking context must not put it under later panels
+  let pinned = false;
+  let closeTimer: ReturnType<typeof setTimeout> | undefined;
+  const position = (): void => {
+    const rect = trigger.getBoundingClientRect();
+    panel.style.left = `${Math.max(16, Math.min(rect.right - panel.offsetWidth, innerWidth - panel.offsetWidth - 16))}px`;
+    panel.style.top = `${Math.max(16, Math.min(rect.bottom + 8, innerHeight - panel.offsetHeight - 16))}px`;
+  };
+  const show = (): void => {
+    clearTimeout(closeTimer);
+    panel.hidden = false;
+    trigger.setAttribute('aria-expanded', 'true');
+    position();
+  };
+  const hide = (): void => {
+    clearTimeout(closeTimer);
+    panel.hidden = true;
+    trigger.setAttribute('aria-expanded', 'false');
+  };
+  const scheduleHide = (): void => {
+    clearTimeout(closeTimer);
+    closeTimer = setTimeout(() => {
+      const focused = document.activeElement;
+      if (!pinned && !trigger.matches(':hover') && !panel.matches(':hover') &&
+          focused !== trigger && !panel.contains(focused)) hide();
+    }, 150);
+  };
+  trigger.addEventListener('pointerenter', event => { if (event.pointerType !== 'touch') show(); });
+  panel.addEventListener('pointerenter', () => clearTimeout(closeTimer));
+  trigger.addEventListener('pointerleave', scheduleHide);
+  panel.addEventListener('pointerleave', scheduleHide);
+  trigger.addEventListener('focus', show);
+  panel.addEventListener('focusin', show);
+  trigger.addEventListener('blur', scheduleHide);
+  panel.addEventListener('focusout', scheduleHide);
+  trigger.addEventListener('click', () => { pinned = !pinned; if (pinned) show(); else hide(); });
+  document.addEventListener('keydown', event => {
+    if (event.key !== 'Escape') return;
+    pinned = false;
+    if (panel.contains(document.activeElement)) trigger.focus();
+    hide();
+  });
+  document.addEventListener('pointerdown', event => {
+    const target = event.target as Node;
+    if (!trigger.contains(target) && !panel.contains(target)) { pinned = false; hide(); }
+  });
+  addEventListener('resize', () => { if (!panel.hidden) position(); });
+  addEventListener('scroll', () => { if (!panel.hidden) position(); }, { passive: true });
+  if (typeof ResizeObserver === 'function') new ResizeObserver(() => { if (!panel.hidden) position(); }).observe(panel);
+})();
+
+// ---- browser test hooks: the module scope hides these from the page, the UI tests in ../ETFs/.claude/tools/ui-std reach them through window ----
+
+Object.assign(window, { state, render, catalogIds, catalogFilterColumns, detectedCatalogType, filterExpressionFor, gridTypeCache, menuColumns });
+Object.defineProperty(window, 'store', { get: () => store });

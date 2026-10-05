@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Stocks of Nasdaq, NYSE and Cboe in one sortable table: dividends, FCF payout, liquidity and leverage ratios, growth, margins, ROIC, valuation multiples, performance and total returns. Independent unofficial tool; data comes from the static feed generated from SEC EDGAR and Yahoo Finance." />
+  <title>Stocks</title>
+  <link rel="icon" type="image/x-icon" href="./favicon.ico">
+
+  <!-- Inter font  -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="./index.css" type="text/css" rel="stylesheet" />
+
+  <!-- Synchronous theme init (prevents flash, same strategy as Amplify / iShares) -->
+  <script>
+    (function () {
+      var dark = false;
+      try { dark = localStorage.getItem('stocks-theme') === 'dark'; } catch (e) {}
+      document.documentElement.classList.toggle('dark', dark);
+      document.documentElement.style.backgroundColor = dark ? '#020617' : '#f8fafc';
+    })();
+  </script>
+
+</head>
+<body class="min-h-screen font-sans bg-slate-50 text-slate-900 dark:bg-slate-900 dark:text-slate-100 transition-colors duration-300">
+  <div class="min-h-screen flex flex-col animate-fade-in">
+
+    <header class="bg-white dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 px-4 sm:px-8 py-3 flex flex-wrap justify-between items-center gap-3 z-40 shadow-xs shrink-0">
+      <div class="flex flex-1 flex-wrap items-center gap-x-3 gap-y-1.5 min-w-0">
+        <div class="flex items-start gap-3 min-w-0">
+          <svg class="w-6 h-6 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M22 7l-8.5 8.5-5-5L2 17" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7h6v6" />
+          </svg>
+          <h1 class="min-w-0 text-xl font-bold tracking-tight text-slate-900 dark:text-white leading-tight">Stocks</h1>
+        </div>
+        <span id="app-subtitle" class="basis-full sm:basis-auto text-sm text-slate-500 dark:text-slate-400"></span>
+      </div>
+      <div class="flex items-center gap-3 shrink-0">
+        <span id="load-warning" hidden class="bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-700/50 text-xs font-semibold px-3 py-1.5 rounded-full"></span>
+        <button type="button" aria-controls="app-summary" aria-expanded="false" aria-label="Stock catalog information" id="ticker-count" class="bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 text-sm font-semibold px-3.5 py-1.5 rounded-full border border-blue-200 dark:border-blue-500/30">
+          Loading…
+        </button>
+        <span id="app-summary" role="region" aria-label="Stock catalog information" hidden>
+          Search every stock, select stocks via the “Use” checkbox, then open the Watchlist tab.
+        </span>
+        <button id="theme-toggle" class="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700 transition text-base leading-none" title="Toggle Theme">🌙</button>
+      </div>
+    </header>
+
+    <main class="flex-1 w-full max-w-full p-4 sm:p-8 space-y-6">
+
+      <!-- Search, Tabs & Action Bar -->
+      <div class="relative z-50 flex flex-wrap items-center gap-x-2.5 gap-y-2.5 bg-white dark:bg-slate-800/80 px-3 py-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm backdrop-blur">
+
+        <div class="relative flex items-center w-full lg:w-auto lg:flex-1 lg:min-w-[8rem] lg:max-w-sm">
+          <input
+            type="text"
+            id="search-input"
+            placeholder="Search stocks..." title="Search by ticker, company, exchange, sector or industry"
+            disabled
+            class="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 border border-slate-200 dark:border-slate-700 rounded-lg pl-4 pr-8 py-2 w-full focus:outline-none focus:border-blue-500 text-sm placeholder-slate-400 dark:placeholder-slate-500 disabled:opacity-50 disabled:cursor-not-allowed transition"
+          />
+          <button
+            type="button"
+            id="search-clear-btn"
+            class="hidden absolute right-2.5 top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center rounded-full text-slate-400 hover:text-slate-700 dark:text-slate-500 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition text-sm leading-none focus:outline-none"
+            title="Clear search filter"
+            aria-label="Clear search filter"
+          >✕</button>
+          <div id="search-suggest" class="sg-panel" role="listbox" aria-label="Filter suggestions" hidden></div>
+        </div>
+
+        <!-- Catalog tabs: All Stocks and the Watchlist of selected stocks (exchange and sector are filters, see the bar below). -->
+        <div id="tabs-bar" class="hidden flex items-center gap-1.5 py-1 shrink-0"></div>
+
+<div class="dd-root">
+          <button type="button" id="exchange-btn" class="dd-trigger" aria-haspopup="dialog" aria-expanded="false" aria-controls="exchange-panel"><span class="dd-label">Exchanges:</span><span class="dd-value" id="exchange-summary">...</span><span class="dd-badge" id="exchange-badge" hidden></span><svg class="dd-chev" viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 8 5 5 5-5"/></svg></button>
+          <div id="exchange-panel" class="dd-panel" hidden></div>
+        </div>
+        <div class="dd-root">
+          <button type="button" id="sector-btn" class="dd-trigger" aria-haspopup="dialog" aria-expanded="false" aria-controls="sector-panel"><span class="dd-label">Sectors:</span><span class="dd-value" id="sector-summary">...</span><span class="dd-badge" id="sector-badge" hidden></span><svg class="dd-chev" viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 8 5 5 5-5"/></svg></button>
+          <div id="sector-panel" class="dd-panel dd-panel-wide" hidden></div>
+        </div>
+        <div class="dd-root">
+          <button type="button" id="columns-btn" class="dd-trigger" aria-haspopup="dialog" aria-expanded="false" aria-controls="columns-panel"><span class="dd-label">Columns:</span><span class="dd-value" id="columns-summary">...</span><span class="dd-badge" id="columns-badge" hidden></span><svg class="dd-chev" viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 8 5 5 5-5"/></svg></button>
+          <div id="columns-panel" class="dd-panel" hidden></div>
+        </div>
+        <button type="button" id="filters-btn" class="dd-trigger" aria-pressed="true" title="Show or hide the row of filter inputs under the column headers"><span class="dd-label">Filters:</span><span class="dd-value" id="filters-summary">on</span><span class="dd-badge" id="filters-badge" hidden></span></button>
+        <button type="button" id="clear-filters-btn" class="dd-act" hidden title="Clear every column filter of the shown table">Clear filters</button>
+        <button type="button" id="rank-btn" class="dd-trigger" aria-pressed="false" title="Sticky #: number the rows by their rank in the sorted table before the column filters, so filtered rows keep their rank (1, 4, 7...). Off: 1..N of the shown rows"><span class="dd-label">Sticky #:</span><span class="dd-value" id="rank-summary">off</span></button>
+        <label class="inline-flex items-center gap-2 text-slate-600 dark:text-slate-300 cursor-pointer" title="Hide stocks whose prices are older than the given number of days or have no known as-of date">
+          <input type="checkbox" id="stale-toggle" class="w-4 h-4 accent-blue-600 cursor-pointer" />
+          <span class="whitespace-nowrap">Hide stale &gt;</span>
+          <input type="number" id="stale-days" min="1" max="3650" value="10" class="w-12 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 border border-slate-200 dark:border-slate-700 rounded-lg px-1 text-center py-2 text-sm focus:outline-none focus:border-blue-500" />
+          <span>d</span>
+        </label>
+        <span id="load-progress" class="empty:hidden text-xs text-slate-500 dark:text-slate-400" aria-live="polite"></span>
+
+
+        <div class="flex flex-wrap items-center gap-1.5 w-full lg:w-auto lg:ml-auto justify-end shrink-0">
+          <button id="copy-btn" disabled class="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 px-3 py-2 rounded-lg text-sm font-medium transition active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-200 dark:hover:bg-slate-700 disabled:hover:bg-slate-100 dark:disabled:hover:bg-slate-800">Copy Tickers</button>
+          <button id="export-csv-btn" disabled class="bg-blue-600 hover:bg-blue-500 text-white px-3 py-2 rounded-lg text-sm font-medium transition active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-blue-600">Export .csv</button>
+          <button id="export-txt-btn" disabled class="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-2 rounded-lg text-sm font-medium transition active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-emerald-600">Export .txt</button>
+          <button id="reset-btn" disabled title="Reset everything to the first-visit view (asks first): selection, searches, sorts, exchanges, sectors and columns, hide stale, column filters, Sticky # and remembered views. The blacklist and the theme are kept" class="bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-700/50 px-3 py-2 rounded-lg text-sm font-medium transition active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-rose-200 dark:hover:bg-rose-800/60 disabled:hover:bg-rose-100 dark:disabled:hover:bg-rose-900/40">Clear</button>
+          <button id="blacklist-btn" class="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 px-3 py-2 rounded-lg text-sm font-medium transition active:scale-95 hover:bg-slate-200 dark:hover:bg-slate-700" title="Manage the blacklist of stocks hidden from All Stocks (kept in browser localStorage)" aria-expanded="false">Blacklist</button>
+        </div>
+
+      </div>
+
+      <div id="blacklist-panel" class="bg-white dark:bg-slate-800/80 px-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm backdrop-blur">
+        <div class="flex flex-col sm:flex-row sm:items-center gap-2.5">
+          <input type="text" id="blacklist-input" placeholder="Add tickers to blacklist (e.g. BRK-B, GOOG)" class="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 w-full sm:w-80 focus:outline-none focus:border-blue-500 text-sm placeholder-slate-400 dark:placeholder-slate-500 transition" />
+          <div class="flex flex-wrap items-center gap-2.5">
+            <button id="blacklist-add-btn" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition active:scale-95">Add</button>
+            <button id="blacklist-clear-btn" class="bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-700/50 px-3 py-2 rounded-lg text-sm font-medium transition active:scale-95 hover:bg-rose-200 dark:hover:bg-rose-800/60">Clear Blacklist</button>
+          </div>
+        </div>
+        <div id="blacklist-chips" class="flex flex-wrap gap-1.5 mt-3"></div>
+        <p id="blacklist-empty" class="text-xs text-slate-400 dark:text-slate-500 mt-3">The blacklist is empty. Blacklisted stocks disappear from All Stocks (and from selection), and are kept in your browser localStorage.</p>
+      </div>
+
+      <nav id="selected-tabs-panel" class="bg-white dark:bg-slate-800/80 px-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm backdrop-blur" aria-label="Selected stock detail views">
+        <div id="selected-tabs-bar" class="flex flex-wrap items-center justify-center gap-1.5 overflow-x-auto py-1 w-full max-w-full themed-scroll"></div>
+      </nav>
+
+      <div class="bg-white dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm backdrop-blur overflow-hidden relative">
+        <div id="busy-overlay" class="busy-overlay" role="status" aria-live="polite"><div class="busy-spinner"></div><span id="busy-label">Loading the stock feed…</span></div>
+        <div id="table-scroll" class="overflow-x-auto overflow-y-auto themed-scroll">
+          <table class="w-full text-left whitespace-nowrap">
+            <thead id="table-head" class="bg-slate-50 dark:bg-slate-900/95 text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wider border-b border-slate-200 dark:border-slate-700 sticky top-0 z-20 backdrop-blur">
+              <tr>
+                <th class="py-3.5 px-4 w-12 text-center" title="Row index">#</th>
+                <th class="py-3.5 px-4" title="Column 1">Column 1</th>
+              </tr>
+            </thead>
+            <tbody id="table-body" class="divide-y divide-slate-100 dark:divide-slate-700/50 text-sm">
+              <tr>
+                <td colspan="10" class="py-12 text-center text-slate-400 dark:text-slate-500">Loading the stock catalog…</td>
+              </tr>
+            </tbody>
+          </table>
+          <div id="static-load-sentinel" class="hidden py-3 text-center text-xs text-slate-500 dark:text-slate-400 cursor-pointer" aria-live="polite">
+            <span id="static-load-status"></span>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <footer class="px-4 sm:px-8 pb-8 text-xs text-slate-500 dark:text-slate-400 space-y-2">
+      <p>
+        Stocks is an independent, unofficial tool and is not affiliated with, endorsed by or sponsored by any exchange, issuer or data provider. The static feed is generated from SEC EDGAR XBRL filings and Yahoo Finance.
+        Annual fundamentals come from the latest fiscal year, valuation multiples from a trailing-twelve-month snapshot, returns from daily prices; unavailable values are shown as a dash, never as zero. Nothing here is investment advice.
+      </p>
+      <p>MIT License · <a href="https://github.com/daggerok/Stocks" target="_blank" rel="noopener noreferrer" class="font-semibold text-blue-600 dark:text-blue-400 hover:underline">daggerok/Stocks</a> · <a href="https://daggerok.github.io/ETFs/" target="_blank" rel="noopener noreferrer" class="text-blue-600 dark:text-blue-400 hover:underline">ETFs</a></p>
+    </footer>
+  </div>
+
+  <script src="./main.tsx" type="module"></script>
+</body>
+</html>

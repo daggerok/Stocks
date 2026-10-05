@@ -12,7 +12,7 @@ Same as the ETF contract in `../ETFs/.claude/rules/etf-updater-contract.md` (con
 
 ## Process
 - Work on a branch off the fresh `origin/main`, open a PR, merge with `gh pr merge --rebase --delete-branch` once the gates pass (owner's standing delegation), then `git switch main && git pull --ff-only` and delete the local branch. Never push to `main`
-- Gates: `bun install --frozen-lockfile`, `bun test` (exit 0), `bun build --target=bun scripts/update-data.ts --outfile=/dev/null`, `bun build --target=bun app.tsx --outfile=/dev/null`, `git diff --check`, `bun ../ETFs/.claude/tools/stocks-std/check-readme.ts .` and the workflow and scripts checks of `etf-std`; after changing the controls regenerate the workflow and update the README controls table
+- Gates: `bun install --frozen-lockfile`, `bun test` (exit 0), `bun build --target=bun scripts/update-data.ts --outfile=/dev/null`, `bun build --target=bun src/main.tsx --outfile=/dev/null`, `bun run build` (Parcel, writes `dist/`), `git diff --check`, `bun ../ETFs/.claude/tools/stocks-std/check-readme.ts .` and the workflow and scripts checks of `etf-std`; after changing the controls regenerate the workflow and update the README controls table
 - UI changes also need the browser tests of `../ETFs/.claude/tools/ui-std/` (`stocks-filters-uitest.ts`, `stocks-columns-uitest.ts`) ending `0 failed; console errors: none`
 - Never commit data from a test or acceptance run (`git checkout -- api/` and delete created files); the published feed is the one the workflow produces
 - Commit messages are Conventional Commits; prose uses plain hyphens and `->`, no trailing periods

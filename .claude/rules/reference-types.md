@@ -1,6 +1,6 @@
 # Never remove the `/// <reference types="bun" />` / `<reference types="node" />` line
 
-Any `.ts`/`.tsx`/`.js`/`.jsx` file in this repo (`scripts/update-data.ts`, its test and `app.tsx`; the same rule holds in the 29 ETF repos and the hub) that uses Bun-style
+Any `.ts`/`.tsx`/`.js`/`.jsx` file in this repo (`scripts/update-data.ts`, its test and `src/main.tsx`; the same rule holds in the 29 ETF repos and the hub) that uses Bun-style
 functionality (top-level `import ... from 'node:*'` run directly by Bun,
 `Bun.*` APIs, `bun:test`, `import.meta.main`, etc.) needs a triple-slash
 reference directive (`/// <reference types="bun" />` or `"node"`) so

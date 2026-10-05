@@ -13,10 +13,10 @@ transpiles and runs `.ts` directly with no build step and no `tsconfig.json`
 Bun has TypeScript support out of the box; it does not need the `typescript`
 package installed to run these scripts.
 
-**How to verify a change to `scripts/update-data.ts` or `app.tsx` (or any script here):**
+**How to verify a change to `scripts/update-data.ts` or `src/main.tsx` (or any script here):**
 
 - `bun test` (existing `update-data.test.ts`)
-- `bun build --target=bun scripts/update-data.ts --outfile=/dev/null` and `bun build --target=bun app.tsx --outfile=/dev/null` as a
+- `bun build --target=bun scripts/update-data.ts --outfile=/dev/null` and `bun build --target=bun src/main.tsx --outfile=/dev/null` as a
   quick syntax/bundling sanity check
 - an actual run: `bun scripts/update-data.ts` (scoped with `TICKERS=...` and
   `REQUEST_SLEEP=0` for a fast, cheap dry run), then `git checkout -- api/` and delete created files
