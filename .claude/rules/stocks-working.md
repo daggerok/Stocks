@@ -4,7 +4,7 @@
 
 ## Layout
 - `scripts/` holds exactly `update-data.config.json`, `update-data.test.ts`, `update-data.ts`; `.github/` holds only `workflows/update-data.yml` and `dependabot.yml`; no tsconfig, no typescript, no fixtures, no helper scripts, no worklog or evidence folders
-- GitHub Pages deploys from `main` `/` (`build_type: legacy`), never an Actions workflow
+- GitHub Pages deploys the Parcel build: `.github/workflows/github-pages.yml` runs `bun install -E` and `bun run build-github-pages` and uploads `dist/` (on push to `main`, manually, and after the data workflow succeeds). The Pages source must be "GitHub Actions" (`build_type: workflow`); the old legacy `main` `/` setup no longer serves a site
 - The workflow is generated from `../ETFs/.claude/tools/stocks-std/spec.json` with `../ETFs/.claude/tools/etf-std/gen-workflow.ts` and never hand-edited (24 `workflow_dispatch` inputs max incl. `advanced`; scheduled runs must guard `DISPATCH_INPUTS`)
 
 ## Updater contract
