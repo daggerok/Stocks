@@ -1720,13 +1720,13 @@ function renderTabButtons(container: any, tabs: TabInfo[], alwaysShow: boolean):
   const allSelected = store !== null && everyone.length > 0 && everyone.every(id => state.selected.has(store ? store.ticker[id] : ''));
   container.innerHTML = tabs.map(tab => {
     const isActive = tab.id === state.activeTab;
-    const activeClasses = 'bg-blue-600 text-white font-medium border-blue-500 shadow-sm';
+    const activeClasses = 'bg-blue-600 text-white font-medium border-blue-500 shadow-xs';
     const inactiveClasses = 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700 border-slate-200 dark:border-slate-700';
     if (tab.id === 'All') {
       return `
         <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs transition border whitespace-nowrap ${isActive ? activeClasses : inactiveClasses}">
           <input type="checkbox" id="select-all-toggle" ${allSelected ? 'checked' : ''} class="w-3.5 h-3.5 accent-blue-600 cursor-pointer" title="Select / Deselect all stocks" />
-          <button data-tab="All" class="font-medium hover:underline focus:outline-none">
+          <button data-tab="All" class="font-medium hover:underline focus:outline-hidden">
             ${escapeHtml(tab.label)} (${tab.count})
           </button>
         </div>
@@ -2625,7 +2625,7 @@ function sortHeader(label: string, key: string, numeric = false, extraClass = ''
   const arrow = active ? (state.sortDir === 'asc' ? ' ↑' : ' ↓') : '';
   const align = numeric ? ' text-right' : '';
   const tooltip = getHeaderTooltip(label);
-  return `<th class="py-3.5 px-4${align}${extraClass ? ' ' + extraClass : ''}" title="${escapeHtml(tooltip)}"><div class="flex items-center gap-1.5${numeric ? ' justify-end' : ''}"><button data-sort="${escapeHtml(key)}" title="${escapeHtml(tooltip)}" class="uppercase tracking-wider hover:text-blue-600 dark:hover:text-blue-400 focus:outline-none focus:text-blue-600 dark:focus:text-blue-400">${escapeHtml(label)}${arrow}</button>${badge}</div></th>`;
+  return `<th class="py-3.5 px-4${align}${extraClass ? ' ' + extraClass : ''}" title="${escapeHtml(tooltip)}"><div class="flex items-center gap-1.5${numeric ? ' justify-end' : ''}"><button data-sort="${escapeHtml(key)}" title="${escapeHtml(tooltip)}" class="uppercase tracking-wider hover:text-blue-600 dark:hover:text-blue-400 focus:outline-hidden focus:text-blue-600 dark:focus:text-blue-400">${escapeHtml(label)}${arrow}</button>${badge}</div></th>`;
 }
 
 /** Header badge with the column type (auto-detected or set by the user); click cycles the type, Shift+click returns to auto-detection. */
@@ -2736,7 +2736,7 @@ function stockRowHtml(id: number, index: number, cols: Col[]): string {
           <td class="catalog-sticky-col catalog-sticky-use py-2.5 px-4 text-center">
             <div class="inline-flex items-center justify-center gap-1.5">
               <input data-checkbox="${escapeHtml(key)}" type="checkbox" ${selected ? 'checked' : ''} class="w-4 h-4 accent-blue-600 cursor-pointer" aria-label="Use ${escapeHtml(key)}" />
-              <button data-blacklist="${escapeHtml(key)}" class="w-4 h-4 rounded text-slate-300 dark:text-slate-600 hover:text-rose-500 dark:hover:text-rose-400 leading-none transition" title="Blacklist ${escapeHtml(key)} - hide it from All Stocks">✕</button>
+              <button data-blacklist="${escapeHtml(key)}" class="w-4 h-4 rounded-sm text-slate-300 dark:text-slate-600 hover:text-rose-500 dark:hover:text-rose-400 leading-none transition" title="Blacklist ${escapeHtml(key)} - hide it from All Stocks">✕</button>
             </div>
           </td>
           <td class="catalog-sticky-col catalog-sticky-ticker py-2.5 px-4 font-mono font-semibold text-blue-600 dark:text-blue-400">${escapeHtml(key)}</td>
@@ -3066,7 +3066,7 @@ function setFilter(scope: string, key: string, value: string, busy = false): voi
   rerenderKeepingFilterFocus(busy);
 }
 
-/** Typing applies the filter after a short pause (FILTER_DEBOUNCE_MS), also when the input loses focus meanwhile; Enter applies it at once (a re-render on blur would swallow the click on a header). */
+/** Typing applies the filter after a short pause (FILTER_DEBOUNCE_MS), also when the input loses focus meanwhile; Enter applies it at once (a re-render on blur-sm would swallow the click on a header). */
 function scheduleFilter(scope: string, key: string, value: string): void {
   const id = `${scope}:${key}`;
   const pending = filterTimers.get(id);
