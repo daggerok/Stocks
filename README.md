@@ -1,14 +1,17 @@
 # Stocks
 
-One of the app's features lets you rank every stock of Nasdaq, NYSE and Cboe on the numbers that matter to a long-term holder: dividend yield, dividend growth, payout and FCF payout, quick and current ratios, debt to equity and net debt to EBITDA, revenue, EPS, FCF, EBITDA, CapEx, asset and debt growth, net, gross, EBITDA and FCF margins with their year-over-year change, ROIC, valuation multiples (P/E, forward P/E, P/S, forward P/S, P/FCF, EV/EBITDA, FCF/EBITDA) and performance and total returns over 1, 3, 5 and 10 years with CAGRs. Another feature lets you tick stocks into a Watchlist, open per-stock Fundamentals, Dividends and History tabs, and copy or export the tickers. A single-file client-side tool that reads the generated `./api/stocks` static feed (SEC EDGAR XBRL annual filings, SEC company ticker table, Yahoo Finance prices, dividends and valuation snapshot) into a searchable stock catalog - the same look, feel and interaction model as the ETFs applications, with no build step, no bundler and no dependencies
+One of the app's features lets you rank every stock of Nasdaq, NYSE and Cboe on the numbers that matter to a long-term holder: dividend yield, dividend growth, payout and FCF payout, quick and current ratios, debt to equity and net debt to EBITDA, revenue, EPS, FCF, EBITDA, CapEx, asset and debt growth, net, gross, EBITDA and FCF margins with their year-over-year change, ROIC, valuation multiples (P/E, forward P/E, P/S, forward P/S, P/FCF, EV/EBITDA, FCF/EBITDA) and performance and total returns over 1, 3, 5 and 10 years with CAGRs. Another feature lets you tick stocks into a Watchlist, open per-stock Fundamentals, Dividends and History tabs, and copy or export the tickers. A client-side tool (Parcel + Tailwind CSS v4, built into `dist`) that reads the generated `./api/stocks` static feed (SEC EDGAR XBRL annual filings, SEC company ticker table, Yahoo Finance prices, dividends and valuation snapshot) into a searchable stock catalog - the same look, feel and interaction model as the ETFs applications, with no runtime dependencies
 
 ## Using Bun
 
 ```bash
 bunx degit daggerok/Stocks#main ./12345 && cd $_
-bunx serve . -p 1234
+bun install
+bun run serve
 open http://0:1234
 ```
+
+`bun run serve` is the Parcel dev server (it copies `api/` into `dist/api` first); `bun run build` writes the production site to `dist` and `bun run build-github-pages` does the same for the `/Stocks/` public URL
 
 The published application is available at <https://daggerok.github.io/Stocks/>
 
@@ -117,7 +120,7 @@ SKIP_YAHOO=true ./scripts/update-data.ts
 
 ## TypeScript and verification
 
-The browser app is intentionally build-free: `index.html` carries the markup, styles and bootstrap, and `app.tsx` is TypeScript compiled in the browser with Babel standalone - no build step, no bundler, no `tsconfig.json` needed. Bun runs TypeScript out of the box
+The browser app lives in `src/`: `index.html` (markup), `main.tsx` (TypeScript), `index.css` (Tailwind CSS v4 plus the app styles) and `favicon.ico`, built by Parcel into `dist` (`bun run build`, same setup as daggerok/csv and daggerok/options-desk) - no `tsconfig.json` needed. Bun runs the updater TypeScript out of the box. The migration notes are in `.claude/parcel-migration.md`
 
 Verification before every publish:
 
