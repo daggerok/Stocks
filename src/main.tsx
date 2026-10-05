@@ -29,6 +29,7 @@ const DASH = '–'; // placeholder for null / unavailable values, never 0
 const THEME_KEY = 'stocks-theme';
 const SELECTED_KEY = 'stocks-selected';
 const BLACKLIST_KEY = 'stocks-blacklisted';
+const CLEAR_CHOICES_KEY = 'stocks-clear-choices'; // what the Clear dialog had ticked at the last OK (not reset by Clear itself)
 const ACTIVE_KEY = 'stocks-active';
 const FILTERS_KEY = 'stocks-tab-filters';
 const SORTS_KEY = 'stocks-tab-sorts';
@@ -3476,26 +3477,45 @@ function activateStock(key: string): void {
 }
 
 /**
- * Everything the Clear button resets: the saved keys are removed (a reload shows the
- * first-visit view) and reset() puts the state back to its default. Not listed, so kept: the blacklist and the theme.
+ * Everything the Clear dialog can reset. Each item has a stable id (the remembered choice is stored by id), the saved keys that
+ * are removed (a reload shows the first-visit view) and reset(), which puts the state back to its default. The theme is not
+ * listed, so it is always kept.
  */
-const RESET_ITEMS: { label: string; keys: string[]; reset(): void }[] = [
-  { label: 'selected stocks (Watchlist)', keys: [SELECTED_KEY, ACTIVE_KEY], reset: () => { state.selected.clear(); state.activeKey = null; } },
-  { label: 'searches', keys: [FILTERS_KEY], reset: () => { state.queryByTab = {}; } },
-  { label: 'sort order', keys: [SORTS_KEY], reset: () => { state.sortByTab = {}; } },
-  { label: 'open tab', keys: [SITE_STATE_KEY], reset: () => { state.activeTab = 'All'; } },
-  { label: 'exchange and sector selection', keys: [VIEW_FILTERS_KEY], reset: () => { state.hiddenExchanges = new Set(); state.hiddenSectors = new Set(); } },
-  { label: 'shown columns', keys: [VIEW_FILTERS_KEY], reset: () => { state.hiddenCols = new Set(); } },
-  { label: 'hide stale returns', keys: [VIEW_FILTERS_KEY], reset: () => { state.hideStale = false; state.staleDays = DEFAULT_STALE_DAYS; } },
-  { label: 'column filters and types', keys: [COLUMN_FILTERS_KEY, COLUMN_TYPES_KEY], reset: () => { state.filters = {}; state.typeOverrides = {}; } },
-  { label: 'Filters on/off', keys: [SHOW_FILTERS_KEY], reset: () => { state.showFilters = true; } },
-  { label: 'Sticky #', keys: [STICKY_RANK_KEY], reset: () => { state.stickyRank = false; } },
-  { label: 'remembered table views', keys: [VIEW_KEY], reset: () => { savedViews = {}; settledViewTabs.clear(); restoringViewTabs.clear(); clearTimeout(saveViewTimer); } },
+type ResetItem = { id: string; label: string; keys: string[]; reset(): void };
+const RESET_ITEMS: ResetItem[] = [
+  { id: 'selection', label: 'Selected stocks (Watchlist)', keys: [SELECTED_KEY, ACTIVE_KEY], reset: () => { state.selected.clear(); state.activeKey = null; } },
+  { id: 'searches', label: 'Searches', keys: [FILTERS_KEY], reset: () => { state.queryByTab = {}; } },
+  { id: 'sort', label: 'Sort order', keys: [SORTS_KEY], reset: () => { state.sortByTab = {}; } },
+  { id: 'tab', label: 'Open tab', keys: [SITE_STATE_KEY], reset: () => { state.activeTab = 'All'; } },
+  { id: 'exchange-sector', label: 'Exchange and sector selection', keys: [VIEW_FILTERS_KEY], reset: () => { state.hiddenExchanges = new Set(); state.hiddenSectors = new Set(); } },
+  { id: 'columns', label: 'Shown columns', keys: [VIEW_FILTERS_KEY], reset: () => { state.hiddenCols = new Set(); } },
+  { id: 'stale', label: 'Hide stale returns', keys: [VIEW_FILTERS_KEY], reset: () => { state.hideStale = false; state.staleDays = DEFAULT_STALE_DAYS; } },
+  { id: 'filters', label: 'Column filters and types', keys: [COLUMN_FILTERS_KEY, COLUMN_TYPES_KEY], reset: () => { state.filters = {}; state.typeOverrides = {}; } },
+  { id: 'filters-toggle', label: 'Filters on/off', keys: [SHOW_FILTERS_KEY], reset: () => { state.showFilters = true; } },
+  { id: 'sticky-rank', label: 'Sticky #', keys: [STICKY_RANK_KEY], reset: () => { state.stickyRank = false; } },
+  { id: 'views', label: 'Scroll positions (remembered table views)', keys: [VIEW_KEY], reset: () => { savedViews = {}; settledViewTabs.clear(); restoringViewTabs.clear(); clearTimeout(saveViewTimer); } },
+  { id: 'blacklist', label: 'Blacklist', keys: [BLACKLIST_KEY], reset: () => { state.blacklist.clear(); blacklistVersion += 1; } },
 ];
 
-/** The Clear button: no confirmation, everything but the blacklist and the theme goes back to the first-visit view at once. */
-function clearSelectionAndSearch(): void {
-  RESET_ITEMS.forEach(item => { item.keys.forEach(lsRemove); item.reset(); });
+/** The three items that live in one saved key: removing the key for one of them would also forget the others. */
+const VIEW_FILTER_ITEM_IDS = ['exchange-sector', 'columns', 'stale'];
+
+/** Which items were ticked the last time OK was pressed; an item never seen before is ticked. */
+function loadClearChoices(): Record<string, boolean> {
+  const saved = lsGetJson(CLEAR_CHOICES_KEY, {});
+  return saved && typeof saved === 'object' && !Array.isArray(saved) ? saved as Record<string, boolean> : {};
+}
+
+/** Resets the chosen items to the first-visit state at once. */
+function applyClear(ids: Set<string>): void {
+  const picked = RESET_ITEMS.filter(item => ids.has(item.id));
+  if (!picked.length) return;
+  picked.forEach(item => item.reset());
+  picked.forEach(item => { if (item.keys[0] !== VIEW_FILTERS_KEY) item.keys.forEach(lsRemove); });
+  if (VIEW_FILTER_ITEM_IDS.some(id => ids.has(id))) {
+    if (VIEW_FILTER_ITEM_IDS.every(id => ids.has(id))) lsRemove(VIEW_FILTERS_KEY);
+    else persistViewFilters();
+  }
   [exchangeDd, sectorDd, columnsDd].forEach(dd => dd?.close());
   filterTimers.forEach(timer => clearTimeout(timer));
   filterTimers.clear();
@@ -3507,11 +3527,87 @@ function clearSelectionAndSearch(): void {
   catalogChunkSig = '';
   filtersSig = '';
   applySortForTab(state.activeTab);
-  el.searchInput.value = '';
+  if (ids.has('searches')) el.searchInput.value = '';
   syncSearchInput();
-  el.tableScroll.scrollTop = 0;
-  el.tableScroll.scrollLeft = 0;
+  if (ids.has('views')) {
+    el.tableScroll.scrollTop = 0;
+    el.tableScroll.scrollLeft = 0;
+  }
   renderBusy(false);
+}
+
+/**
+ * The Clear button: a dialog in the style of the app lists what can be reset (all ticked the first time, afterwards as
+ * it was left at the last OK). Enter is OK, Esc or a click outside is Cancel, Cancel changes and remembers nothing.
+ */
+function clearSelectionAndSearch(): void {
+  if (document.getElementById('clear-dialog')) return;
+  const saved = loadClearChoices();
+  const opener = document.activeElement as HTMLElement | null;
+  const backdrop = document.createElement('div');
+  backdrop.id = 'clear-dialog';
+  backdrop.className = 'clear-backdrop';
+  backdrop.innerHTML = `
+    <div class="clear-modal" role="dialog" aria-modal="true" aria-labelledby="clear-title">
+      <h2 id="clear-title" class="clear-title">Clear</h2>
+      <p class="clear-hint">Choose what to reset to the first-visit view. Your choice is remembered for the next time.</p>
+      <div class="clear-tools">
+        <button type="button" class="dd-act" data-clear-all>All</button>
+        <button type="button" class="dd-act" data-clear-none>None</button>
+      </div>
+      <div class="clear-list">
+        ${RESET_ITEMS.map(item => `<label class="clear-row"><input type="checkbox" data-clear-id="${item.id}" class="w-4 h-4 accent-blue-600" ${saved[item.id] === false ? '' : 'checked'} /><span>${escapeHtml(item.label)}</span></label>`).join('')}
+      </div>
+      <div class="clear-actions">
+        <button type="button" class="clear-btn" data-clear-cancel>Cancel<kbd>Esc</kbd></button>
+        <button type="button" class="clear-btn clear-btn-ok" data-clear-ok>OK<kbd>Enter</kbd></button>
+      </div>
+    </div>`;
+  document.body.appendChild(backdrop);
+  const boxes = Array.from(backdrop.querySelectorAll('input[data-clear-id]')) as HTMLInputElement[];
+  const okBtn = backdrop.querySelector('[data-clear-ok]') as HTMLButtonElement;
+  const syncOk = (): void => { okBtn.disabled = !boxes.some(box => box.checked); };
+  const close = (): void => {
+    document.removeEventListener('keydown', onKey, true);
+    backdrop.remove();
+    if (opener && typeof opener.focus === 'function') opener.focus();
+  };
+  const ok = (): void => {
+    if (okBtn.disabled) return;
+    const choices: Record<string, boolean> = {};
+    boxes.forEach(box => { choices[box.dataset.clearId || ''] = box.checked; });
+    lsSet(CLEAR_CHOICES_KEY, JSON.stringify(choices));
+    close();
+    applyClear(new Set(Object.keys(choices).filter(id => choices[id])));
+  };
+  const onKey = (event: KeyboardEvent): void => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      close();
+    } else if (event.key === 'Enter') {
+      const target = event.target as HTMLElement | null;
+      if (target && target.closest('[data-clear-cancel], [data-clear-all], [data-clear-none]')) return; // Enter on a focused button presses that button
+      event.preventDefault();
+      event.stopPropagation();
+      ok();
+    } else if (event.key === 'Tab') {
+      const focusable = Array.from(backdrop.querySelectorAll('input, button:not(:disabled)')) as HTMLElement[];
+      const index = focusable.indexOf(document.activeElement as HTMLElement);
+      const next = event.shiftKey ? (index <= 0 ? focusable.length - 1 : index - 1) : (index === focusable.length - 1 ? 0 : index + 1);
+      event.preventDefault();
+      focusable[next].focus();
+    }
+  };
+  document.addEventListener('keydown', onKey, true);
+  backdrop.addEventListener('mousedown', event => { if (event.target === backdrop) close(); });
+  backdrop.addEventListener('change', syncOk);
+  (backdrop.querySelector('[data-clear-all]') as HTMLElement).addEventListener('click', () => { boxes.forEach(box => { box.checked = true; }); syncOk(); });
+  (backdrop.querySelector('[data-clear-none]') as HTMLElement).addEventListener('click', () => { boxes.forEach(box => { box.checked = false; }); syncOk(); });
+  (backdrop.querySelector('[data-clear-cancel]') as HTMLElement).addEventListener('click', close);
+  okBtn.addEventListener('click', ok);
+  syncOk();
+  okBtn.focus();
 }
 
 function blacklistTickers(rawTickers: string[]): void {
