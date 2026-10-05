@@ -3475,7 +3475,7 @@ function activateStock(key: string): void {
 }
 
 /**
- * Everything the Clear button resets: the confirm text names each label, the saved keys are removed (a reload shows the
+ * Everything the Clear button resets: the saved keys are removed (a reload shows the
  * first-visit view) and reset() puts the state back to its default. Not listed, so kept: the blacklist and the theme.
  */
 const RESET_ITEMS: { label: string; keys: string[]; reset(): void }[] = [
@@ -3491,12 +3491,9 @@ const RESET_ITEMS: { label: string; keys: string[]; reset(): void }[] = [
   { label: 'Sticky #', keys: [STICKY_RANK_KEY], reset: () => { state.stickyRank = false; } },
   { label: 'remembered table views', keys: [VIEW_KEY], reset: () => { savedViews = {}; settledViewTabs.clear(); restoringViewTabs.clear(); clearTimeout(saveViewTimer); } },
 ];
-const RESET_KEPT = ['blacklist', 'theme'];
 
-/** The Clear button: after one confirm, everything but the blacklist and the theme goes back to the first-visit view. */
+/** The Clear button: no confirmation, everything but the blacklist and the theme goes back to the first-visit view at once. */
 function clearSelectionAndSearch(): void {
-  const message = `Reset to the default view?\n\nWill be reset: ${RESET_ITEMS.map(item => item.label).join(', ')}\nWill be kept: ${RESET_KEPT.join(', ')}`;
-  if (!confirm(message)) return;
   RESET_ITEMS.forEach(item => { item.keys.forEach(lsRemove); item.reset(); });
   [exchangeDd, sectorDd, columnsDd].forEach(dd => dd?.close());
   filterTimers.forEach(timer => clearTimeout(timer));
