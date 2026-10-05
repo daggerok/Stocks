@@ -21,7 +21,7 @@
 
 type ActiveTab = string;
 type SortDirection = 'asc' | 'desc';
-type TabInfo = { id: ActiveTab; label: string; count: number | string };
+type TabInfo = { id: ActiveTab; label: string; count: number | string; disabled?: boolean };
 type CellFormat = 'pct' | 'x' | 'pp' | 'money' | 'price' | 'int' | 'basis' | 'date';
 type Col = { key: string; label: string; group: string; fmt: CellFormat; tip: string };
 
@@ -1620,14 +1620,15 @@ function getSelectedTabs(): TabInfo[] {
       });
     });
   }
-  // The Watchlist of ticked stocks lives in the second panel next to the detail tabs; the first panel stays as it was before any selection.
+  // The second panel is always shown (no layout jump on the first or last selection): without an active stock its tabs are disabled placeholders.
+  if (!activeStock) DETAIL_TABS.forEach(tab => tabs.push({ id: `detail:${tab.key}`, label: tab.label, count: 0, disabled: true }));
   const picked = selectedKeys().length;
-  if (picked > 0) tabs.push({ id: 'watchlist', label: 'Watchlist', count: picked });
+  tabs.push({ id: 'watchlist', label: 'Watchlist', count: picked, disabled: picked === 0 });
   return tabs;
 }
 
 function getAllTabIds(): ActiveTab[] {
-  return [...getTabs(), ...getSelectedTabs()].map(tab => tab.id);
+  return [...getTabs(), ...getSelectedTabs()].filter(tab => !tab.disabled).map(tab => tab.id);
 }
 
 function getDetailCount(key: string): number {
@@ -1657,9 +1658,7 @@ function applyRestoredTab(): void {
 
 function renderTabs(): void {
   renderTabButtons(el.tabsBar, getTabs(), true);
-  const selectedTabs = getSelectedTabs();
-  el.selectedTabsPanel.classList.toggle('is-visible', selectedTabs.length > 0);
-  renderTabButtons(el.selectedTabsBar, selectedTabs, false);
+  renderTabButtons(el.selectedTabsBar, getSelectedTabs(), false);
 }
 
 function renderTabButtons(container: any, tabs: TabInfo[], alwaysShow: boolean): void {
@@ -1684,7 +1683,8 @@ function renderTabButtons(container: any, tabs: TabInfo[], alwaysShow: boolean):
     return `
       <button
         data-tab="${escapeHtml(tab.id)}"
-        class="px-3.5 py-1.5 rounded-full text-xs transition border whitespace-nowrap ${isActive ? activeClasses : inactiveClasses}">
+        ${tab.disabled ? 'disabled aria-disabled="true"' : ''}
+        class="px-3.5 py-1.5 rounded-full text-xs transition border whitespace-nowrap ${tab.disabled ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border-slate-200 dark:border-slate-700 opacity-60 cursor-not-allowed' : isActive ? activeClasses : inactiveClasses}">
         ${escapeHtml(tab.label)} (${tab.count})
       </button>
     `;
