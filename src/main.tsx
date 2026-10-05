@@ -40,6 +40,7 @@ const SHOW_FILTERS_KEY = 'stocks-show-filters';
 const STICKY_RANK_KEY = 'stocks-sticky-rank';
 const FILTER_DEBOUNCE_MS = 250;
 const SEARCH_DEBOUNCE_MS = 200;
+const FONT_WAIT_MS = 2500; // longest the first render waits for the web font
 const LOCAL_BASE = './api/stocks/';
 const REMOTE_BASE = 'https://daggerok.github.io/Stocks/api/stocks/';
 const INDEX_TIMEOUT_MS = 30000;
@@ -1163,11 +1164,49 @@ function growCatalogChunkBusy(): void {
 }
 
 /**
+ * Inter comes from Google Fonts one weight at a time, the first time text of that weight is laid out. Loaded after the table
+ * is shown, each weight re-lays-out every cell ("Fonts changed", thousands of nodes), a pause in the first scroll. Requesting
+ * all weights up front, while the spinner is up, moves that cost under the spinner (capped, so a slow font host cannot hold the page).
+ */
+function loadFonts(): Promise<unknown> {
+  if (!document.fonts || typeof document.fonts.load !== 'function') return Promise.resolve();
+  const weights = ['300', '400', '500', '600', '700'];
+  const loading = Promise.all(weights.map(weight => document.fonts.load(`${weight} 14px Inter`))).catch(() => undefined);
+  return Promise.race([loading, new Promise(resolve => setTimeout(resolve, FONT_WAIT_MS))]);
+}
+
+/** The glyphs of the catalog outside Latin-1 (Greek, Cyrillic, Latin Extended...): each script is a separate Inter file the browser fetches only when such a glyph is first laid out. */
+function nonLatinText(): string {
+  const chars = new Set<string>();
+  // the column headers carry glyphs such as the Greek delta of the year-over-year columns
+  for (const col of COLS) for (const ch of `${col.group}${col.label}`) if (ch.charCodeAt(0) > 0xff) chars.add(ch);
+  if (store) {
+    for (let id = 0; id < store.n; id++) {
+      for (const ch of `${store.name[id]}${store.industryText[id]}${store.sectorText[id]}`) if (ch.charCodeAt(0) > 0xff) chars.add(ch);
+    }
+  }
+  return [...chars].join('');
+}
+
+/** Loads the Inter subsets that cover the given text, for the weights the table uses, before the rows are laid out. */
+function loadFontsForText(text: string): Promise<unknown> {
+  if (!text || !document.fonts || typeof document.fonts.load !== 'function') return Promise.resolve();
+  const loading = Promise.all(['400', '500', '600', '700'].map(weight => document.fonts.load(`${weight} 14px Inter`, text))).catch(() => undefined);
+  return Promise.race([loading, new Promise(resolve => setTimeout(resolve, FONT_WAIT_MS))]);
+}
+
+/** Resolves once the browser has produced the next frame. */
+function nextPaint(): Promise<void> {
+  return new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 0)));
+}
+
+/**
  * Startup: the cached index first (first paint), then the network copy is
  * revalidated; the table is rebuilt only when generatedAt moved.
  */
 async function loadCatalog(): Promise<void> {
   setBusy(true, 'Loading the stock feed…');
+  const fontsReady = loadFonts();
   el.tableBody.innerHTML = `<tr><td colspan="10" class="py-12 text-center text-slate-400 dark:text-slate-500">Loading the stock catalog…</td></tr>`;
   const cached = await Promise.race([
     idbGet(cacheKey()),
@@ -1215,7 +1254,11 @@ async function loadCatalog(): Promise<void> {
   if (!store) onStoreChanged();
   renderLoadProgress();
   renderSubtitle();
+  await fontsReady; // the rows are laid out once, with the final font metrics
+  await loadFontsForText(nonLatinText());
   render();
+  void el.tableScroll.offsetHeight; // layout of the final rows now, under the spinner
+  await nextPaint(); // and the frame that shows them, so the first scroll does not wait for it
   setBusy(false);
 }
 
