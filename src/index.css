@@ -43,8 +43,8 @@
     .animate-fade-in{animation:fadeIn .3s ease-out}
 
     /* Busy overlay: covers the table while data loads or a chunk is mounted, swallows wheel/touch/clicks so nobody scrolls half-ready rows */
-    .busy-overlay{position:absolute;inset:0;z-index:40;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.6rem;background:rgba(248,250,252,.72);color:#475569;font-size:.75rem;touch-action:none;cursor:progress;opacity:0;animation:busyShow .12s linear .15s forwards}
-    @keyframes busyShow{to{opacity:1}}
+    .busy-overlay{position:absolute;inset:0;z-index:40;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.6rem;background:rgba(248,250,252,.72);color:#475569;font-size:.75rem;touch-action:none;cursor:default;opacity:0;animation:busyShow .12s linear .15s forwards}
+    @keyframes busyShow{0%{opacity:0;cursor:default}49%{opacity:.5;cursor:default}50%{opacity:.5;cursor:progress}100%{opacity:1;cursor:progress}}
     .busy-overlay[hidden]{display:none}
     .busy-spinner{width:34px;height:34px;border-radius:50%;border:3px solid rgba(100,116,139,.3);border-top-color:#3b82f6;animation:busySpin .8s linear infinite}
     @keyframes busySpin{to{transform:rotate(360deg)}}
