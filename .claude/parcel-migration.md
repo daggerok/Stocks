@@ -32,12 +32,17 @@ Goal set by the owner: move the browser app from the in-browser Babel + Tailwind
 - Parcel names the bundles after the package name and hashes them; nothing in the app may refer to `app.tsx` or the old file names
 - `bun pm untrusted` lists `@swc/core` and `@parcel/watcher` postinstalls as blocked: the build works anyway
 - `bun run build` runs `clean` first (`prebuild`) and copies the data last (`postbuild`); the data folder is large (api/ is 261 MB here), copy time shows in the build
-- `dist/` is gitignored, so `main` no longer holds a servable site: GitHub Pages (legacy, branch `main`, `/`) must not be switched to this layout until the deployment workflow is decided (owner: "not the same gh pages actions for now")
+- `dist/` is gitignored, so `main` no longer holds a servable site: Pages must be switched from legacy (`main` `/`) to "GitHub Actions" (`gh api -X PUT repos/daggerok/Stocks/pages -f build_type=workflow`) when the migration merges, otherwise the live site breaks. The deployment workflow is `.github/workflows/github-pages.yml`, copied from options-desk (checkout, setup-bun, `bun install -E`, `bun run build-github-pages`, upload `./dist`, deploy), with a `workflow_run` trigger on the data workflow because its token-pushed commits do not start push workflows
 
 ## Verification on this branch
 - `bun test` 24 pass; `bun run build` ok; `check.sh . scripts/update-data.ts scripts/update-data.test.ts src/main.tsx` prints nothing
 - Browser tests against `bunx serve dist -p 4789`: `stocks-columns-uitest` 20 passed 0 failed, `stocks-filters-uitest` 30 passed 2 failed (the same two stale expectations as on `main`)
 
 ## Open for later
-- GitHub Pages deployment of `dist` (workflow like options-desk `github-pages.yml`), the owner will decide
 - CI workflow and dependency-updates workflow like csv (`ci.yaml`, `dependency-updates.yml`)
+
+## Later changes on the same branch
+- Footer (disclaimer, license and links line) removed from `src/index.html` on the owner's request
+- `--dist-dir ./dist` is explicit in `serve` and `build`
+- the busy spinner of the chunk growth has no 150 ms grace period (`.is-instant`): a lag without a spinner was visible when scrolling
+- the second panel (detail tabs) is always shown, with disabled placeholders when no stock is active
