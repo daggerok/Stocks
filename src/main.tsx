@@ -46,7 +46,8 @@ const LOCAL_BASE = './api/stocks/';
 const REMOTE_BASE = 'https://daggerok.github.io/Stocks/api/stocks/';
 const INDEX_TIMEOUT_MS = 30000;
 const FETCH_TIMEOUT_MS = 30000; // meta.json and history pages (headers and body)
-const CATALOG_CHUNK = 200; // rows per rendered catalog DOM chunk
+const CATALOG_CHUNK = 200; // rows of the first render and of a window mounted around a saved position
+const CATALOG_SCROLL_CHUNK = 600; // rows added per scroll step, up or down: fewer, larger steps mean fewer spinner flashes
 const DEFAULT_STALE_DAYS = 10;
 const IDB_NAME = 'stocks';
 const IDB_STORE = 'indexes';
@@ -2800,7 +2801,7 @@ function prependCatalogChunk(): void {
   const firstRow = el.tableBody.querySelector('tr[data-key]') as HTMLElement | null;
   if (!spacer || !firstRow) return;
   const before = firstRow.getBoundingClientRect().top;
-  const from = Math.max(0, catalogRenderedFrom - CATALOG_CHUNK);
+  const from = Math.max(0, catalogRenderedFrom - CATALOG_SCROLL_CHUNK);
   const cols = visibleCols();
   let html = '';
   for (let i = from; i < catalogRenderedFrom; i++) html += stockRowHtml(ids[i], i, cols);
@@ -2840,7 +2841,7 @@ function growCatalogChunk(): void {
   const ids = catalogVisibleIds;
   const from = Math.min(ids.length, catalogRenderedCount);
   if (from >= ids.length) return;
-  const to = Math.min(ids.length, from + CATALOG_CHUNK);
+  const to = Math.min(ids.length, from + CATALOG_SCROLL_CHUNK);
   catalogRenderedCount = to;
   const more = el.tableBody.querySelector('#catalog-more-row');
   if (more) more.remove();
