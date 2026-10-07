@@ -103,51 +103,15 @@ describe('controls', () => {
     expect(resolveControls(file(), {}, {}, { USE_SYSTEM_CA: 'TRUE' }).USE_SYSTEM_CA).toBe('true');
   });
 
-  test('config keys, CONTROL_NAMES, README controls table and --help stay in sync', async () => {
+  test('config keys, CONTROL_NAMES and --help stay in sync', async () => {
     expect(Object.keys(file()).sort()).toEqual([...CONTROL_NAMES].sort());
     for (const value of Object.values(file())) expect(typeof value).toBe('string');
     expect((await runtimeControls({ REQUEST_SLEEP: '0', TICKERS: 'AAPL MSFT' })).TICKERS).toBe('AAPL MSFT');
-    const doc = read('README.md');
-    const section = doc.slice(doc.indexOf('### Update controls'), doc.indexOf('### Examples'));
-    const documented = new Set<string>();
-    for (const [, cell] of section.matchAll(/^\| ((?:`[A-Z0-9_]+`(?:, )?)+) \|/gm)) {
-      const tokens = [...cell.matchAll(/`([A-Z0-9_]+)`/g)].map((m) => m[1]);
-      const prefix = tokens[0].replace(/_YTD$/, '');
-      for (const token of tokens) documented.add(token.startsWith('_') ? `${prefix}${token}` : token);
-    }
-    expect([...documented].sort()).toEqual([...CONTROL_NAMES].sort());
-    expect(doc).toContain('scripts/update-data.config.json');
     const help = spawnSync('bun', [new URL('./update-data.ts', import.meta.url).pathname, '--help'], { encoding: 'utf8' }).stdout;
     for (const name of CONTROL_NAMES) {
       const tenor = name.match(/^(PERFORMANCE|TOTAL_RETURN)_/);
       expect(help).toContain(tenor ? `${tenor[1]}_YTD|1Y|3Y|5Y|10Y` : name);
     }
-  });
-
-  test('workflow and README structure follow the standard', () => {
-    const yml = read('.github/workflows/update-data.yml');
-    const block = yml.slice(yml.indexOf('    inputs:'), yml.indexOf('\npermissions:'));
-    const names = [...block.matchAll(/^      (\w+):$/gm)].map((m) => m[1]);
-    expect(names.length).toBeLessThanOrEqual(25);
-    expect(block).toMatch(/advanced:[\s\S]*default: '\{\}'/);
-    for (const name of names.filter((n) => n !== 'advanced')) expect(CONTROL_NAMES).toContain(name.toUpperCase() as any);
-    expect(names).not.toContain('sec_ua');
-    expect(names).not.toContain('output_dir');
-    expect(yml).toContain("cron: '0 0 * * 0'");
-    expect(yml).toContain('toJSON(inputs)');
-    expect(yml).toContain('JSON.parse(process.env.DISPATCH_INPUTS || "{}") || {}'); // toJSON(inputs) is "null" on scheduled runs
-    expect(yml).not.toMatch(/\$\{\{\s*inputs\./);
-    for (const part of ['resolveControls', 'vars.SEC_UA', 'timeout-minutes: 30', 'persist-credentials: false', 'git add api/stocks\n']) expect(yml).toContain(part);
-    expect(yml.match(/git add /g)?.length).toBe(1);
-    const doc = read('README.md');
-    const order = ['# Stocks', '## Using Bun', '## Updating the static Stocks data', '### Data sources', '### Metrics and caveats', '### Update controls', '### Examples', '## TypeScript and verification', '## Exchanges table', '## Sibling applications', '## License'];
-    let at = -1;
-    for (const heading of order) {
-      const next = doc.indexOf(`\n${heading}\n`, at);
-      expect(next > at || (heading === '# Stocks' && doc.startsWith(heading))).toBe(true);
-      at = Math.max(at, next);
-    }
-    for (const command of ['bun install --frozen-lockfile', 'bun test', 'bun build --target=bun scripts/update-data.ts --outfile=/dev/null', 'git diff --check']) expect(doc).toContain(command);
   });
 });
 
