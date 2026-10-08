@@ -150,7 +150,7 @@
     .dark #table-scroll tbody tr:hover .catalog-sticky-col,.dark #table-scroll tbody tr:hover .watchlist-sticky-col{background:#1f2a3d}
     .dark #table-scroll tbody tr.selected-row .catalog-sticky-col{background:#19274e}
     /* The detail navigation panel is always shown: no layout jump when the first stock is selected or the last one deselected. */
-    main.space-y-6 > #selected-tabs-panel{margin-top:1.5rem;padding-top:1rem;padding-bottom:1rem}
+    #selected-tabs-panel{padding-top:.75rem;padding-bottom:.75rem}
 
     /*
      * Blacklist manager: same smooth expand/collapse contract as the detail
