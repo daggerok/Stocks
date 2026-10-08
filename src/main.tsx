@@ -3400,7 +3400,7 @@ function renderOverviewTable(stock: StockRef): void {
 // 8. Subtitle & header summary
 // =========================================================================
 
-const SUBTITLE_TICKER_CAP = 8;
+const SUBTITLE_TICKER_CAP = 1;
 
 function renderHeaderSummary(subtitle: HTMLElement, keys: Iterable<string>, activeKey: string | null, activate: (key: string) => void): void {
   const panel = document.getElementById('app-summary');
