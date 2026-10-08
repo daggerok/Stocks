@@ -3400,7 +3400,9 @@ function renderOverviewTable(stock: StockRef): void {
 // 8. Subtitle & header summary
 // =========================================================================
 
-const SUBTITLE_TICKER_CAP = 1;
+const SUBTITLE_TICKER_CAP = 12; // upper bound, the real number is what fits before the tabs
+let subtitleRefit: (() => void) | null = null;
+let subtitleObserved = false;
 
 function renderHeaderSummary(subtitle: HTMLElement, keys: Iterable<string>, activeKey: string | null, activate: (key: string) => void): void {
   const panel = document.getElementById('app-summary');
@@ -3410,19 +3412,39 @@ function renderHeaderSummary(subtitle: HTMLElement, keys: Iterable<string>, acti
   subtitle.replaceChildren();
   const selected = [...keys].sort((a, b) => collator.compare(a, b));
   if (!selected.length) return;
-  subtitle.append(document.createTextNode(`${selected.length} selected: `));
-  selected.slice(0, SUBTITLE_TICKER_CAP).forEach((key, index) => {
-    if (index) subtitle.append(document.createTextNode(', '));
-    const link = document.createElement('a');
-    link.href = '#';
-    link.dataset.headerStock = key;
-    link.title = `View ${key} details`;
-    link.className = `font-semibold ${key === activeKey ? 'text-blue-700 dark:text-blue-300 underline' : 'text-blue-600 dark:text-blue-400 hover:underline'}`;
-    link.textContent = key;
-    link.addEventListener('click', event => { event.preventDefault(); activate(key); });
-    subtitle.append(link);
-  });
-  if (selected.length > SUBTITLE_TICKER_CAP) subtitle.append(document.createTextNode(` and ${selected.length - SUBTITLE_TICKER_CAP} more`));
+  const paint = (count: number): void => {
+    subtitle.replaceChildren();
+    subtitle.append(document.createTextNode(`${selected.length} selected: `));
+    selected.slice(0, count).forEach((key, index) => {
+      if (index) subtitle.append(document.createTextNode(', '));
+      const link = document.createElement('a');
+      link.href = '#';
+      link.dataset.headerStock = key;
+      link.title = `View ${key} details`;
+      link.className = `font-semibold ${key === activeKey ? 'text-blue-700 dark:text-blue-300 underline' : 'text-blue-600 dark:text-blue-400 hover:underline'}`;
+      link.textContent = key;
+      link.addEventListener('click', event => { event.preventDefault(); activate(key); });
+      subtitle.append(link);
+    });
+    if (selected.length > count) subtitle.append(document.createTextNode(` and ${selected.length - count} more`));
+  };
+  // as many tickers as fit on the title row before the tabs (the line never wraps, see the ellipsis in index.html)
+  subtitleRefit = () => {
+    let count = Math.min(selected.length, SUBTITLE_TICKER_CAP);
+    paint(count);
+    if (!subtitle.clientWidth) return;
+    while (count > 1 && subtitle.scrollWidth > subtitle.clientWidth) {
+      count -= 1;
+      paint(count);
+    }
+    // not even one ticker fits: only the count, never a cut-off word
+    if (subtitle.scrollWidth > subtitle.clientWidth) subtitle.replaceChildren(document.createTextNode(selected.length + ' selected'));
+  };
+  subtitleRefit();
+  if (!subtitleObserved && typeof ResizeObserver === 'function') {
+    subtitleObserved = true;
+    new ResizeObserver(() => { if (subtitleRefit) subtitleRefit(); }).observe(subtitle);
+  }
 }
 
 function renderSubtitleDetails(text?: string): void {
