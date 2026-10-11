@@ -9,7 +9,7 @@
   "financialCurrency": "USD",
   "dataFile": "./companies/IACQ/meta.json",
   "price": 9.95,
-  "asOfDate": "2026-10-02",
+  "asOfDate": "2026-10-09",
   "fundamentalsAsOf": null,
   "fundamentalsBasis": "no annual fundamentals available",
   "metrics": {
@@ -88,7 +88,7 @@
     "cagr10y": null,
     "siAnn": null,
     "returnsBasis": "Yahoo chart API: performance from unadjusted closes, total return and CAGR from dividend- and split-adjusted closes",
-    "performanceAsOf": "2026-10-02"
+    "performanceAsOf": "2026-10-09"
   },
   "sources": {
     "universe": "https://www.sec.gov/files/company_tickers_exchange.json",
@@ -98,7 +98,7 @@
   },
   "market": {
     "price": 9.95,
-    "asOfDate": "2026-10-02",
+    "asOfDate": "2026-10-09",
     "valuation": {
       "marketCap": 321101888,
       "enterpriseValue": 320082464,
@@ -150,11 +150,11 @@
       "history/001.json"
     ],
     "pageSize": 1000,
-    "totalRows": 26,
-    "asOf": "2026-10-02",
+    "totalRows": 27,
+    "asOf": "2026-10-09",
     "granularity": {
-      "monthlyBefore": "2026-09-02",
-      "dailyFrom": "2026-09-02"
+      "monthlyBefore": "2026-09-09",
+      "dailyFrom": "2026-09-09"
     },
     "source": "Yahoo Finance public chart API (adjusted close); monthly rows (month-end close, summed volume) with daily rows for the last 31 days"
   }

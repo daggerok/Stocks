@@ -8,17 +8,17 @@
   "currency": "USD",
   "financialCurrency": "CNY",
   "dataFile": "./companies/WDH/meta.json",
-  "price": 1.03,
-  "asOfDate": "2026-10-02",
+  "price": 1.04,
+  "asOfDate": "2026-10-09",
   "fundamentalsAsOf": "2025-12-31",
   "fundamentalsBasis": "Yahoo fundamentals-timeseries annual statements (no usable SEC history); valuation multiples from the Yahoo quoteSummary TTM snapshot",
   "metrics": {
-    "marketCap": 370080992,
+    "marketCap": 373674016,
     "enterpriseValue": null,
-    "price": 1.03,
+    "price": 1.04,
     "week52High": 2.03,
     "week52Low": 0.96,
-    "beta": -0.08,
+    "beta": -0.24,
     "sharesOutstanding": 279111455,
     "pe": null,
     "forwardPe": null,
@@ -28,8 +28,8 @@
     "evEbitda": null,
     "fcfToEbitda": null,
     "pb": null,
-    "dividendYield": 2.91,
-    "dividendRate": 0.03,
+    "dividendYield": 5.77,
+    "dividendRate": 0.06,
     "dividendGrowth": -66.67,
     "dividendGrowth3y": null,
     "dividendGrowth5y": null,
@@ -73,22 +73,22 @@
     "ebitdaMarginDelta3y": -8.21,
     "fcfMarginDelta": -2.51,
     "fcfMarginDelta3y": -21.52,
-    "perfYtd": -45.79,
-    "perf1y": -45.5,
-    "perf3y": -11.21,
-    "perf5y": -56.54,
+    "perfYtd": -45.26,
+    "perf1y": -45.83,
+    "perf3y": 1.96,
+    "perf5y": -57.89,
     "perf10y": null,
-    "ytd": -44.81,
-    "tr1y": -44.52,
-    "tr3y": -3.54,
-    "tr5y": -52.79,
+    "ytd": -42.59,
+    "tr1y": -43.18,
+    "tr3y": 14.12,
+    "tr5y": -52.87,
     "tr10y": null,
-    "cagr3y": -1.19,
-    "cagr5y": -13.94,
+    "cagr3y": 4.5,
+    "cagr5y": -13.97,
     "cagr10y": null,
-    "siAnn": -32.94,
+    "siAnn": -32.36,
     "returnsBasis": "Yahoo chart API: performance from unadjusted closes, total return and CAGR from dividend- and split-adjusted closes",
-    "performanceAsOf": "2026-10-02"
+    "performanceAsOf": "2026-10-09"
   },
   "sources": {
     "universe": "https://www.sec.gov/files/company_tickers_exchange.json",
@@ -97,10 +97,10 @@
     "snapshot": "Yahoo Finance quoteSummary"
   },
   "market": {
-    "price": 1.03,
-    "asOfDate": "2026-10-02",
+    "price": 1.04,
+    "asOfDate": "2026-10-09",
     "valuation": {
-      "marketCap": 370080992,
+      "marketCap": 373674016,
       "enterpriseValue": null,
       "pe": null,
       "forwardPe": null,
@@ -110,28 +110,28 @@
       "evEbitda": null,
       "fcfToEbitda": null,
       "pb": null,
-      "beta": -0.08,
+      "beta": -0.24,
       "sharesOutstanding": 279111455
     },
     "returns": {
-      "perfYtd": -45.79,
-      "perf1y": -45.5,
-      "perf3y": -11.21,
-      "perf5y": -56.54,
+      "perfYtd": -45.26,
+      "perf1y": -45.83,
+      "perf3y": 1.96,
+      "perf5y": -57.89,
       "perf10y": null,
-      "ytd": -44.81,
-      "tr1y": -44.52,
-      "tr3y": -3.54,
-      "tr5y": -52.79,
+      "ytd": -42.59,
+      "tr1y": -43.18,
+      "tr3y": 14.12,
+      "tr5y": -52.87,
       "tr10y": null,
-      "cagr3y": -1.19,
-      "cagr5y": -13.94,
+      "cagr3y": 4.5,
+      "cagr5y": -13.97,
       "cagr10y": null,
-      "siAnn": -32.94
+      "siAnn": -32.36
     },
     "dividends": {
-      "dividendYield": 2.91,
-      "dividendRate": 0.03,
+      "dividendYield": 5.77,
+      "dividendRate": 0.06,
       "dividendGrowth": -66.67,
       "dividendGrowth3y": null,
       "dividendGrowth5y": null
@@ -139,7 +139,7 @@
     "annualDps": [
       {
         "year": 2026,
-        "dps": 0.03
+        "dps": 0.06
       },
       {
         "year": 2025,
@@ -151,6 +151,10 @@
       }
     ],
     "recentDividends": [
+      {
+        "date": "2026-10-09",
+        "amount": 0.03
+      },
       {
         "date": "2026-04-24",
         "amount": 0.03
@@ -269,11 +273,11 @@
       "history/001.json"
     ],
     "pageSize": 1000,
-    "totalRows": 87,
-    "asOf": "2026-10-02",
+    "totalRows": 88,
+    "asOf": "2026-10-09",
     "granularity": {
-      "monthlyBefore": "2026-09-02",
-      "dailyFrom": "2026-09-02"
+      "monthlyBefore": "2026-09-09",
+      "dailyFrom": "2026-09-09"
     },
     "source": "Yahoo Finance public chart API (adjusted close); monthly rows (month-end close, summed volume) with daily rows for the last 31 days"
   }

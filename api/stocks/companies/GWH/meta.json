@@ -1,6 +1,6 @@
 {
   "ticker": "GWH",
-  "name": "ESS Tech, Inc.",
+  "name": "ESS Tech Inc",
   "exchange": "NYSE",
   "sector": "Industrials",
   "industry": "Electrical Equipment & Parts",
@@ -9,7 +9,7 @@
   "financialCurrency": "USD",
   "dataFile": "./companies/GWH/meta.json",
   "price": 0.1567,
-  "asOfDate": "2026-10-02",
+  "asOfDate": "2026-10-09",
   "fundamentalsAsOf": "2025-12-31",
   "fundamentalsBasis": "SEC EDGAR XBRL annual 10-K facts with gaps filled from Yahoo fundamentals-timeseries; valuation multiples from the Yahoo quoteSummary TTM snapshot",
   "metrics": {
@@ -17,7 +17,7 @@
     "enterpriseValue": 11776403,
     "price": 0.1567,
     "week52High": 13.87,
-    "week52Low": 0.156,
+    "week52Low": 0.05,
     "beta": 1.35,
     "sharesOutstanding": 40274150,
     "pe": null,
@@ -73,22 +73,22 @@
     "ebitdaMarginDelta3y": 8365.78,
     "fcfMarginDelta": -2127.35,
     "fcfMarginDelta3y": 7325.42,
-    "perfYtd": -91.65,
-    "perf1y": -89.87,
-    "perf3y": -99.43,
-    "perf5y": -99.89,
+    "perfYtd": null,
+    "perf1y": null,
+    "perf3y": null,
+    "perf5y": null,
     "perf10y": null,
-    "ytd": -91.65,
-    "tr1y": -89.87,
-    "tr3y": -99.43,
-    "tr5y": -99.89,
+    "ytd": null,
+    "tr1y": null,
+    "tr3y": null,
+    "tr5y": null,
     "tr10y": null,
-    "cagr3y": -82.12,
-    "cagr5y": -74.62,
+    "cagr3y": null,
+    "cagr5y": null,
     "cagr10y": null,
-    "siAnn": -69.79,
+    "siAnn": null,
     "returnsBasis": "Yahoo chart API: performance from unadjusted closes, total return and CAGR from dividend- and split-adjusted closes",
-    "performanceAsOf": "2026-10-02"
+    "performanceAsOf": "2026-10-09"
   },
   "sources": {
     "universe": "https://www.sec.gov/files/company_tickers_exchange.json",
@@ -98,7 +98,7 @@
   },
   "market": {
     "price": 0.1567,
-    "asOfDate": "2026-10-02",
+    "asOfDate": "2026-10-09",
     "valuation": {
       "marketCap": 6310959,
       "enterpriseValue": 11776403,
@@ -114,20 +114,20 @@
       "sharesOutstanding": 40274150
     },
     "returns": {
-      "perfYtd": -91.65,
-      "perf1y": -89.87,
-      "perf3y": -99.43,
-      "perf5y": -99.89,
+      "perfYtd": null,
+      "perf1y": null,
+      "perf3y": null,
+      "perf5y": null,
       "perf10y": null,
-      "ytd": -91.65,
-      "tr1y": -89.87,
-      "tr3y": -99.43,
-      "tr5y": -99.89,
+      "ytd": null,
+      "tr1y": null,
+      "tr3y": null,
+      "tr5y": null,
       "tr10y": null,
-      "cagr3y": -82.12,
-      "cagr5y": -74.62,
+      "cagr3y": null,
+      "cagr5y": null,
       "cagr10y": null,
-      "siAnn": -69.79
+      "siAnn": null
     },
     "dividends": {
       "dividendYield": 0,
@@ -139,7 +139,7 @@
     "annualDps": [],
     "recentDividends": [],
     "week52High": 13.87,
-    "week52Low": 0.156
+    "week52Low": 0.05
   },
   "fundamentals": {
     "asOf": "2025-12-31",
@@ -283,11 +283,11 @@
       "history/001.json"
     ],
     "pageSize": 1000,
-    "totalRows": 91,
-    "asOf": "2026-10-02",
+    "totalRows": 26,
+    "asOf": "2026-10-09",
     "granularity": {
-      "monthlyBefore": "2026-09-02",
-      "dailyFrom": "2026-09-02"
+      "monthlyBefore": "2026-09-09",
+      "dailyFrom": "2026-09-09"
     },
     "source": "Yahoo Finance public chart API (adjusted close); monthly rows (month-end close, summed volume) with daily rows for the last 31 days"
   }

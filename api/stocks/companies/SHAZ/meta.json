@@ -8,26 +8,26 @@
   "currency": "USD",
   "financialCurrency": "USD",
   "dataFile": "./companies/SHAZ/meta.json",
-  "price": 50.81,
-  "asOfDate": "2026-10-02",
+  "price": 37.93,
+  "asOfDate": "2026-10-09",
   "fundamentalsAsOf": "2025-12-31",
   "fundamentalsBasis": "SEC EDGAR XBRL annual 10-K facts with gaps filled from Yahoo fundamentals-timeseries; valuation multiples from the Yahoo quoteSummary TTM snapshot",
   "metrics": {
-    "marketCap": 1819176064,
-    "enterpriseValue": 966900352,
-    "price": 50.81,
+    "marketCap": 1358026880,
+    "enterpriseValue": 505751232,
+    "price": 37.93,
     "week52High": 97.48,
     "week52Low": 16.55,
-    "beta": 6.07,
+    "beta": 6.18,
     "sharesOutstanding": 35667164,
     "pe": null,
     "forwardPe": null,
-    "ps": 588.74,
-    "forwardPs": 1.18,
+    "ps": 439.5,
+    "forwardPs": 0.88,
     "pFcf": null,
     "evEbitda": null,
     "fcfToEbitda": null,
-    "pb": 1.61,
+    "pb": 1.2,
     "dividendYield": 0,
     "dividendRate": null,
     "dividendGrowth": null,
@@ -88,7 +88,7 @@
     "cagr10y": null,
     "siAnn": null,
     "returnsBasis": "Yahoo chart API: performance from unadjusted closes, total return and CAGR from dividend- and split-adjusted closes",
-    "performanceAsOf": "2026-10-02"
+    "performanceAsOf": "2026-10-09"
   },
   "sources": {
     "universe": "https://www.sec.gov/files/company_tickers_exchange.json",
@@ -97,20 +97,20 @@
     "snapshot": "Yahoo Finance quoteSummary"
   },
   "market": {
-    "price": 50.81,
-    "asOfDate": "2026-10-02",
+    "price": 37.93,
+    "asOfDate": "2026-10-09",
     "valuation": {
-      "marketCap": 1819176064,
-      "enterpriseValue": 966900352,
+      "marketCap": 1358026880,
+      "enterpriseValue": 505751232,
       "pe": null,
       "forwardPe": null,
-      "ps": 588.74,
-      "forwardPs": 1.18,
+      "ps": 439.5,
+      "forwardPs": 0.88,
       "pFcf": null,
       "evEbitda": null,
       "fcfToEbitda": null,
-      "pb": 1.61,
-      "beta": 6.07,
+      "pb": 1.2,
+      "beta": 6.18,
       "sharesOutstanding": 35667164
     },
     "returns": {
@@ -195,11 +195,11 @@
       "history/001.json"
     ],
     "pageSize": 1000,
-    "totalRows": 30,
-    "asOf": "2026-10-02",
+    "totalRows": 31,
+    "asOf": "2026-10-09",
     "granularity": {
-      "monthlyBefore": "2026-09-02",
-      "dailyFrom": "2026-09-02"
+      "monthlyBefore": "2026-09-09",
+      "dailyFrom": "2026-09-09"
     },
     "source": "Yahoo Finance public chart API (adjusted close); monthly rows (month-end close, summed volume) with daily rows for the last 31 days"
   }

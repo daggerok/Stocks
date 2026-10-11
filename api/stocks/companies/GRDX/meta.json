@@ -8,14 +8,14 @@
   "currency": "USD",
   "financialCurrency": "USD",
   "dataFile": "./companies/GRDX/meta.json",
-  "price": 3.81,
-  "asOfDate": "2026-10-02",
+  "price": 4.97,
+  "asOfDate": "2026-10-09",
   "fundamentalsAsOf": "2025-12-31",
   "fundamentalsBasis": "SEC EDGAR XBRL annual 10-K facts with gaps filled from Yahoo fundamentals-timeseries; valuation multiples from the Yahoo quoteSummary TTM snapshot",
   "metrics": {
-    "marketCap": 27169578,
+    "marketCap": 35441680,
     "enterpriseValue": null,
-    "price": 3.81,
+    "price": 4.97,
     "week52High": 6.929,
     "week52Low": 1.87,
     "beta": null,
@@ -73,22 +73,22 @@
     "ebitdaMarginDelta3y": null,
     "fcfMarginDelta": null,
     "fcfMarginDelta3y": null,
-    "perfYtd": -18.24,
-    "perf1y": -11.19,
-    "perf3y": -78.55,
+    "perfYtd": 6.65,
+    "perf1y": 24.25,
+    "perf3y": -73.28,
     "perf5y": -99.99,
     "perf10y": null,
-    "ytd": -18.24,
-    "tr1y": -11.19,
-    "tr3y": -78.55,
+    "ytd": 6.65,
+    "tr1y": 24.25,
+    "tr3y": -73.28,
     "tr5y": -99.99,
     "tr10y": null,
-    "cagr3y": -40.14,
-    "cagr5y": -83.94,
+    "cagr3y": -35.59,
+    "cagr5y": -82.92,
     "cagr10y": null,
-    "siAnn": -70.01,
+    "siAnn": -69.13,
     "returnsBasis": "Yahoo chart API: performance from unadjusted closes, total return and CAGR from dividend- and split-adjusted closes",
-    "performanceAsOf": "2026-10-02"
+    "performanceAsOf": "2026-10-09"
   },
   "sources": {
     "universe": "https://www.sec.gov/files/company_tickers_exchange.json",
@@ -97,10 +97,10 @@
     "snapshot": "Yahoo Finance quoteSummary"
   },
   "market": {
-    "price": 3.81,
-    "asOfDate": "2026-10-02",
+    "price": 4.97,
+    "asOfDate": "2026-10-09",
     "valuation": {
-      "marketCap": 27169578,
+      "marketCap": 35441680,
       "enterpriseValue": null,
       "pe": null,
       "forwardPe": null,
@@ -114,20 +114,20 @@
       "sharesOutstanding": 7131123
     },
     "returns": {
-      "perfYtd": -18.24,
-      "perf1y": -11.19,
-      "perf3y": -78.55,
+      "perfYtd": 6.65,
+      "perf1y": 24.25,
+      "perf3y": -73.28,
       "perf5y": -99.99,
       "perf10y": null,
-      "ytd": -18.24,
-      "tr1y": -11.19,
-      "tr3y": -78.55,
+      "ytd": 6.65,
+      "tr1y": 24.25,
+      "tr3y": -73.28,
       "tr5y": -99.99,
       "tr10y": null,
-      "cagr3y": -40.14,
-      "cagr5y": -83.94,
+      "cagr3y": -35.59,
+      "cagr5y": -82.92,
       "cagr10y": null,
-      "siAnn": -70.01
+      "siAnn": -69.13
     },
     "dividends": {
       "dividendYield": 0,
@@ -217,11 +217,11 @@
       "history/001.json"
     ],
     "pageSize": 1000,
-    "totalRows": 142,
-    "asOf": "2026-10-02",
+    "totalRows": 143,
+    "asOf": "2026-10-09",
     "granularity": {
-      "monthlyBefore": "2026-09-02",
-      "dailyFrom": "2026-09-02"
+      "monthlyBefore": "2026-09-09",
+      "dailyFrom": "2026-09-09"
     },
     "source": "Yahoo Finance public chart API (adjusted close); monthly rows (month-end close, summed volume) with daily rows for the last 31 days"
   }

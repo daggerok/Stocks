@@ -1,6 +1,6 @@
 {
   "ticker": "ADIG",
-  "name": "ADI Global Distribution Inc.",
+  "name": "ADI Global Distribution Inc",
   "exchange": "NYSE",
   "sector": "Technology",
   "industry": "Computer Hardware",
@@ -8,26 +8,26 @@
   "currency": "USD",
   "financialCurrency": "USD",
   "dataFile": "./companies/ADIG/meta.json",
-  "price": 17.83,
-  "asOfDate": "2026-10-02",
+  "price": 16.8,
+  "asOfDate": "2026-10-09",
   "fundamentalsAsOf": "2025-12-31",
   "fundamentalsBasis": "Yahoo fundamentals-timeseries annual statements (no usable SEC history); valuation multiples from the Yahoo quoteSummary TTM snapshot",
   "metrics": {
-    "marketCap": 1353710592,
-    "enterpriseValue": 2470710528,
-    "price": 17.83,
+    "marketCap": 1275509760,
+    "enterpriseValue": 2392509696,
+    "price": 16.8,
     "week52High": 30.99,
-    "week52Low": 17.11,
+    "week52Low": 16.77,
     "beta": null,
     "sharesOutstanding": 75923198,
-    "pe": 32.42,
-    "forwardPe": 9.66,
-    "ps": 0.28,
-    "forwardPs": 0.26,
+    "pe": null,
+    "forwardPe": 9.1,
+    "ps": 0.26,
+    "forwardPs": 0.25,
     "pFcf": null,
-    "evEbitda": 9.65,
+    "evEbitda": 9.35,
     "fcfToEbitda": null,
-    "pb": 0.55,
+    "pb": 0.52,
     "dividendYield": 0,
     "dividendRate": null,
     "dividendGrowth": null,
@@ -88,7 +88,7 @@
     "cagr10y": null,
     "siAnn": null,
     "returnsBasis": "Yahoo chart API: performance from unadjusted closes, total return and CAGR from dividend- and split-adjusted closes",
-    "performanceAsOf": "2026-10-02"
+    "performanceAsOf": "2026-10-09"
   },
   "sources": {
     "universe": "https://www.sec.gov/files/company_tickers_exchange.json",
@@ -97,19 +97,19 @@
     "snapshot": "Yahoo Finance quoteSummary"
   },
   "market": {
-    "price": 17.83,
-    "asOfDate": "2026-10-02",
+    "price": 16.8,
+    "asOfDate": "2026-10-09",
     "valuation": {
-      "marketCap": 1353710592,
-      "enterpriseValue": 2470710528,
-      "pe": 32.42,
-      "forwardPe": 9.66,
-      "ps": 0.28,
-      "forwardPs": 0.26,
+      "marketCap": 1275509760,
+      "enterpriseValue": 2392509696,
+      "pe": null,
+      "forwardPe": 9.1,
+      "ps": 0.26,
+      "forwardPs": 0.25,
       "pFcf": null,
-      "evEbitda": 9.65,
+      "evEbitda": 9.35,
       "fcfToEbitda": null,
-      "pb": 0.55,
+      "pb": 0.52,
       "beta": null,
       "sharesOutstanding": 75923198
     },
@@ -139,7 +139,7 @@
     "annualDps": [],
     "recentDividends": [],
     "week52High": 30.99,
-    "week52Low": 17.11
+    "week52Low": 16.77
   },
   "fundamentals": {
     "asOf": "2025-12-31",
@@ -217,11 +217,11 @@
       "history/001.json"
     ],
     "pageSize": 1000,
-    "totalRows": 25,
-    "asOf": "2026-10-02",
+    "totalRows": 26,
+    "asOf": "2026-10-09",
     "granularity": {
-      "monthlyBefore": "2026-09-02",
-      "dailyFrom": "2026-09-02"
+      "monthlyBefore": "2026-09-09",
+      "dailyFrom": "2026-09-09"
     },
     "source": "Yahoo Finance public chart API (adjusted close); monthly rows (month-end close, summed volume) with daily rows for the last 31 days"
   }

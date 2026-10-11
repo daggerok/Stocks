@@ -2,28 +2,28 @@
   "ticker": "FGNX",
   "name": "FG Communities Holdings Inc.",
   "exchange": "Nasdaq",
-  "sector": "Financial Services",
-  "industry": "Asset Management",
+  "sector": "",
+  "industry": "",
   "cik": 1591890,
   "currency": "USD",
   "financialCurrency": "USD",
   "dataFile": "./companies/FGNX/meta.json",
   "price": 7.8,
-  "asOfDate": "2026-10-02",
+  "asOfDate": "2026-10-09",
   "fundamentalsAsOf": "2025-12-31",
   "fundamentalsBasis": "SEC EDGAR XBRL annual 10-K facts with gaps filled from Yahoo fundamentals-timeseries; valuation multiples from the Yahoo quoteSummary TTM snapshot",
   "metrics": {
-    "marketCap": 39746368,
-    "enterpriseValue": 27761074,
+    "marketCap": 36719396,
+    "enterpriseValue": 23964788,
     "price": 7.8,
-    "week52High": 31.8,
+    "week52High": 28.15,
     "week52Low": 4.175,
-    "beta": 1.41,
-    "sharesOutstanding": 5095688,
-    "pe": null,
+    "beta": 1.44,
+    "sharesOutstanding": 4707615,
+    "pe": 0.82,
     "forwardPe": null,
-    "ps": 16.28,
-    "forwardPs": 39.75,
+    "ps": 15.04,
+    "forwardPs": 36.72,
     "pFcf": null,
     "evEbitda": null,
     "fcfToEbitda": null,
@@ -88,7 +88,7 @@
     "cagr10y": null,
     "siAnn": null,
     "returnsBasis": "Yahoo chart API: performance from unadjusted closes, total return and CAGR from dividend- and split-adjusted closes",
-    "performanceAsOf": "2026-10-02"
+    "performanceAsOf": "2026-10-09"
   },
   "sources": {
     "universe": "https://www.sec.gov/files/company_tickers_exchange.json",
@@ -98,20 +98,20 @@
   },
   "market": {
     "price": 7.8,
-    "asOfDate": "2026-10-02",
+    "asOfDate": "2026-10-09",
     "valuation": {
-      "marketCap": 39746368,
-      "enterpriseValue": 27761074,
-      "pe": null,
+      "marketCap": 36719396,
+      "enterpriseValue": 23964788,
+      "pe": 0.82,
       "forwardPe": null,
-      "ps": 16.28,
-      "forwardPs": 39.75,
+      "ps": 15.04,
+      "forwardPs": 36.72,
       "pFcf": null,
       "evEbitda": null,
       "fcfToEbitda": null,
       "pb": 0.9,
-      "beta": 1.41,
-      "sharesOutstanding": 5095688
+      "beta": 1.44,
+      "sharesOutstanding": 4707615
     },
     "returns": {
       "perfYtd": null,
@@ -138,7 +138,7 @@
     },
     "annualDps": [],
     "recentDividends": [],
-    "week52High": 31.8,
+    "week52High": 28.15,
     "week52Low": 4.175
   },
   "fundamentals": {
@@ -437,11 +437,11 @@
       "history/001.json"
     ],
     "pageSize": 1000,
-    "totalRows": 5,
-    "asOf": "2026-10-02",
+    "totalRows": 13,
+    "asOf": "2026-10-09",
     "granularity": {
-      "monthlyBefore": "2026-09-28",
-      "dailyFrom": "2026-09-28"
+      "monthlyBefore": "2026-09-14",
+      "dailyFrom": "2026-09-14"
     },
     "source": "Yahoo Finance public chart API (adjusted close); monthly rows (month-end close, summed volume) with daily rows for the last 31 days"
   }

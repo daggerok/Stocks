@@ -8,16 +8,16 @@
   "currency": "USD",
   "financialCurrency": "USD",
   "dataFile": "./companies/BRVE/meta.json",
-  "price": 21.27,
-  "asOfDate": "2026-10-02",
+  "price": 20.02,
+  "asOfDate": "2026-10-09",
   "fundamentalsAsOf": "2025-12-31",
   "fundamentalsBasis": "Yahoo fundamentals-timeseries annual statements (no usable SEC history); valuation multiples from the Yahoo quoteSummary TTM snapshot",
   "metrics": {
-    "marketCap": 1915128832,
-    "enterpriseValue": 1844916480,
-    "price": 21.27,
+    "marketCap": 1802580224,
+    "enterpriseValue": 1725516928,
+    "price": 20.02,
     "week52High": 32,
-    "week52Low": 19.88,
+    "week52Low": 17.86,
     "beta": null,
     "sharesOutstanding": 90038969,
     "pe": null,
@@ -35,8 +35,8 @@
     "dividendGrowth5y": null,
     "payoutRatio": null,
     "fcfPayout": null,
-    "currentRatio": 17.03,
-    "quickRatio": 17.01,
+    "currentRatio": null,
+    "quickRatio": null,
     "debtToEquity": null,
     "netDebtToEbitda": null,
     "roic": null,
@@ -88,7 +88,7 @@
     "cagr10y": null,
     "siAnn": null,
     "returnsBasis": "Yahoo chart API: performance from unadjusted closes, total return and CAGR from dividend- and split-adjusted closes",
-    "performanceAsOf": "2026-10-02"
+    "performanceAsOf": "2026-10-09"
   },
   "sources": {
     "universe": "https://www.sec.gov/files/company_tickers_exchange.json",
@@ -97,11 +97,11 @@
     "snapshot": "Yahoo Finance quoteSummary"
   },
   "market": {
-    "price": 21.27,
-    "asOfDate": "2026-10-02",
+    "price": 20.02,
+    "asOfDate": "2026-10-09",
     "valuation": {
-      "marketCap": 1915128832,
-      "enterpriseValue": 1844916480,
+      "marketCap": 1802580224,
+      "enterpriseValue": 1725516928,
       "pe": null,
       "forwardPe": null,
       "ps": null,
@@ -139,32 +139,32 @@
     "annualDps": [],
     "recentDividends": [],
     "week52High": 32,
-    "week52Low": 19.88
+    "week52Low": 17.86
   },
   "fundamentals": {
     "asOf": "2025-12-31",
     "annual": [
       {
         "end": "2025-12-31",
-        "revenue": 0,
+        "revenue": null,
         "grossProfit": null,
-        "operatingIncome": -4505000,
-        "ebitda": -4505000,
-        "netIncome": -66052000,
+        "operatingIncome": null,
+        "ebitda": null,
+        "netIncome": null,
         "eps": -5.32,
-        "operatingCashFlow": -2014000,
-        "capex": 33569000,
-        "fcf": -35583000,
+        "operatingCashFlow": null,
+        "capex": null,
+        "fcf": null,
         "dividendsPaid": null,
-        "assets": 89350000,
-        "currentAssets": 89280000,
-        "currentLiabilities": 5242000,
-        "cash": 89161000,
+        "assets": null,
+        "currentAssets": null,
+        "currentLiabilities": null,
+        "cash": null,
         "longInvestments": null,
         "receivables": null,
         "debt": null,
-        "equity": -65872000,
-        "taxRate": 0
+        "equity": null,
+        "taxRate": null
       }
     ]
   },
@@ -173,11 +173,11 @@
       "history/001.json"
     ],
     "pageSize": 1000,
-    "totalRows": 24,
-    "asOf": "2026-10-02",
+    "totalRows": 25,
+    "asOf": "2026-10-09",
     "granularity": {
-      "monthlyBefore": "2026-09-02",
-      "dailyFrom": "2026-09-02"
+      "monthlyBefore": "2026-09-09",
+      "dailyFrom": "2026-09-09"
     },
     "source": "Yahoo Finance public chart API (adjusted close); monthly rows (month-end close, summed volume) with daily rows for the last 31 days"
   }

@@ -1,6 +1,6 @@
 {
   "ticker": "WKEY",
-  "name": "WISeKey International Holding AG",
+  "name": "WISeKey International Holding Ltd",
   "exchange": "Nasdaq",
   "sector": "Technology",
   "industry": "Semiconductors",
@@ -9,7 +9,7 @@
   "financialCurrency": "USD",
   "dataFile": "./companies/WKEY/meta.json",
   "price": 6.09,
-  "asOfDate": "2026-10-02",
+  "asOfDate": "2026-09-14",
   "fundamentalsAsOf": "2025-12-31",
   "fundamentalsBasis": "Yahoo fundamentals-timeseries annual statements (no usable SEC history); valuation multiples from the Yahoo quoteSummary TTM snapshot",
   "metrics": {
@@ -73,22 +73,22 @@
     "ebitdaMarginDelta3y": -146.45,
     "fcfMarginDelta": -17.14,
     "fcfMarginDelta3y": -98.36,
-    "perfYtd": -22.42,
-    "perf1y": -9.24,
-    "perf3y": 244.07,
-    "perf5y": -79.87,
+    "perfYtd": null,
+    "perf1y": null,
+    "perf3y": null,
+    "perf5y": null,
     "perf10y": null,
-    "ytd": -22.42,
-    "tr1y": -9.24,
-    "tr3y": 244.07,
-    "tr5y": -79.87,
+    "ytd": null,
+    "tr1y": null,
+    "tr3y": null,
+    "tr5y": null,
     "tr10y": null,
-    "cagr3y": 50.97,
-    "cagr5y": -27.43,
+    "cagr3y": null,
+    "cagr5y": null,
     "cagr10y": null,
-    "siAnn": -30.04,
+    "siAnn": null,
     "returnsBasis": "Yahoo chart API: performance from unadjusted closes, total return and CAGR from dividend- and split-adjusted closes",
-    "performanceAsOf": "2026-10-02"
+    "performanceAsOf": "2026-09-14"
   },
   "sources": {
     "universe": "https://www.sec.gov/files/company_tickers_exchange.json",
@@ -98,7 +98,7 @@
   },
   "market": {
     "price": 6.09,
-    "asOfDate": "2026-10-02",
+    "asOfDate": "2026-09-14",
     "valuation": {
       "marketCap": 69688408,
       "enterpriseValue": 94998504,
@@ -114,20 +114,20 @@
       "sharesOutstanding": 8241328
     },
     "returns": {
-      "perfYtd": -22.42,
-      "perf1y": -9.24,
-      "perf3y": 244.07,
-      "perf5y": -79.87,
+      "perfYtd": null,
+      "perf1y": null,
+      "perf3y": null,
+      "perf5y": null,
       "perf10y": null,
-      "ytd": -22.42,
-      "tr1y": -9.24,
-      "tr3y": 244.07,
-      "tr5y": -79.87,
+      "ytd": null,
+      "tr1y": null,
+      "tr3y": null,
+      "tr5y": null,
       "tr10y": null,
-      "cagr3y": 50.97,
-      "cagr5y": -27.43,
+      "cagr3y": null,
+      "cagr5y": null,
       "cagr10y": null,
-      "siAnn": -30.04
+      "siAnn": null
     },
     "dividends": {
       "dividendYield": 0,
@@ -239,11 +239,11 @@
       "history/001.json"
     ],
     "pageSize": 1000,
-    "totalRows": 115,
-    "asOf": "2026-10-02",
+    "totalRows": 3,
+    "asOf": "2026-09-14",
     "granularity": {
-      "monthlyBefore": "2026-09-02",
-      "dailyFrom": "2026-09-02"
+      "monthlyBefore": "2026-09-14",
+      "dailyFrom": "2026-09-14"
     },
     "source": "Yahoo Finance public chart API (adjusted close); monthly rows (month-end close, summed volume) with daily rows for the last 31 days"
   }

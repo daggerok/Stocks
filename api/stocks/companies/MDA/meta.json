@@ -8,17 +8,17 @@
   "currency": "USD",
   "financialCurrency": "CAD",
   "dataFile": "./companies/MDA/meta.json",
-  "price": 29.89,
-  "asOfDate": "2026-10-02",
+  "price": 28.15,
+  "asOfDate": "2026-10-09",
   "fundamentalsAsOf": "2025-12-31",
   "fundamentalsBasis": "Yahoo fundamentals-timeseries annual statements (no usable SEC history); valuation multiples from the Yahoo quoteSummary TTM snapshot",
   "metrics": {
-    "marketCap": 4846089728,
+    "marketCap": 4563981824,
     "enterpriseValue": null,
-    "price": 29.89,
+    "price": 28.15,
     "week52High": 49.37,
     "week52Low": 23.23,
-    "beta": 0.2,
+    "beta": 0.19,
     "sharesOutstanding": 162130797,
     "pe": null,
     "forwardPe": null,
@@ -88,7 +88,7 @@
     "cagr10y": null,
     "siAnn": null,
     "returnsBasis": "Yahoo chart API: performance from unadjusted closes, total return and CAGR from dividend- and split-adjusted closes",
-    "performanceAsOf": "2026-10-02"
+    "performanceAsOf": "2026-10-09"
   },
   "sources": {
     "universe": "https://www.sec.gov/files/company_tickers_exchange.json",
@@ -97,10 +97,10 @@
     "snapshot": "Yahoo Finance quoteSummary"
   },
   "market": {
-    "price": 29.89,
-    "asOfDate": "2026-10-02",
+    "price": 28.15,
+    "asOfDate": "2026-10-09",
     "valuation": {
-      "marketCap": 4846089728,
+      "marketCap": 4563981824,
       "enterpriseValue": null,
       "pe": null,
       "forwardPe": null,
@@ -110,7 +110,7 @@
       "evEbitda": null,
       "fcfToEbitda": -66.65,
       "pb": null,
-      "beta": 0.2,
+      "beta": 0.19,
       "sharesOutstanding": 162130797
     },
     "returns": {
@@ -239,11 +239,11 @@
       "history/001.json"
     ],
     "pageSize": 1000,
-    "totalRows": 29,
-    "asOf": "2026-10-02",
+    "totalRows": 30,
+    "asOf": "2026-10-09",
     "granularity": {
-      "monthlyBefore": "2026-09-02",
-      "dailyFrom": "2026-09-02"
+      "monthlyBefore": "2026-09-09",
+      "dailyFrom": "2026-09-09"
     },
     "source": "Yahoo Finance public chart API (adjusted close); monthly rows (month-end close, summed volume) with daily rows for the last 31 days"
   }

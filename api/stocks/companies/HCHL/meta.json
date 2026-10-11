@@ -9,7 +9,7 @@
   "financialCurrency": "USD",
   "dataFile": "./companies/HCHL/meta.json",
   "price": 3.96,
-  "asOfDate": "2026-10-02",
+  "asOfDate": "2026-10-09",
   "fundamentalsAsOf": "2025-08-31",
   "fundamentalsBasis": "Yahoo fundamentals-timeseries annual statements (no usable SEC history); valuation multiples from the Yahoo quoteSummary TTM snapshot",
   "metrics": {
@@ -74,21 +74,21 @@
     "fcfMarginDelta": -37.94,
     "fcfMarginDelta3y": null,
     "perfYtd": 1.28,
-    "perf1y": 20.73,
+    "perf1y": 17.16,
     "perf3y": null,
     "perf5y": null,
     "perf10y": null,
     "ytd": 1.28,
-    "tr1y": 20.73,
+    "tr1y": 17.16,
     "tr3y": null,
     "tr5y": null,
     "tr10y": null,
     "cagr3y": null,
     "cagr5y": null,
     "cagr10y": null,
-    "siAnn": -16.74,
+    "siAnn": -16.51,
     "returnsBasis": "Yahoo chart API: performance from unadjusted closes, total return and CAGR from dividend- and split-adjusted closes",
-    "performanceAsOf": "2026-10-02"
+    "performanceAsOf": "2026-10-09"
   },
   "sources": {
     "universe": "https://www.sec.gov/files/company_tickers_exchange.json",
@@ -98,7 +98,7 @@
   },
   "market": {
     "price": 3.96,
-    "asOfDate": "2026-10-02",
+    "asOfDate": "2026-10-09",
     "valuation": {
       "marketCap": 118183824,
       "enterpriseValue": 118496480,
@@ -115,19 +115,19 @@
     },
     "returns": {
       "perfYtd": 1.28,
-      "perf1y": 20.73,
+      "perf1y": 17.16,
       "perf3y": null,
       "perf5y": null,
       "perf10y": null,
       "ytd": 1.28,
-      "tr1y": 20.73,
+      "tr1y": 17.16,
       "tr3y": null,
       "tr5y": null,
       "tr10y": null,
       "cagr3y": null,
       "cagr5y": null,
       "cagr10y": null,
-      "siAnn": -16.74
+      "siAnn": -16.51
     },
     "dividends": {
       "dividendYield": 0,
@@ -217,11 +217,11 @@
       "history/001.json"
     ],
     "pageSize": 1000,
-    "totalRows": 38,
-    "asOf": "2026-10-02",
+    "totalRows": 39,
+    "asOf": "2026-10-09",
     "granularity": {
-      "monthlyBefore": "2026-09-02",
-      "dailyFrom": "2026-09-02"
+      "monthlyBefore": "2026-09-09",
+      "dailyFrom": "2026-09-09"
     },
     "source": "Yahoo Finance public chart API (adjusted close); monthly rows (month-end close, summed volume) with daily rows for the last 31 days"
   }

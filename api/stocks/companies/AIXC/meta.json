@@ -2,23 +2,23 @@
   "ticker": "AIXC",
   "name": "FF EAI Robotics Ecosystem Inc.",
   "exchange": "Nasdaq",
-  "sector": "Technology",
-  "industry": "Computer Hardware",
+  "sector": "",
+  "industry": "",
   "cik": 1460702,
   "currency": "USD",
   "financialCurrency": "USD",
   "dataFile": "./companies/AIXC/meta.json",
   "price": 1.01,
-  "asOfDate": "2026-09-29",
+  "asOfDate": "2026-10-09",
   "fundamentalsAsOf": "2025-12-31",
   "fundamentalsBasis": "SEC EDGAR XBRL annual 10-K facts with gaps filled from Yahoo fundamentals-timeseries; valuation multiples from the Yahoo quoteSummary TTM snapshot",
   "metrics": {
     "marketCap": 21319972,
-    "enterpriseValue": 29721292,
+    "enterpriseValue": 41255236,
     "price": 1.01,
     "week52High": 5.97,
     "week52Low": 0.593,
-    "beta": 0.57,
+    "beta": 0.45,
     "sharesOutstanding": 21108884,
     "pe": null,
     "forwardPe": null,
@@ -88,7 +88,7 @@
     "cagr10y": null,
     "siAnn": null,
     "returnsBasis": "Yahoo chart API: performance from unadjusted closes, total return and CAGR from dividend- and split-adjusted closes",
-    "performanceAsOf": "2026-09-29"
+    "performanceAsOf": "2026-10-09"
   },
   "sources": {
     "universe": "https://www.sec.gov/files/company_tickers_exchange.json",
@@ -98,10 +98,10 @@
   },
   "market": {
     "price": 1.01,
-    "asOfDate": "2026-09-29",
+    "asOfDate": "2026-10-09",
     "valuation": {
       "marketCap": 21319972,
-      "enterpriseValue": 29721292,
+      "enterpriseValue": 41255236,
       "pe": null,
       "forwardPe": null,
       "ps": null,
@@ -110,7 +110,7 @@
       "evEbitda": null,
       "fcfToEbitda": null,
       "pb": 77.69,
-      "beta": 0.57,
+      "beta": 0.45,
       "sharesOutstanding": 21108884
     },
     "returns": {
@@ -305,11 +305,11 @@
       "history/001.json"
     ],
     "pageSize": 1000,
-    "totalRows": 1,
-    "asOf": "2026-09-29",
+    "totalRows": 9,
+    "asOf": "2026-10-09",
     "granularity": {
-      "monthlyBefore": "2026-09-29",
-      "dailyFrom": "2026-09-29"
+      "monthlyBefore": "2026-09-14",
+      "dailyFrom": "2026-09-14"
     },
     "source": "Yahoo Finance public chart API (adjusted close); monthly rows (month-end close, summed volume) with daily rows for the last 31 days"
   }

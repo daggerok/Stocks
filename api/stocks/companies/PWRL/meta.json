@@ -8,14 +8,14 @@
   "currency": "USD",
   "financialCurrency": "USD",
   "dataFile": "./companies/PWRL/meta.json",
-  "price": 11.4,
-  "asOfDate": "2026-10-02",
+  "price": 11.85,
+  "asOfDate": "2026-10-09",
   "fundamentalsAsOf": null,
   "fundamentalsBasis": "no annual fundamentals available",
   "metrics": {
-    "marketCap": 492033056,
+    "marketCap": 511455456,
     "enterpriseValue": null,
-    "price": 11.4,
+    "price": 11.85,
     "week52High": 40,
     "week52Low": 9.41,
     "beta": null,
@@ -88,7 +88,7 @@
     "cagr10y": null,
     "siAnn": null,
     "returnsBasis": "Yahoo chart API: performance from unadjusted closes, total return and CAGR from dividend- and split-adjusted closes",
-    "performanceAsOf": "2026-10-02"
+    "performanceAsOf": "2026-10-09"
   },
   "sources": {
     "universe": "https://www.sec.gov/files/company_tickers_exchange.json",
@@ -97,10 +97,10 @@
     "snapshot": "Yahoo Finance quoteSummary"
   },
   "market": {
-    "price": 11.4,
-    "asOfDate": "2026-10-02",
+    "price": 11.85,
+    "asOfDate": "2026-10-09",
     "valuation": {
-      "marketCap": 492033056,
+      "marketCap": 511455456,
       "enterpriseValue": null,
       "pe": null,
       "forwardPe": null,
@@ -150,11 +150,11 @@
       "history/001.json"
     ],
     "pageSize": 1000,
-    "totalRows": 27,
-    "asOf": "2026-10-02",
+    "totalRows": 28,
+    "asOf": "2026-10-09",
     "granularity": {
-      "monthlyBefore": "2026-09-02",
-      "dailyFrom": "2026-09-02"
+      "monthlyBefore": "2026-09-09",
+      "dailyFrom": "2026-09-09"
     },
     "source": "Yahoo Finance public chart API (adjusted close); monthly rows (month-end close, summed volume) with daily rows for the last 31 days"
   }

@@ -8,22 +8,22 @@
   "currency": "USD",
   "financialCurrency": "USD",
   "dataFile": "./companies/STDN/meta.json",
-  "price": 12.52,
-  "asOfDate": "2026-10-02",
+  "price": 13.69,
+  "asOfDate": "2026-10-09",
   "fundamentalsAsOf": "2025-12-31",
   "fundamentalsBasis": "Yahoo fundamentals-timeseries annual statements (no usable SEC history); valuation multiples from the Yahoo quoteSummary TTM snapshot",
   "metrics": {
-    "marketCap": 2011632768,
-    "enterpriseValue": 2072830080,
-    "price": 12.52,
+    "marketCap": 2199620608,
+    "enterpriseValue": 2255994624,
+    "price": 13.69,
     "week52High": 17.34,
     "week52Low": 7.05,
     "beta": null,
     "sharesOutstanding": 149095234,
     "pe": null,
     "forwardPe": null,
-    "ps": 266.84,
-    "forwardPs": 33.16,
+    "ps": 291.77,
+    "forwardPs": 36.16,
     "pFcf": null,
     "evEbitda": null,
     "fcfToEbitda": null,
@@ -88,7 +88,7 @@
     "cagr10y": null,
     "siAnn": null,
     "returnsBasis": "Yahoo chart API: performance from unadjusted closes, total return and CAGR from dividend- and split-adjusted closes",
-    "performanceAsOf": "2026-10-02"
+    "performanceAsOf": "2026-10-09"
   },
   "sources": {
     "universe": "https://www.sec.gov/files/company_tickers_exchange.json",
@@ -97,15 +97,15 @@
     "snapshot": "Yahoo Finance quoteSummary"
   },
   "market": {
-    "price": 12.52,
-    "asOfDate": "2026-10-02",
+    "price": 13.69,
+    "asOfDate": "2026-10-09",
     "valuation": {
-      "marketCap": 2011632768,
-      "enterpriseValue": 2072830080,
+      "marketCap": 2199620608,
+      "enterpriseValue": 2255994624,
       "pe": null,
       "forwardPe": null,
-      "ps": 266.84,
-      "forwardPs": 33.16,
+      "ps": 291.77,
+      "forwardPs": 36.16,
       "pFcf": null,
       "evEbitda": null,
       "fcfToEbitda": null,
@@ -195,11 +195,11 @@
       "history/001.json"
     ],
     "pageSize": 1000,
-    "totalRows": 25,
-    "asOf": "2026-10-02",
+    "totalRows": 26,
+    "asOf": "2026-10-09",
     "granularity": {
-      "monthlyBefore": "2026-09-02",
-      "dailyFrom": "2026-09-02"
+      "monthlyBefore": "2026-09-09",
+      "dailyFrom": "2026-09-09"
     },
     "source": "Yahoo Finance public chart API (adjusted close); monthly rows (month-end close, summed volume) with daily rows for the last 31 days"
   }

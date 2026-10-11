@@ -9,7 +9,7 @@
   "financialCurrency": "USD",
   "dataFile": "./companies/IPEX/meta.json",
   "price": 3.16,
-  "asOfDate": "2026-09-25",
+  "asOfDate": "2026-09-14",
   "fundamentalsAsOf": "2025-12-31",
   "fundamentalsBasis": "SEC EDGAR XBRL annual 10-K facts with gaps filled from Yahoo fundamentals-timeseries; valuation multiples from the Yahoo quoteSummary TTM snapshot",
   "metrics": {
@@ -88,7 +88,7 @@
     "cagr10y": null,
     "siAnn": null,
     "returnsBasis": "Yahoo chart API: performance from unadjusted closes, total return and CAGR from dividend- and split-adjusted closes",
-    "performanceAsOf": "2026-09-25"
+    "performanceAsOf": "2026-09-14"
   },
   "sources": {
     "universe": "https://www.sec.gov/files/company_tickers_exchange.json",
@@ -98,7 +98,7 @@
   },
   "market": {
     "price": 3.16,
-    "asOfDate": "2026-09-25",
+    "asOfDate": "2026-09-14",
     "valuation": {
       "marketCap": 37633628,
       "enterpriseValue": 14749463,
@@ -195,11 +195,11 @@
       "history/001.json"
     ],
     "pageSize": 1000,
-    "totalRows": 1,
-    "asOf": "2026-09-25",
+    "totalRows": 3,
+    "asOf": "2026-09-14",
     "granularity": {
-      "monthlyBefore": "2026-09-25",
-      "dailyFrom": "2026-09-25"
+      "monthlyBefore": "2026-09-14",
+      "dailyFrom": "2026-09-14"
     },
     "source": "Yahoo Finance public chart API (adjusted close); monthly rows (month-end close, summed volume) with daily rows for the last 31 days"
   }

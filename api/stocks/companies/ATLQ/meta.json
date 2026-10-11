@@ -1,6 +1,6 @@
 {
   "ticker": "ATLQ",
-  "name": "JAB Acquisition Corp I",
+  "name": "JAB Acquisition Corp I Class A Ordinary Shares",
   "exchange": "Nasdaq",
   "sector": "Financial Services",
   "industry": "Shell Companies",
@@ -8,14 +8,14 @@
   "currency": "USD",
   "financialCurrency": "USD",
   "dataFile": "./companies/ATLQ/meta.json",
-  "price": 9.97,
-  "asOfDate": "2026-10-02",
+  "price": 9.98,
+  "asOfDate": "2026-10-09",
   "fundamentalsAsOf": null,
   "fundamentalsBasis": "no annual fundamentals available",
   "metrics": {
-    "marketCap": 283767584,
-    "enterpriseValue": 283123424,
-    "price": 9.97,
+    "marketCap": 284043648,
+    "enterpriseValue": 283399488,
+    "price": 9.98,
     "week52High": 9.99,
     "week52Low": 9.89,
     "beta": null,
@@ -27,7 +27,7 @@
     "pFcf": null,
     "evEbitda": null,
     "fcfToEbitda": null,
-    "pb": 997,
+    "pb": 997.97,
     "dividendYield": 0,
     "dividendRate": null,
     "dividendGrowth": null,
@@ -88,7 +88,7 @@
     "cagr10y": null,
     "siAnn": null,
     "returnsBasis": "Yahoo chart API: performance from unadjusted closes, total return and CAGR from dividend- and split-adjusted closes",
-    "performanceAsOf": "2026-10-02"
+    "performanceAsOf": "2026-10-09"
   },
   "sources": {
     "universe": "https://www.sec.gov/files/company_tickers_exchange.json",
@@ -97,11 +97,11 @@
     "snapshot": "Yahoo Finance quoteSummary"
   },
   "market": {
-    "price": 9.97,
-    "asOfDate": "2026-10-02",
+    "price": 9.98,
+    "asOfDate": "2026-10-09",
     "valuation": {
-      "marketCap": 283767584,
-      "enterpriseValue": 283123424,
+      "marketCap": 284043648,
+      "enterpriseValue": 283399488,
       "pe": null,
       "forwardPe": null,
       "ps": null,
@@ -109,7 +109,7 @@
       "pFcf": null,
       "evEbitda": null,
       "fcfToEbitda": null,
-      "pb": 997,
+      "pb": 997.97,
       "beta": null,
       "sharesOutstanding": 18605000
     },
@@ -150,11 +150,11 @@
       "history/001.json"
     ],
     "pageSize": 1000,
-    "totalRows": 21,
-    "asOf": "2026-10-02",
+    "totalRows": 22,
+    "asOf": "2026-10-09",
     "granularity": {
-      "monthlyBefore": "2026-09-02",
-      "dailyFrom": "2026-09-02"
+      "monthlyBefore": "2026-09-14",
+      "dailyFrom": "2026-09-14"
     },
     "source": "Yahoo Finance public chart API (adjusted close); monthly rows (month-end close, summed volume) with daily rows for the last 31 days"
   }
