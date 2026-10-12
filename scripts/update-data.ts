@@ -211,7 +211,14 @@ async function paceRequests(): Promise<void> {
 }
 
 class HttpError extends Error {
-  constructor(public status: number, message: string) { super(message); this.name = 'HttpError'; }
+  constructor(public status: number, message: string, public retryAfterMs = 0) { super(message); this.name = 'HttpError'; }
+}
+
+/** Retry-After as milliseconds: delta-seconds or an HTTP-date, capped at 120 s; 0 when absent, in the past or malformed. */
+export function parseRetryAfter(header: string | null, now = Date.now()): number {
+  const text = (header || '').trim();
+  const seconds = /^\d+$/.test(text) ? Number(text) : (Date.parse(text) - now) / 1000;
+  return Number.isFinite(seconds) && seconds > 0 ? Math.min(120, seconds) * 1000 : 0;
 }
 const retryable = (error: unknown) => (error instanceof HttpError ? [403, 408, 425, 429].includes(error.status) || error.status >= 500 : true);
 
@@ -222,13 +229,14 @@ async function fetchText(url: string, label: string, config: UpdaterConfig, head
       await paceRequests();
       const signal = AbortSignal.timeout(FETCH_TIMEOUT_MS); // covers headers and body
       const response = await fetch(url, { headers: { 'User-Agent': secUa, Accept: '*/*', ...headers }, redirect: 'follow', signal });
-      if (!response.ok) throw new HttpError(response.status, `${response.status} ${response.statusText}`);
+      if (!response.ok) throw new HttpError(response.status, `${response.status} ${response.statusText}`, parseRetryAfter(response.headers.get('retry-after')));
       return await response.text();
     } catch (error) {
       lastError = error;
       if (attempt >= config.maxRetries || !retryable(error)) break;
       const rateLimited = error instanceof HttpError && error.status === 429;
-      await sleep(Math.min(60_000, (rateLimited ? 12_000 : 800) * 2 ** attempt));
+      const retryAfterMs = error instanceof HttpError && error.retryAfterMs ? error.retryAfterMs : 0;
+      await sleep(Math.max(retryAfterMs, Math.min(60_000, (rateLimited ? 12_000 : 800) * 2 ** attempt)));
     }
   }
   throw new Error(`${label}: ${lastError instanceof Error ? lastError.message : String(lastError)}`);
