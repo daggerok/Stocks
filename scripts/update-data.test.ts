@@ -7,9 +7,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
-  annualSeries, buildAnnualRows, completeMetrics, CONTROL_NAMES, dividendMetrics, fundamentalsMetrics, installSystemCa, isCertError, mergeAnnual,
+  annualSeries, buildAnnualRows, compactIndexText, completeMetrics, CONTROL_NAMES, dividendMetrics, fundamentalsMetrics, installSystemCa, isCertError, mergeAnnual,
   isOperatingTicker, normalizeTicker, parseChart, parseRange, parseRanges, parseSecTickers, parseSummary, parseYahooAnnual, priceReturns, readConfig, resolveControls,
-  run, runtimeControls, sampleHistory, useApiRoot, valuationMetrics, type ChartDay, type Snapshot,
+  indexDocument, run, runtimeControls, sampleHistory, useApiRoot, valuationMetrics, type ChartDay, type Snapshot,
 } from './update-data.ts';
 
 // ---------------------------------------------------------------------------
@@ -335,6 +335,23 @@ describe('pipeline', () => {
     expect(await cursor()).not.toBeNull();
     await run(controls());
     expect(await cursor()).toBeNull();
+  });
+
+  test('compactIndexText writes one company per line and parses back', () => {
+    const doc = indexDocument([{ ticker: 'A', metrics: { pe: 1 } }, { ticker: 'B', metrics: { pe: null } }]);
+    const text = compactIndexText(doc);
+    expect(JSON.parse(text)).toEqual(doc);
+    expect(text.split('\n').filter((line) => line.startsWith('{"ticker"')).length).toBe(2);
+  });
+
+  test('the published index is one company per line; meta.json stays pretty-printed', async () => {
+    await run(controls());
+    const text = await readText('index.json');
+    expect(text.split('\n').filter((line) => line.startsWith('{"ticker"')).map((line) => JSON.parse(line.replace(/,$/, '')).ticker)).toEqual(['AAA', 'BBB']);
+    expect(text).not.toContain('\n  ');
+    expect(await readText('companies/AAA/meta.json')).toContain('\n  "ticker": "AAA"');
+    await run(controls());
+    expect(await readText('index.json')).toBe(text); // the compact file is still a zero-diff rerun
   });
 
   test('a failed source keeps the stock exactly as published', async () => {

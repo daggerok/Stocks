@@ -699,8 +699,19 @@ export function samePublishedContent(previous: string, value: unknown): boolean 
   try { return JSON.stringify(strip(JSON.parse(previous))) === JSON.stringify(strip(value)); } catch { return false; }
 }
 
-async function writeIfChanged(file: URL, value: unknown): Promise<boolean> {
-  const text = `${JSON.stringify(value, null, 2)}\n`;
+/** One top-level entry per line: the index stays diff-friendly in git without the indentation that is 30% of its bytes. */
+export function compactIndexText(value: unknown): string {
+  const doc = value as Record<string, unknown>;
+  const lines: string[] = [];
+  for (const [key, item] of Object.entries(doc)) {
+    if (key === 'companies' && Array.isArray(item)) lines.push(`${JSON.stringify(key)}: [\n${item.map((row) => JSON.stringify(row)).join(',\n')}\n]`);
+    else lines.push(`${JSON.stringify(key)}: ${JSON.stringify(item)}`);
+  }
+  return `{\n${lines.join(',\n')}\n}\n`;
+}
+
+async function writeIfChanged(file: URL, value: unknown, format: (value: unknown) => string = (v) => `${JSON.stringify(v, null, 2)}\n`): Promise<boolean> {
+  const text = format(value);
   try {
     const previous = await readFile(file, 'utf8');
     if (previous === text || samePublishedContent(previous, value)) return false;
@@ -990,7 +1001,7 @@ export async function run(controls: Record<string, string | undefined>, options:
   const added = results.filter((r) => !previous.has(String(r.ticker))).map((r) => String(r.ticker));
   for (const row of results) byTicker.set(String(row.ticker), row);
   const companies = [...byTicker.values()].sort((a, b) => String(a.ticker).localeCompare(String(b.ticker)));
-  await writeIfChanged(indexFile(), indexDocument(companies));
+  await writeIfChanged(indexFile(), indexDocument(companies), compactIndexText);
   if (rotate) await writeIfChanged(stateFile(), { cursor: queue.length ? lastTicker : null, savedAt: stamp() });
   console.log(`[done    ] ${results.length} updated, ${skipped} skipped, ${failed} failed; index lists ${companies.length} companies`);
   if (added.length) {

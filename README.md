@@ -81,7 +81,7 @@ Caveats:
 - NYSE Arca has no stock rows in the SEC company table; Arca-listed stocks are not covered
 - A stock whose Yahoo quote type is not `EQUITY` (ETFs, funds) is skipped; so is a security without a market cap (SPAC units and warrants, baby bonds, preferred shares) and a CIK that has no SEC company facts and no Yahoo statements (closed-end funds, trusts)
 - SPAC shells and other new listings without a full fiscal year stay in the catalog with unavailable fundamentals; filter them by sector or industry
-- The feed holds about 6,000 stocks, roughly 35 KB each plus a 17 MB `index.json`; it stays under the 1 GB GitHub Pages size limit, and a weekly run rewrites most files, so the Git history grows by tens of MB per run
+- The feed holds about 6,000 stocks, roughly 35 KB each plus a 12 MB `index.json` (one company per line); it stays under the 1 GB GitHub Pages size limit, and a weekly run rewrites most files, so the Git history grows by tens of MB per run
 
 ### Update controls
 
