@@ -918,18 +918,40 @@ export async function processCompany(listing: Listing, config: UpdaterConfig, pr
 // ---------------------------------------------------------------------------
 // run
 
-async function readPreviousRows(): Promise<Map<string, JsonRecord>> {
+/** Delisted: gone from the SEC exchange table AND no price newer than this date (60 days back). */
+const delistedBefore = () => new Date(Date.now() - 60 * DAY_MS).toISOString().slice(0, 10);
+
+async function readPreviousRows(table: Map<string, Listing>): Promise<Map<string, JsonRecord>> {
   const out = new Map<string, JsonRecord>();
   for (const row of (await readJson(indexFile()))?.companies ?? []) out.set(String(row.ticker), row);
-  // the index must list every company that has a meta.json, even when an earlier run shrank it
+  // the index must list every company that has a meta.json, even when an earlier run shrank it, except a delisted one
+  const staleBefore = delistedBefore();
   try {
     for (const entry of await readdir(new URL('companies/', API_ROOT))) {
       if (out.has(entry)) continue;
       const meta = await readJson(new URL(`companies/${entry}/meta.json`, API_ROOT));
+      if (meta && !table.has(entry) && String(meta.asOfDate ?? '') < staleBefore) continue;
       if (meta) out.set(entry, rowFromMeta(meta));
     }
   } catch { /* first run */ }
   return out;
+}
+
+/** --prune: removes the folders of delisted companies the index no longer lists (run by hand, about once a quarter). */
+export async function pruneCompanies(): Promise<string[]> {
+  const index = await readJson(indexFile());
+  if (!Array.isArray(index?.companies)) throw new Error('--prune: no index.json to compare with');
+  const listed = new Set(index.companies.map((row: JsonRecord) => String(row.ticker)));
+  const staleBefore = delistedBefore();
+  const removed: string[] = [];
+  for (const entry of (await readdir(new URL('companies/', API_ROOT))).sort()) {
+    if (listed.has(entry)) continue;
+    const meta = await readJson(new URL(`companies/${entry}/meta.json`, API_ROOT));
+    if (!meta || String(meta.asOfDate ?? '') >= staleBefore) continue; // never a folder with a recent price
+    await rm(companyDir(entry), { recursive: true, force: true });
+    removed.push(entry);
+  }
+  return removed;
 }
 
 export function indexDocument(companies: JsonRecord[]): JsonRecord {
@@ -953,8 +975,8 @@ export async function run(controls: Record<string, string | undefined>, options:
   yahooSession = null;
   yahooSessionRetryAt = 0;
 
-  const previous = await readPreviousRows();
   const table = parseSecTickers(await fetchJson(SEC_TICKERS_URL, '[universe] SEC ticker table', config));
+  const previous = await readPreviousRows(table);
   const wanted = config.tickers ? [...config.tickers] : [...table.keys()];
   const universe: Listing[] = [];
   let failed = 0;
@@ -1008,10 +1030,19 @@ export async function run(controls: Record<string, string | undefined>, options:
   const byTicker = new Map<string, JsonRecord>(previous);
   const added = results.filter((r) => !previous.has(String(r.ticker))).map((r) => String(r.ticker));
   for (const row of results) byTicker.set(String(row.ticker), row);
+  // Delisted: no longer in the SEC exchange table AND no fresh price for 60 days (both, so a transient gap in the table never drops a live stock).
+  const delisted: string[] = [];
+  if (!config.tickers) {
+    const staleBefore = delistedBefore();
+    for (const [ticker, row] of byTicker) {
+      if (!table.has(ticker) && String(row.asOfDate ?? '') < staleBefore) { byTicker.delete(ticker); delisted.push(ticker); }
+    }
+  }
   const companies = [...byTicker.values()].sort((a, b) => String(a.ticker).localeCompare(String(b.ticker)));
   await writeIfChanged(indexFile(), indexDocument(companies), compactIndexText);
   if (rotate) await writeIfChanged(stateFile(), { cursor: queue.length ? lastTicker : null, savedAt: stamp() });
   console.log(`[done    ] ${results.length} updated, ${skipped} skipped, ${failed} failed; index lists ${companies.length} companies`);
+  if (delisted.length) console.log(`DELISTED (${delisted.length}): ${listNames(delisted)}`);
   if (added.length) {
     console.log(`NEW STOCKS (${added.length}): ${listNames(added)}`);
     if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY, `NEW STOCKS (${added.length}): ${listNames(added)}\n`, 'utf8');
@@ -1050,6 +1081,11 @@ AND logic):
   SEC_UA=             SEC User-Agent override (declare a contact); blank uses the built-in default (daggerok ETF feed daggerok@gmail.com)
   VERBOSE=false
   USE_SYSTEM_CA=auto  TLS trust store: auto restarts once with --use-system-ca on an untrusted-certificate error | true | false
+
+A full-universe run (no TICKERS) drops a delisted stock from the index: gone from
+the SEC exchange table and no price for 60 days. Its folder stays until
+  ./scripts/update-data.ts --prune
+removes the folders of such stocks (run it by hand about once a quarter).
 
 Examples:
   TICKERS="AAPL MSFT JPM" ./scripts/update-data.ts
@@ -1100,5 +1136,6 @@ export async function runtimeControls(env: Record<string, string | undefined> = 
 
 if ((import.meta as { main?: boolean }).main) {
   if (process.argv.some((arg) => ['-h', '--help', 'help'].includes(arg))) console.log(USAGE.trim());
+  else if (process.argv.includes('--prune')) await pruneCompanies().then((removed) => console.log(`[prune   ] removed ${removed.length} delisted folders${removed.length ? `: ${listNames(removed)}` : ''}`)).catch((error) => { console.error(error instanceof Error ? error.message : String(error)); process.exitCode = 1; });
   else await runtimeControls().then((controls) => { installSystemCa(controls.USE_SYSTEM_CA ?? 'auto'); return run(controls); }).catch((error) => { console.error(error instanceof Error ? error.stack : String(error)); process.exitCode = 1; });
 }

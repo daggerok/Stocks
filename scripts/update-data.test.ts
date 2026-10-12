@@ -2,14 +2,14 @@
 import { afterEach, beforeEach, describe, expect, setSystemTime, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
   annualSeries, buildAnnualRows, compactIndexText, completeMetrics, CONTROL_NAMES, dividendMetrics, fundamentalsMetrics, installSystemCa, isCertError, mergeAnnual,
   isOperatingTicker, normalizeTicker, parseChart, parseRange, parseRanges, parseRetryAfter, parseSecTickers, parseSummary, parseYahooAnnual, priceReturns, readConfig, resolveControls,
-  indexDocument, run, runtimeControls, sampleHistory, useApiRoot, valuationMetrics, type ChartDay, type Snapshot,
+  indexDocument, pruneCompanies, run, runtimeControls, sampleHistory, useApiRoot, valuationMetrics, type ChartDay, type Snapshot,
 } from './update-data.ts';
 
 // ---------------------------------------------------------------------------
@@ -308,6 +308,29 @@ describe('pipeline', () => {
     const filtered = await run(controls({ MARKET_CAP: '10B:' }));
     expect(filtered.updated).toBe(0);
     expect((await readIndex()).companies).toHaveLength(2);
+  });
+
+  test('a delisted stock (not in the SEC table, no price for 60 days) leaves the index on a full run only; --prune removes its folder', async () => {
+    const day = (back: number) => new Date(Date.now() - back * 86_400_000).toISOString().slice(0, 10);
+    await run(controls());
+    const index = await readIndex();
+    // ZZB: gone from the SEC table yesterday (a transient gap); ZZC: delisted, still in the index; ZZD: delisted, already out of the index
+    index.companies.push({ ticker: 'ZZB', asOfDate: day(1) }, { ticker: 'ZZC', asOfDate: day(90) });
+    await writeFile(join(dir, 'index.json'), JSON.stringify(index));
+    for (const ticker of ['ZZC', 'ZZD']) {
+      await mkdir(join(dir, 'companies', ticker), { recursive: true });
+      await writeFile(join(dir, 'companies', ticker, 'meta.json'), JSON.stringify({ ticker, asOfDate: day(90) }));
+    }
+    const tickers = async () => (await readIndex()).companies.map((c: any) => c.ticker);
+    await run(controls({ TICKERS: 'AAA' })); // a TICKERS run never shrinks the index and never brings ZZD back
+    expect(await tickers()).toEqual(['AAA', 'BBB', 'ZZB', 'ZZC']);
+    expect(await run(controls())).toMatchObject({ rows: 3 });
+    expect(await tickers()).toEqual(['AAA', 'BBB', 'ZZB']);
+    expect(await pruneCompanies()).toEqual(['ZZC', 'ZZD']);
+    const left = (await readdir(join(dir, 'companies'))).sort();
+    expect(left.filter((t) => t.startsWith('ZZ'))).toEqual([]);
+    expect(left).toContain('AAA');
+    expect(await pruneCompanies()).toEqual([]); // listed stocks and folders without meta.json are never removed
   });
 
   test('a second identical run writes nothing (zero diff, stamps move only with content)', async () => {
