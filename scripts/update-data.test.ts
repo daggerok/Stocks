@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
   annualSeries, buildAnnualRows, compactIndexText, completeMetrics, CONTROL_NAMES, dividendMetrics, fundamentalsMetrics, installSystemCa, isCertError, mergeAnnual,
-  isOperatingTicker, normalizeTicker, parseChart, parseRange, parseRanges, parseSecTickers, parseSummary, parseYahooAnnual, priceReturns, readConfig, resolveControls,
+  isOperatingTicker, normalizeTicker, parseChart, parseRange, parseRanges, parseRetryAfter, parseSecTickers, parseSummary, parseYahooAnnual, priceReturns, readConfig, resolveControls,
   indexDocument, run, runtimeControls, sampleHistory, useApiRoot, valuationMetrics, type ChartDay, type Snapshot,
 } from './update-data.ts';
 
@@ -374,6 +374,7 @@ describe('network', () => {
   let peak = 0;
   const seen: Array<{ url: string; signal: unknown }> = [];
   let companyFactsStatus = 200;
+  let companyFactsRetryAfter = '';
   let cookieFailures = 0; // the first N fc.yahoo.com answers carry no cookie (a failed Yahoo session)
   let clockJumpOnChart = ''; // a ticker whose chart request moves the clock 6 minutes ahead
 
@@ -392,7 +393,7 @@ describe('network', () => {
     if (clockJumpOnChart && url.includes(`/v8/finance/chart/${clockJumpOnChart}?`)) setSystemTime(new Date(Date.now() + 6 * 60_000));
     if (url.includes('/v8/finance/chart/')) return json({ chart: { result: [{ meta: {}, timestamp: [1577923200], indicators: { quote: [{ close: [10], volume: [1] }], adjclose: [{ adjclose: [10] }] } }] } });
     if (url.includes('fundamentals-timeseries')) return json({ timeseries: { result: [] } });
-    if (url.includes('companyfacts')) return companyFactsStatus === 200 ? json(syntheticFacts()) : new Response('nope', { status: companyFactsStatus });
+    if (url.includes('companyfacts')) return companyFactsStatus === 200 ? json(syntheticFacts()) : new Response('nope', { status: companyFactsStatus, headers: companyFactsRetryAfter ? { 'retry-after': companyFactsRetryAfter } : {} });
     return new Response('not found', { status: 404 });
   }) as typeof fetch;
 
@@ -404,6 +405,7 @@ describe('network', () => {
     peak = 0;
     seen.length = 0;
     companyFactsStatus = 200;
+    companyFactsRetryAfter = '';
     cookieFailures = 0;
     clockJumpOnChart = '';
   });
@@ -430,6 +432,24 @@ describe('network', () => {
     companyFactsStatus = 404;
     await run(controls({ TICKERS: 'AAA', MAX_RETRIES: '3' }));
     expect(seen.filter((c) => c.url.includes('companyfacts')).length).toBe(1);
+  });
+
+  test('Retry-After: delta-seconds and HTTP-date are parsed and capped, junk and past dates are ignored', () => {
+    const now = Date.parse('Wed, 21 Oct 2026 07:28:00 GMT');
+    expect(parseRetryAfter('7', now)).toBe(7_000);
+    expect(parseRetryAfter(' 600 ', now)).toBe(120_000);
+    expect(parseRetryAfter('Wed, 21 Oct 2026 07:28:30 GMT', now)).toBe(30_000);
+    expect(parseRetryAfter('Wed, 21 Oct 2026 07:27:00 GMT', now)).toBe(0);
+    for (const junk of [null, '', '0', 'soon']) expect(parseRetryAfter(junk, now)).toBe(0);
+  });
+
+  test('a retry waits for Retry-After when it is longer than the backoff', async () => {
+    companyFactsStatus = 503;
+    companyFactsRetryAfter = '2'; // the backoff alone would wait 0.8 s
+    const started = Date.now();
+    expect(await run(controls({ TICKERS: 'AAA', MAX_RETRIES: '1' }))).toMatchObject({ failed: 1 });
+    expect(seen.filter((c) => c.url.includes('companyfacts')).length).toBe(2);
+    expect(Date.now() - started).toBeGreaterThanOrEqual(1_900);
   });
 
   test('a failed Yahoo session is not cached for the whole run: retried after 5 minutes, not before', async () => {
