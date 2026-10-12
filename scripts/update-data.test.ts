@@ -1,5 +1,5 @@
 /// <reference types="bun" />
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, setSystemTime, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
@@ -357,6 +357,8 @@ describe('network', () => {
   let peak = 0;
   const seen: Array<{ url: string; signal: unknown }> = [];
   let companyFactsStatus = 200;
+  let cookieFailures = 0; // the first N fc.yahoo.com answers carry no cookie (a failed Yahoo session)
+  let clockJumpOnChart = ''; // a ticker whose chart request moves the clock 6 minutes ahead
 
   const mockFetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -367,9 +369,10 @@ describe('network', () => {
     inFlight -= 1;
     const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
     if (url.includes('company_tickers_exchange')) return json({ fields: ['cik', 'name', 'ticker', 'exchange'], data: [[1, 'AAA', 'AAA', 'Nasdaq'], [2, 'BBB', 'BBB', 'NYSE'], [3, 'CCC', 'CCC', 'NYSE']] });
-    if (url.startsWith('https://fc.yahoo.com')) return new Response('', { status: 404, headers: { 'set-cookie': 'A3=abc; Path=/' } });
+    if (url.startsWith('https://fc.yahoo.com')) return cookieFailures-- > 0 ? new Response('', { status: 404 }) : new Response('', { status: 404, headers: { 'set-cookie': 'A3=abc; Path=/' } });
     if (url.includes('getcrumb')) return new Response('crumb123', { status: 200 });
     if (url.includes('quoteSummary')) return json({ quoteSummary: { result: [{ price: { quoteType: 'EQUITY', currency: 'USD', marketCap: { raw: 1e9 } } }] } });
+    if (clockJumpOnChart && url.includes(`/v8/finance/chart/${clockJumpOnChart}?`)) setSystemTime(new Date(Date.now() + 6 * 60_000));
     if (url.includes('/v8/finance/chart/')) return json({ chart: { result: [{ meta: {}, timestamp: [1577923200], indicators: { quote: [{ close: [10], volume: [1] }], adjclose: [{ adjclose: [10] }] } }] } });
     if (url.includes('fundamentals-timeseries')) return json({ timeseries: { result: [] } });
     if (url.includes('companyfacts')) return companyFactsStatus === 200 ? json(syntheticFacts()) : new Response('nope', { status: companyFactsStatus });
@@ -384,9 +387,12 @@ describe('network', () => {
     peak = 0;
     seen.length = 0;
     companyFactsStatus = 200;
+    cookieFailures = 0;
+    clockJumpOnChart = '';
   });
   afterEach(async () => {
     globalThis.fetch = realFetch;
+    setSystemTime();
     useApiRoot(restore);
     await rm(dir, { recursive: true, force: true });
   });
@@ -407,6 +413,19 @@ describe('network', () => {
     companyFactsStatus = 404;
     await run(controls({ TICKERS: 'AAA', MAX_RETRIES: '3' }));
     expect(seen.filter((c) => c.url.includes('companyfacts')).length).toBe(1);
+  });
+
+  test('a failed Yahoo session is not cached for the whole run: retried after 5 minutes, not before', async () => {
+    const sessionOpens = () => seen.filter((c) => c.url.startsWith('https://fc.yahoo.com')).length;
+    cookieFailures = 1; // inside the retry window nobody reopens the session: no snapshot, no market cap, every stock skipped
+    expect(await run(controls({ CONCURRENCY: '1' }))).toMatchObject({ updated: 0, skipped: 3 });
+    expect(sessionOpens()).toBe(1);
+    seen.length = 0;
+    await rm(dir, { recursive: true, force: true });
+    cookieFailures = 1;
+    clockJumpOnChart = 'AAA'; // the clock passes the retry window while AAA is processed: BBB reopens the session
+    expect(await run(controls({ CONCURRENCY: '1' }))).toMatchObject({ updated: 2, skipped: 1 });
+    expect(sessionOpens()).toBe(2);
   });
 
   test('concurrency is real: peak 1 at CONCURRENCY=1, more at 3', async () => {

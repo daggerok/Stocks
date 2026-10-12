@@ -608,7 +608,19 @@ async function openYahooSession(config: UpdaterConfig): Promise<YahooSession> {
     return null;
   }
 }
-const getYahooSession = (config: UpdaterConfig) => (yahooSession ??= openYahooSession(config));
+let yahooSessionRetryAt = 0;
+const YAHOO_SESSION_RETRY_MS = 5 * 60_000;
+/** A failed session is retried after YAHOO_SESSION_RETRY_MS instead of being cached as null for the whole run. */
+const getYahooSession = async (config: UpdaterConfig): Promise<YahooSession> => {
+  if (!yahooSession && Date.now() < yahooSessionRetryAt) return null;
+  if (!yahooSession) {
+    yahooSession = openYahooSession(config).then((session) => {
+      if (!session) { yahooSession = null; yahooSessionRetryAt = Date.now() + YAHOO_SESSION_RETRY_MS; }
+      return session;
+    });
+  }
+  return yahooSession;
+};
 
 export type Snapshot = {
   quoteType: string; name: string; sector: string | null; industry: string | null; currency: string; financialCurrency: string;
@@ -920,6 +932,7 @@ export async function run(controls: Record<string, string | undefined>, options:
   requestGates = new Array(Math.max(1, config.concurrency)).fill(0);
   verboseOutput = config.verbose;
   yahooSession = null;
+  yahooSessionRetryAt = 0;
 
   const previous = await readPreviousRows();
   const table = parseSecTickers(await fetchJson(SEC_TICKERS_URL, '[universe] SEC ticker table', config));
