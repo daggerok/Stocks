@@ -410,6 +410,7 @@ const YAHOO_ANNUAL_TYPES: Record<string, keyof AnnualRow> = {
   annualAccountsReceivable: 'receivables', annualTotalDebt: 'debt', annualStockholdersEquity: 'equity', annualTaxRateForCalcs: 'taxRate',
 };
 const ABSOLUTE_FIELDS = new Set<keyof AnnualRow>(['capex', 'dividendsPaid']);
+const YAHOO_FILLED_FIELDS = Object.values(YAHOO_ANNUAL_TYPES);
 
 export function parseYahooAnnual(payload: JsonRecord): Map<string, Partial<AnnualRow>> {
   const byDate = new Map<string, Partial<AnnualRow>>();
@@ -855,7 +856,9 @@ export async function processCompany(listing: Listing, config: UpdaterConfig, pr
       rows = prevMeta?.fundamentals?.annual ?? [];
     }
   }
-  if (!config.skipYahoo && !secFailed) {
+  // Yahoo only fills null fields: when the 4 latest SEC years carry every field it could fill, the request adds nothing to them
+  const secComplete = rows.length >= 4 && rows.slice(0, 4).every((r) => YAHOO_FILLED_FIELDS.every((key) => r[key] !== null));
+  if (!config.skipYahoo && !secFailed && !secComplete) {
     try {
       const merged = mergeAnnual(rows, await fetchYahooAnnual(ticker, config));
       rows = merged.rows;

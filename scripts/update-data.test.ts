@@ -48,6 +48,18 @@ function syntheticFacts(): any {
   };
 }
 
+/** Every field Yahoo fundamentals-timeseries could fill is present in every SEC year. */
+function completeFacts(): any {
+  const facts = syntheticFacts();
+  Object.assign(facts.facts['us-gaap'], {
+    GrossProfit: units(flowSeries(40)),
+    AccountsReceivableNetCurrent: units(instantSeries(10)),
+    IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest: units(flowSeries(18)),
+    IncomeTaxExpenseBenefit: units(flowSeries(3)),
+  });
+  return facts;
+}
+
 const SNAPSHOT: Snapshot = {
   quoteType: 'EQUITY', name: 'X', sector: 'Tech', industry: 'Software', currency: 'USD', financialCurrency: 'USD', marketCap: 1e12, enterpriseValue: 1e12, sharesOutstanding: 1, beta: 1,
   pe: 20, forwardPe: 18, ps: 5, forwardRevenue: 2e11, evEbitda: 10, pb: 3, freeCashflow: 1e11, ebitda: 2e11, week52High: 1, week52Low: 1,
@@ -398,6 +410,7 @@ describe('network', () => {
   const seen: Array<{ url: string; signal: unknown }> = [];
   let companyFactsStatus = 200;
   let companyFactsRetryAfter = '';
+  let completeSec = false;
   let cookieFailures = 0; // the first N fc.yahoo.com answers carry no cookie (a failed Yahoo session)
   let clockJumpOnChart = ''; // a ticker whose chart request moves the clock 6 minutes ahead
 
@@ -416,7 +429,7 @@ describe('network', () => {
     if (clockJumpOnChart && url.includes(`/v8/finance/chart/${clockJumpOnChart}?`)) setSystemTime(new Date(Date.now() + 6 * 60_000));
     if (url.includes('/v8/finance/chart/')) return json({ chart: { result: [{ meta: {}, timestamp: [1577923200], indicators: { quote: [{ close: [10], volume: [1] }], adjclose: [{ adjclose: [10] }] } }] } });
     if (url.includes('fundamentals-timeseries')) return json({ timeseries: { result: [] } });
-    if (url.includes('companyfacts')) return companyFactsStatus === 200 ? json(syntheticFacts()) : new Response('nope', { status: companyFactsStatus, headers: companyFactsRetryAfter ? { 'retry-after': companyFactsRetryAfter } : {} });
+    if (url.includes('companyfacts')) return companyFactsStatus === 200 ? json(completeSec ? completeFacts() : syntheticFacts()) : new Response('nope', { status: companyFactsStatus, headers: companyFactsRetryAfter ? { 'retry-after': companyFactsRetryAfter } : {} });
     return new Response('not found', { status: 404 });
   }) as typeof fetch;
 
@@ -429,6 +442,7 @@ describe('network', () => {
     seen.length = 0;
     companyFactsStatus = 200;
     companyFactsRetryAfter = '';
+    completeSec = false;
     cookieFailures = 0;
     clockJumpOnChart = '';
   });
@@ -473,6 +487,17 @@ describe('network', () => {
     expect(await run(controls({ TICKERS: 'AAA', MAX_RETRIES: '1' }))).toMatchObject({ failed: 1 });
     expect(seen.filter((c) => c.url.includes('companyfacts')).length).toBe(2);
     expect(Date.now() - started).toBeGreaterThanOrEqual(1_900);
+  });
+
+  test('Yahoo fundamentals-timeseries is requested only when the 4 latest SEC years have a gap it could fill', async () => {
+    const timeseries = () => seen.filter((c) => c.url.includes('fundamentals-timeseries')).length;
+    await run(controls({ TICKERS: 'AAA' })); // the synthetic SEC facts have no gross profit, receivables or tax rate
+    expect(timeseries()).toBe(1);
+    seen.length = 0;
+    completeSec = true;
+    await run(controls({ TICKERS: 'AAA' }));
+    expect(timeseries()).toBe(0);
+    expect(seen.filter((c) => c.url.includes('companyfacts')).length).toBe(1);
   });
 
   test('a failed Yahoo session is not cached for the whole run: retried after 5 minutes, not before', async () => {
