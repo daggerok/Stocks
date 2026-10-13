@@ -120,7 +120,7 @@ SKIP_YAHOO=true ./scripts/update-data.ts
 
 ## TypeScript and verification
 
-The browser app lives in `src/`: `index.html` (markup), `main.tsx` (TypeScript), `index.css` (Tailwind CSS v4 plus the app styles) and `favicon.ico`, built by Parcel into `dist` (`bun run build`, same setup as daggerok/csv and daggerok/options-desk) - no `tsconfig.json` needed. Bun runs the updater TypeScript out of the box. The migration notes are in `.claude/parcel-migration.md`
+The browser app lives in `src/`: `index.html` (markup), `main.tsx` (TypeScript), `index.css` (Tailwind CSS v4 plus the app styles) and `favicon.ico`, built by Parcel into `dist` (`bun run build`, same setup as daggerok/csv and daggerok/options-desk) - no `tsconfig.json` needed. Bun runs the updater TypeScript out of the box
 
 Verification before every publish:
 
