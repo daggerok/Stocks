@@ -1346,7 +1346,7 @@ async function loadNextHistoryPage(blocking = true): Promise<void> {
   try {
     const page = await fetchPage(key, entry.manifest.pages[entry.nextPage]);
     if (!entry.headers.length && page.headers.length) entry.headers = page.headers;
-    entry.rows = entry.rows.concat(page.rows);
+    for (let i = 0; i < page.rows.length; i++) entry.rows.push(page.rows[i]); // in place: no O(n) copy per page (gridView keys its cache on the row count too)
     entry.nextPage += 1;
     if (state.activeKey === key && state.activeTab === 'detail:history') render();
   } catch (error) {
@@ -3191,7 +3191,8 @@ let gridBaselineCache: { sig: string; origin: unknown; source: Array<{ raw: any[
  * the origin, the search or the sort change; the column filters then only drop rows from it (order kept, no re-sort).
  */
 function gridView(cols: GridCol[], origin: unknown, source: () => Array<{ raw: any[]; cells: string[] }>, scope = ''): any[] {
-  const sig = [scope, state.activeKey, state.sortKey, state.sortDir, currentQuery()].join('|');
+  // the row count is part of the key: history pages are appended to the same array (loadNextHistoryPage), so identity alone would miss them
+  const sig = [scope, state.activeKey, state.sortKey, state.sortDir, currentQuery(), Array.isArray(origin) ? origin.length : -1].join('|');
   let cache = gridBaselineCache;
   if (!cache || cache.sig !== sig || cache.origin !== origin) {
     const items = source();
