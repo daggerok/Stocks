@@ -37,15 +37,14 @@ const companyDir = (ticker: string) => new URL(`companies/${ticker}/`, API_ROOT)
 export const CONTROL_NAMES = [
   'MAX_FETCHES', 'REQUEST_SLEEP', 'CONCURRENCY', 'MAX_RETRIES', 'EXCHANGES', 'TICKERS', 'MARKET_CAP', 'DIVIDEND_YIELD',
   'HISTORY_RANGE', 'HISTORY_PAGE_SIZE', 'SKIP_YAHOO', 'SEC_UA', 'VERBOSE', 'USE_SYSTEM_CA',
-  ...['PERFORMANCE', 'TOTAL_RETURN'].flatMap((prefix) => ['YTD', '1Y', '3Y', '5Y', '10Y'].map((period) => `${prefix}_${period}`)),
+  ...['1D', '3D', '1W', 'WTD', '2W', '20D', '1M', 'MTD', '40D', '60D', '1Q', 'QTD', '4M', '6M', '52W', 'YTD', '1Y', '3Y', '5Y', '10Y'].map((period) => `PERFORMANCE_${period}`),
+  ...['YTD', '1Y', '3Y', '5Y', '10Y'].map((period) => `TOTAL_RETURN_${period}`),
 ] as const;
 export type ControlName = (typeof CONTROL_NAMES)[number];
-const PERIODS = ['YTD', '1Y', '3Y', '5Y', '10Y'] as const;
-type Period = (typeof PERIODS)[number];
-type RangeMap = Partial<Record<Period, Range>>;
+type RangeMap = Partial<Record<string, Range>>;
 // metrics keys behind the PERFORMANCE_* (price change) and TOTAL_RETURN_* (dividend- and split-adjusted) filters
-const PERFORMANCE_KEYS: Record<Period, string> = { YTD: 'perfYtd', '1Y': 'perf1y', '3Y': 'perf3y', '5Y': 'perf5y', '10Y': 'perf10y' };
-const TOTAL_RETURN_KEYS: Record<Period, string> = { YTD: 'ytd', '1Y': 'tr1y', '3Y': 'tr3y', '5Y': 'tr5y', '10Y': 'tr10y' };
+const PERFORMANCE_KEYS: Record<string, string> = { '1D': 'perf1d', '3D': 'perf3d', '1W': 'perf1w', WTD: 'perfWtd', '2W': 'perf2w', '20D': 'perf20d', '1M': 'perf1m', MTD: 'perfMtd', '40D': 'perf40d', '60D': 'perf60d', '1Q': 'perf1q', QTD: 'perfQtd', '4M': 'perf4m', '6M': 'perf6m', '52W': 'perf52w', YTD: 'perfYtd', '1Y': 'perf1y', '3Y': 'perf3y', '5Y': 'perf5y', '10Y': 'perf10y' };
+const TOTAL_RETURN_KEYS: Record<string, string> = { YTD: 'ytd', '1Y': 'tr1y', '3Y': 'tr3y', '5Y': 'tr5y', '10Y': 'tr10y' };
 
 export type UpdaterConfig = {
   maxFetches: number;
@@ -119,7 +118,7 @@ export function parseHistoryRange(value: string): string {
 
 export function parseRanges(env: Record<string, string | undefined>, prefix: 'PERFORMANCE' | 'TOTAL_RETURN'): RangeMap {
   const out: RangeMap = {};
-  for (const period of PERIODS) {
+  for (const period of Object.keys(prefix === 'PERFORMANCE' ? PERFORMANCE_KEYS : TOTAL_RETURN_KEYS)) {
     const range = parseRange(env[`${prefix}_${period}`] ?? '', `${prefix}_${period}`);
     if (range.min !== undefined || range.max !== undefined) out[period] = range;
   }
@@ -938,10 +937,8 @@ export async function processCompany(listing: Listing, config: UpdaterConfig, pr
   const reasons: string[] = [];
   if (!inRange(metrics.marketCap, config.marketCap)) reasons.push('MARKET_CAP');
   if (!inRange(metrics.dividendYield, config.dividendYield)) reasons.push('DIVIDEND_YIELD');
-  for (const period of PERIODS) {
-    if (config.performance[period] && !inRange(metrics[PERFORMANCE_KEYS[period]], config.performance[period] as Range)) reasons.push(`PERFORMANCE_${period}`);
-    if (config.totalReturn[period] && !inRange(metrics[TOTAL_RETURN_KEYS[period]], config.totalReturn[period] as Range)) reasons.push(`TOTAL_RETURN_${period}`);
-  }
+  for (const [period, range] of Object.entries(config.performance)) if (range && !inRange(metrics[PERFORMANCE_KEYS[period]], range)) reasons.push(`PERFORMANCE_${period}`);
+  for (const [period, range] of Object.entries(config.totalReturn)) if (range && !inRange(metrics[TOTAL_RETURN_KEYS[period]], range)) reasons.push(`TOTAL_RETURN_${period}`);
   if (reasons.length) return { skipped: `filtered by ${reasons.join(', ')}` };
 
   const meta = { ...row, sources: { universe: SEC_TICKERS_URL, fundamentals: `${SEC_FACTS_URL}/CIK${toCik(listing.cik)}.json`, market: 'Yahoo Finance chart API', snapshot: 'Yahoo Finance quoteSummary' }, market, fundamentals: { asOf: rows[0]?.end ?? null, annual: rows }, history };
@@ -1109,7 +1106,9 @@ AND logic):
   TICKERS="AAPL MSFT"  ticker allowlist (BRK.B and BRK-B both work); blank = every stock on EXCHANGES
   MARKET_CAP=:        market cap range in USD, K/M/B/T suffixes allowed (10B:)
   DIVIDEND_YIELD=:    dividend yield percentage range
-  PERFORMANCE_YTD|1Y|3Y|5Y|10Y=min:max   price change ranges (%)
+  PERFORMANCE_1D|3D|1W|WTD|2W|20D|1M|MTD|40D|60D|1Q|QTD|4M|6M|52W|YTD|1Y|3Y|5Y|10Y=min:max
+                      price change ranges (%); D, 1W and 2W count daily candles, WTD, MTD, QTD are to date
+                      (workflow: pass them in the advanced JSON, only YTD to 10Y are individual inputs)
   TOTAL_RETURN_YTD|1Y|3Y|5Y|10Y=min:max total return ranges (%)
   HISTORY_RANGE=max   Yahoo history range (max, 10y, 5y, ...)
   HISTORY_PAGE_SIZE=1000

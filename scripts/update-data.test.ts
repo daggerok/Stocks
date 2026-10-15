@@ -110,6 +110,8 @@ describe('controls', () => {
     expect(parseRange('10B:')).toEqual({ min: 1e10, max: undefined });
     expect(parseRange(':500M')).toEqual({ min: undefined, max: 5e8 });
     expect(parseRanges({ PERFORMANCE_1Y: '10:', PERFORMANCE_5Y: ':' }, 'PERFORMANCE')).toEqual({ '1Y': { min: 10, max: undefined } });
+    expect(resolveControls(file(), { PERFORMANCE_20D: '10:' }).PERFORMANCE_20D).toBe('10:');
+    expect(parseRanges({ PERFORMANCE_WTD: '2:', PERFORMANCE_20D: ':-5', TOTAL_RETURN_20D: '1:' }, 'PERFORMANCE')).toEqual({ WTD: { min: 2, max: undefined }, '20D': { min: undefined, max: -5 } });
     expect(normalizeTicker('brk.b')).toBe('BRK-B');
     expect(resolveControls(file()).USE_SYSTEM_CA).toBe('auto');
     expect(resolveControls(file(), {}, {}, { USE_SYSTEM_CA: 'TRUE' }).USE_SYSTEM_CA).toBe('true');
@@ -122,7 +124,7 @@ describe('controls', () => {
     const help = spawnSync('bun', [new URL('./update-data.ts', import.meta.url).pathname, '--help'], { encoding: 'utf8' }).stdout;
     for (const name of CONTROL_NAMES) {
       const tenor = name.match(/^(PERFORMANCE|TOTAL_RETURN)_/);
-      expect(help).toContain(tenor ? `${tenor[1]}_YTD|1Y|3Y|5Y|10Y` : name);
+      expect(help).toMatch(tenor ? new RegExp(`${tenor[1]}_([0-9A-Z]+\\|)*${name.slice(tenor[0].length)}[|=]`) : new RegExp(name));
     }
   });
 });
