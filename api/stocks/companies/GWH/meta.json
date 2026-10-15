@@ -9,7 +9,7 @@
   "financialCurrency": "USD",
   "dataFile": "./companies/GWH/meta.json",
   "price": 0.1567,
-  "asOfDate": "2026-10-09",
+  "asOfDate": "2026-10-14",
   "fundamentalsAsOf": "2025-12-31",
   "fundamentalsBasis": "SEC EDGAR XBRL annual 10-K facts with gaps filled from Yahoo fundamentals-timeseries; valuation multiples from the Yahoo quoteSummary TTM snapshot",
   "metrics": {
@@ -73,6 +73,21 @@
     "ebitdaMarginDelta3y": 8365.78,
     "fcfMarginDelta": -2127.35,
     "fcfMarginDelta3y": 7325.42,
+    "perf1d": 8.7,
+    "perf3d": -7.41,
+    "perf1w": -23.08,
+    "perfWtd": -7.41,
+    "perf2w": -41.18,
+    "perf20d": -70.33,
+    "perf1m": -71.51,
+    "perfMtd": -41.18,
+    "perf40d": -84.92,
+    "perf60d": -88.14,
+    "perf1q": null,
+    "perfQtd": -41.18,
+    "perf4m": null,
+    "perf6m": null,
+    "perf52w": null,
     "perfYtd": null,
     "perf1y": null,
     "perf3y": null,
@@ -87,8 +102,8 @@
     "cagr5y": null,
     "cagr10y": null,
     "siAnn": null,
-    "returnsBasis": "Yahoo chart API: performance from unadjusted closes, total return and CAGR from dividend- and split-adjusted closes",
-    "performanceAsOf": "2026-10-09"
+    "returnsBasis": "Yahoo chart API: performance from unadjusted closes (D windows, 1W (5 daily candles) and 2W (10) count daily candles; 1M and 1Q take the candle closest to the same day 1 and 3 months earlier; WTD, MTD, QTD and YTD start at the last close before the current calendar week, month, quarter or year; 4M, 6M and 52W are calendar windows anchored on the last close on or before the target date), total return and CAGR from dividend- and split-adjusted closes",
+    "performanceAsOf": "2026-10-14"
   },
   "sources": {
     "universe": "https://www.sec.gov/files/company_tickers_exchange.json",
@@ -98,7 +113,7 @@
   },
   "market": {
     "price": 0.1567,
-    "asOfDate": "2026-10-09",
+    "asOfDate": "2026-10-14",
     "valuation": {
       "marketCap": 6310959,
       "enterpriseValue": 11776403,
@@ -114,6 +129,21 @@
       "sharesOutstanding": 40274150
     },
     "returns": {
+      "perf1d": 8.7,
+      "perf3d": -7.41,
+      "perf1w": -23.08,
+      "perfWtd": -7.41,
+      "perf2w": -41.18,
+      "perf20d": -70.33,
+      "perf1m": -71.51,
+      "perfMtd": -41.18,
+      "perf40d": -84.92,
+      "perf60d": -88.14,
+      "perf1q": null,
+      "perfQtd": -41.18,
+      "perf4m": null,
+      "perf6m": null,
+      "perf52w": null,
       "perfYtd": null,
       "perf1y": null,
       "perf3y": null,
@@ -284,10 +314,10 @@
     ],
     "pageSize": 1000,
     "totalRows": 26,
-    "asOf": "2026-10-09",
+    "asOf": "2026-10-14",
     "granularity": {
-      "monthlyBefore": "2026-09-09",
-      "dailyFrom": "2026-09-09"
+      "monthlyBefore": "2026-09-14",
+      "dailyFrom": "2026-09-14"
     },
     "source": "Yahoo Finance public chart API (adjusted close); monthly rows (month-end close, summed volume) with daily rows for the last 31 days"
   }
