@@ -116,6 +116,21 @@ function buildColumns(): Col[] {
       add(`${key}Delta${suffix.replace('y', 'y')}`, `${label.replace(' Margin', '')} Δ ${tag}`, group, 'pp', `${label} change in percentage points versus ${tag === '1Y' ? 'the previous' : '3 fiscal years earlier'} fiscal year.`);
     });
   });
+  const SHORT_PERF: Array<[string, string, string]> = [
+    ['perf1d', '1D', 'over the last trading day (the last daily candle)'], ['perf3d', '3D', 'over the last 3 trading days (daily candles)'],
+    ['perf1w', '1W', 'over the last 5 trading days (daily candles, 1 week of 5 trading days)'],
+    ['perfWtd', 'WTD', 'week to date: during the current calendar week from Monday, since the last close of the previous week'], ['perf2w', '2W', 'over the last 10 trading days (daily candles, 2 weeks of 5 trading days)'],
+    ['perf20d', '20D', 'over the last 20 trading days (daily candles)'], ['perf1m', '1M', 'since the close closest to the same day a month earlier (a Saturday takes Friday, a Sunday Monday)'],
+    ['perfMtd', 'MTD', 'month to date: during the current calendar month from the 1st, since the last close of the previous month'],
+    ['perf40d', '40D', 'over the last 40 trading days (daily candles)'], ['perf60d', '60D', 'over the last 60 trading days (daily candles)'],
+    ['perf1q', '1Q', 'since the close closest to the same day 3 months earlier (a Saturday takes Friday, a Sunday Monday)'],
+    ['perfQtd', 'QTD', 'quarter to date: during the current calendar quarter (Q1 Jan-Mar, Q2 Apr-Jun, Q3 Jul-Sep, Q4 Oct-Dec), since the last close of the previous quarter'],
+    ['perf4m', '4M', 'since the last close on or before the same date 4 months earlier'], ['perf6m', '6M', 'since the last close on or before the same date 6 months earlier'],
+    ['perf52w', '52W', 'since the last close on or before the same date 52 weeks earlier'],
+  ];
+  SHORT_PERF.forEach(([key, tag, span]) => {
+    add(key, `Perf ${tag}`, 'Performance', 'pct', `Performance ${tag} - price change ${span}, up to Return As Of; unadjusted closes.`);
+  });
   [['perfYtd', 'YTD'], ['perf1y', '1Y'], ['perf3y', '3Y'], ['perf5y', '5Y'], ['perf10y', '10Y']].forEach(([key, tag]) => {
     add(key, `Perf ${tag}`, 'Performance', 'pct', `Performance ${tag} - cumulative price change from unadjusted closes (dividends not included).`);
   });

@@ -552,19 +552,51 @@ function anchorDay(days: ChartDay[], target: string): ChartDay | null {
   for (const day of days) { if (day.date <= target) found = day; else break; }
   return found;
 }
+// the candle closest to the target date (a Saturday target takes Friday, a Sunday one Monday, a tie the earlier one); null when the history starts after it
+function nearestDay(days: ChartDay[], target: string): ChartDay | null {
+  const before = anchorDay(days, target);
+  if (!before) return null;
+  const after = days[days.indexOf(before) + 1];
+  return after && dayDiff(after.date, target) < dayDiff(target, before.date) ? after : before;
+}
+// N daily candles back from the last one (trading days, not calendar days)
+const tradingBack = (days: ChartDay[], n: number): ChartDay | null => days[days.length - 1 - n] ?? null;
+const minusDays = (iso: string, n: number) => new Date(Date.parse(`${iso}T00:00:00Z`) - n * DAY_MS).toISOString().slice(0, 10);
+// calendar months back, the day clipped to the end of a shorter month (2026-10-31 - 1M = 2026-09-30)
+export function minusMonths(iso: string, n: number): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  const target = new Date(Date.UTC(y, m - 1 - n, 1));
+  const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
+  target.setUTCDate(Math.min(d, lastDay));
+  return target.toISOString().slice(0, 10);
+}
+// the day before the current calendar week (Monday to Sunday), month or quarter (Q1 Jan-Mar ... Q4 Oct-Dec) of an ISO date
+export function periodEve(iso: string, period: 'week' | 'month' | 'quarter'): string {
+  if (period === 'week') return minusDays(iso, ((new Date(`${iso}T00:00:00Z`).getUTCDay() + 6) % 7) + 1);
+  const month = period === 'month' ? Number(iso.slice(5, 7)) : Math.floor((Number(iso.slice(5, 7)) - 1) / 3) * 3 + 1;
+  return minusDays(`${iso.slice(0, 4)}-${String(month).padStart(2, '0')}-01`, 1);
+}
 const pct = (start: number | null | undefined, end: number | null | undefined) => (start && end !== null && end !== undefined ? rounded((end / start - 1) * 100) : null);
 const cagr = (start: number | null | undefined, end: number | null | undefined, years: number) => (start && start > 0 && end && end > 0 ? rounded(((end / start) ** (1 / years) - 1) * 100) : null);
 
 export function priceReturns(days: ChartDay[]): JsonRecord {
   const last = days[days.length - 1];
-  const empty = { perfYtd: null, perf1y: null, perf3y: null, perf5y: null, perf10y: null, ytd: null, tr1y: null, tr3y: null, tr5y: null, tr10y: null, cagr3y: null, cagr5y: null, cagr10y: null, siAnn: null };
+  const empty = { perf1d: null, perf3d: null, perf1w: null, perfWtd: null, perf2w: null, perf20d: null, perf1m: null, perfMtd: null, perf40d: null, perf60d: null, perf1q: null, perfQtd: null, perf4m: null, perf6m: null, perf52w: null, perfYtd: null, perf1y: null, perf3y: null, perf5y: null, perf10y: null, ytd: null, tr1y: null, tr3y: null, tr5y: null, tr10y: null, cagr3y: null, cagr5y: null, cagr10y: null, siAnn: null };
   if (!last) return empty;
   const at = (years: number) => anchorDay(days, new Date(Date.parse(`${last.date}T00:00:00Z`) - years * YEAR_MS).toISOString().slice(0, 10));
   const yearStart = anchorDay(days, `${Number(last.date.slice(0, 4)) - 1}-12-31`);
   const [d1, d3, d5, d10] = [at(1), at(3), at(5), at(10)];
+  const weeks = (n: number) => anchorDay(days, minusDays(last.date, n * 7));
+  const months = (n: number) => anchorDay(days, minusMonths(last.date, n));
+  const toDate = (period: 'week' | 'month' | 'quarter') => anchorDay(days, periodEve(last.date, period));
+  const short = {
+    perf1d: tradingBack(days, 1), perf3d: tradingBack(days, 3), perf1w: tradingBack(days, 5), perfWtd: toDate('week'), perf2w: tradingBack(days, 10), perf20d: tradingBack(days, 20), perf1m: nearestDay(days, minusMonths(last.date, 1)), perfMtd: toDate('month'),
+    perf40d: tradingBack(days, 40), perf60d: tradingBack(days, 60), perf1q: nearestDay(days, minusMonths(last.date, 3)), perfQtd: toDate('quarter'), perf4m: months(4), perf6m: months(6), perf52w: weeks(52),
+  };
   const first = days[0];
   const spanYears = dayDiff(last.date, first.date) / 365.25;
   return {
+    ...Object.fromEntries(Object.entries(short).map(([key, anchor]) => [key, pct(anchor?.close, last.close)])),
     perfYtd: pct(yearStart?.close, last.close), perf1y: pct(d1?.close, last.close), perf3y: pct(d3?.close, last.close), perf5y: pct(d5?.close, last.close), perf10y: pct(d10?.close, last.close),
     ytd: pct(yearStart?.adjClose, last.adjClose), tr1y: pct(d1?.adjClose, last.adjClose), tr3y: pct(d3?.adjClose, last.adjClose), tr5y: pct(d5?.adjClose, last.adjClose), tr10y: pct(d10?.adjClose, last.adjClose),
     cagr3y: cagr(d3?.adjClose, last.adjClose, 3), cagr5y: cagr(d5?.adjClose, last.adjClose, 5), cagr10y: cagr(d10?.adjClose, last.adjClose, 10),
@@ -747,10 +779,11 @@ const METRIC_KEYS = [
   ...['revenue', 'eps', 'fcf', 'ebitda', 'capex', 'assets', 'debt'].flatMap((n) => [`${n}Growth`, `${n}Growth3y`, `${n}Growth5y`]),
   'netMargin', 'grossMargin', 'ebitdaMargin', 'fcfMargin',
   ...['netMargin', 'grossMargin', 'ebitdaMargin', 'fcfMargin'].flatMap((n) => [`${n}Delta`, `${n}Delta3y`]),
+  'perf1d', 'perf3d', 'perf1w', 'perfWtd', 'perf2w', 'perf20d', 'perf1m', 'perfMtd', 'perf40d', 'perf60d', 'perf1q', 'perfQtd', 'perf4m', 'perf6m', 'perf52w',
   'perfYtd', 'perf1y', 'perf3y', 'perf5y', 'perf10y', 'ytd', 'tr1y', 'tr3y', 'tr5y', 'tr10y', 'cagr3y', 'cagr5y', 'cagr10y', 'siAnn',
 ] as const;
 
-export const RETURNS_BASIS = 'Yahoo chart API: performance from unadjusted closes, total return and CAGR from dividend- and split-adjusted closes';
+export const RETURNS_BASIS = 'Yahoo chart API: performance from unadjusted closes (D windows, 1W (5 daily candles) and 2W (10) count daily candles; 1M and 1Q take the candle closest to the same day 1 and 3 months earlier; WTD, MTD, QTD and YTD start at the last close before the current calendar week, month, quarter or year; 4M, 6M and 52W are calendar windows anchored on the last close on or before the target date), total return and CAGR from dividend- and split-adjusted closes';
 export const FUNDAMENTALS_BASIS = {
   sec: 'SEC EDGAR XBRL annual 10-K facts; valuation multiples from the Yahoo quoteSummary TTM snapshot',
   'sec+yahoo': 'SEC EDGAR XBRL annual 10-K facts with gaps filled from Yahoo fundamentals-timeseries; valuation multiples from the Yahoo quoteSummary TTM snapshot',
