@@ -1,6 +1,6 @@
 {
   "ticker": "BRNX",
-  "name": "BrenX Ltd.",
+  "name": "Brenmiller Energy Ltd",
   "exchange": "Nasdaq",
   "sector": "Utilities",
   "industry": "Utilities - Renewable",
@@ -8,16 +8,16 @@
   "currency": "USD",
   "financialCurrency": "USD",
   "dataFile": "./companies/BRNX/meta.json",
-  "price": 1.34,
-  "asOfDate": "2026-10-09",
+  "price": 1.07,
+  "asOfDate": "2026-10-14",
   "fundamentalsAsOf": "2025-12-31",
   "fundamentalsBasis": "Yahoo fundamentals-timeseries annual statements (no usable SEC history); valuation multiples from the Yahoo quoteSummary TTM snapshot",
   "metrics": {
-    "marketCap": 2608942,
-    "enterpriseValue": 276318,
-    "price": 1.34,
-    "week52High": 405.3,
-    "week52Low": 1.33,
+    "marketCap": 2083260,
+    "enterpriseValue": 180948,
+    "price": 1.07,
+    "week52High": 384.3,
+    "week52Low": 1,
     "beta": -0.45,
     "sharesOutstanding": 1946972,
     "pe": null,
@@ -27,7 +27,7 @@
     "pFcf": null,
     "evEbitda": null,
     "fcfToEbitda": null,
-    "pb": 0.1,
+    "pb": 0.08,
     "dividendYield": 0,
     "dividendRate": null,
     "dividendGrowth": null,
@@ -73,22 +73,22 @@
     "ebitdaMarginDelta3y": -2647.34,
     "fcfMarginDelta": null,
     "fcfMarginDelta3y": -1877.43,
-    "perfYtd": -98.7,
-    "perf1y": -99.61,
+    "perfYtd": -98.96,
+    "perf1y": -99.73,
     "perf3y": -99.98,
     "perf5y": null,
     "perf10y": null,
-    "ytd": -98.7,
-    "tr1y": -99.61,
+    "ytd": -98.96,
+    "tr1y": -99.73,
     "tr3y": -99.98,
     "tr5y": null,
     "tr10y": null,
-    "cagr3y": -94.19,
+    "cagr3y": -94.61,
     "cagr5y": null,
     "cagr10y": null,
-    "siAnn": -90.82,
+    "siAnn": -91.21,
     "returnsBasis": "Yahoo chart API: performance from unadjusted closes, total return and CAGR from dividend- and split-adjusted closes",
-    "performanceAsOf": "2026-10-09"
+    "performanceAsOf": "2026-10-14"
   },
   "sources": {
     "universe": "https://www.sec.gov/files/company_tickers_exchange.json",
@@ -97,11 +97,11 @@
     "snapshot": "Yahoo Finance quoteSummary"
   },
   "market": {
-    "price": 1.34,
-    "asOfDate": "2026-10-09",
+    "price": 1.07,
+    "asOfDate": "2026-10-14",
     "valuation": {
-      "marketCap": 2608942,
-      "enterpriseValue": 276318,
+      "marketCap": 2083260,
+      "enterpriseValue": 180948,
       "pe": null,
       "forwardPe": null,
       "ps": null,
@@ -109,25 +109,25 @@
       "pFcf": null,
       "evEbitda": null,
       "fcfToEbitda": null,
-      "pb": 0.1,
+      "pb": 0.08,
       "beta": -0.45,
       "sharesOutstanding": 1946972
     },
     "returns": {
-      "perfYtd": -98.7,
-      "perf1y": -99.61,
+      "perfYtd": -98.96,
+      "perf1y": -99.73,
       "perf3y": -99.98,
       "perf5y": null,
       "perf10y": null,
-      "ytd": -98.7,
-      "tr1y": -99.61,
+      "ytd": -98.96,
+      "tr1y": -99.73,
       "tr3y": -99.98,
       "tr5y": null,
       "tr10y": null,
-      "cagr3y": -94.19,
+      "cagr3y": -94.61,
       "cagr5y": null,
       "cagr10y": null,
-      "siAnn": -90.82
+      "siAnn": -91.21
     },
     "dividends": {
       "dividendYield": 0,
@@ -138,8 +138,8 @@
     },
     "annualDps": [],
     "recentDividends": [],
-    "week52High": 405.3,
-    "week52Low": 1.33
+    "week52High": 384.3,
+    "week52Low": 1
   },
   "fundamentals": {
     "asOf": "2025-12-31",
@@ -240,10 +240,10 @@
     ],
     "pageSize": 1000,
     "totalRows": 76,
-    "asOf": "2026-10-09",
+    "asOf": "2026-10-14",
     "granularity": {
-      "monthlyBefore": "2026-09-09",
-      "dailyFrom": "2026-09-09"
+      "monthlyBefore": "2026-09-14",
+      "dailyFrom": "2026-09-14"
     },
     "source": "Yahoo Finance public chart API (adjusted close); monthly rows (month-end close, summed volume) with daily rows for the last 31 days"
   }

@@ -8,16 +8,16 @@
   "currency": "USD",
   "financialCurrency": "USD",
   "dataFile": "./companies/BIOT/meta.json",
-  "price": 0.379,
-  "asOfDate": "2026-10-09",
+  "price": 0.325,
+  "asOfDate": "2026-10-14",
   "fundamentalsAsOf": "2024-11-30",
   "fundamentalsBasis": "SEC EDGAR XBRL annual 10-K facts; valuation multiples from the Yahoo quoteSummary TTM snapshot",
   "metrics": {
-    "marketCap": 10918864,
+    "marketCap": 9358203,
     "enterpriseValue": null,
-    "price": 0.379,
+    "price": 0.325,
     "week52High": 50,
-    "week52Low": 0.33,
+    "week52Low": 0.3213,
     "beta": null,
     "sharesOutstanding": 28794472,
     "pe": null,
@@ -88,7 +88,7 @@
     "cagr10y": null,
     "siAnn": null,
     "returnsBasis": "Yahoo chart API: performance from unadjusted closes, total return and CAGR from dividend- and split-adjusted closes",
-    "performanceAsOf": "2026-10-09"
+    "performanceAsOf": "2026-10-14"
   },
   "sources": {
     "universe": "https://www.sec.gov/files/company_tickers_exchange.json",
@@ -97,10 +97,10 @@
     "snapshot": "Yahoo Finance quoteSummary"
   },
   "market": {
-    "price": 0.379,
-    "asOfDate": "2026-10-09",
+    "price": 0.325,
+    "asOfDate": "2026-10-14",
     "valuation": {
-      "marketCap": 10918864,
+      "marketCap": 9358203,
       "enterpriseValue": null,
       "pe": null,
       "forwardPe": null,
@@ -139,7 +139,7 @@
     "annualDps": [],
     "recentDividends": [],
     "week52High": 50,
-    "week52Low": 0.33
+    "week52Low": 0.3213
   },
   "fundamentals": {
     "asOf": "2024-11-30",
@@ -196,10 +196,10 @@
     ],
     "pageSize": 1000,
     "totalRows": 26,
-    "asOf": "2026-10-09",
+    "asOf": "2026-10-14",
     "granularity": {
-      "monthlyBefore": "2026-09-09",
-      "dailyFrom": "2026-09-09"
+      "monthlyBefore": "2026-09-14",
+      "dailyFrom": "2026-09-14"
     },
     "source": "Yahoo Finance public chart API (adjusted close); monthly rows (month-end close, summed volume) with daily rows for the last 31 days"
   }
