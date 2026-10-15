@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
   annualSeries, buildAnnualRows, compactIndexText, completeMetrics, CONTROL_NAMES, dividendMetrics, fundamentalsMetrics, installSystemCa, isCertError, mergeAnnual,
-  isOperatingTicker, normalizeTicker, parseChart, parseRange, parseRanges, parseRetryAfter, parseSecTickers, parseSummary, parseYahooAnnual, priceReturns, readConfig, resolveControls,
+  isOperatingTicker, minusMonths, normalizeTicker, parseChart, periodEve, parseRange, parseRanges, parseRetryAfter, parseSecTickers, parseSummary, parseYahooAnnual, priceReturns, readConfig, resolveControls,
   indexDocument, pruneCompanies, run, runtimeControls, sampleHistory, useApiRoot, valuationMetrics, type ChartDay, type Snapshot,
 } from './update-data.ts';
 
@@ -210,6 +210,39 @@ describe('metrics', () => {
     expect(priceReturns([]).tr1y).toBeNull();
   });
 
+  test('short horizons: D counts daily candles, 1W and 2W are 5 and 10 candles, 1M and 1Q are the closest candle 1 and 3 months back, WTD, MTD and QTD start before the current calendar period, 4M to 52W are calendar windows', () => {
+    // weekdays only, 2026-07-03 is a holiday, the last candle is Thursday 2026-08-27; close = position + 1, so a return points back to its anchor candle
+    const all: ChartDay[] = [];
+    for (let t = Date.UTC(2025, 5, 2); t <= Date.UTC(2026, 7, 27); t += 86_400_000) {
+      const date = new Date(t).toISOString().slice(0, 10);
+      if ([0, 6].includes(new Date(t).getUTCDay()) || date === '2026-07-03') continue;
+      all.push({ date, close: all.length + 1, adjClose: all.length + 1, volume: 1 });
+    }
+    const anchors = (days: ChartDay[]) => {
+      const r = priceReturns(days);
+      const last = days[days.length - 1].close;
+      const keys = ['perf1d', 'perf3d', 'perf1w', 'perfWtd', 'perf2w', 'perf20d', 'perf1m', 'perfMtd', 'perf40d', 'perf60d', 'perf1q', 'perfQtd', 'perf4m', 'perf6m', 'perf52w'];
+      return Object.fromEntries(keys.map((k) => [k, r[k] === null ? null : days.find((d) => d.close === Math.round(last / (1 + r[k] / 100)))?.date]));
+    };
+    expect(anchors(all)).toEqual({
+      perf1d: '2026-08-26', perf3d: '2026-08-24', perf1w: '2026-08-20', perfWtd: '2026-08-21', perf2w: '2026-08-13', perf20d: '2026-07-30', perf1m: '2026-07-27', perfMtd: '2026-07-31',
+      perf40d: '2026-07-01', perf60d: '2026-06-03', perf1q: '2026-05-27', perfQtd: '2026-06-30', perf4m: '2026-04-27', perf6m: '2026-02-27', perf52w: '2025-08-28',
+    });
+    // the holiday is skipped by D windows and falls back to the day before for calendar anchors
+    const july = all.slice(0, all.findIndex((d) => d.date === '2026-07-10') + 1);
+    expect(anchors(july)).toMatchObject({ perf3d: '2026-07-07', perf1w: '2026-07-02', perfWtd: '2026-07-02', perf2w: '2026-06-25', perf20d: '2026-06-11' });
+    // 1M and 1Q on a weekend: a Saturday target takes Friday, a Sunday one Monday
+    const upTo = (date: string) => all.slice(0, all.findIndex((d) => d.date === date) + 1);
+    expect([anchors(upTo('2026-06-16')).perf1m, anchors(upTo('2026-06-17')).perf1m]).toEqual(['2026-05-15', '2026-05-18']);
+    expect([anchors(upTo('2026-05-28')).perf1q, anchors(upTo('2026-08-17')).perf1q]).toEqual(['2026-02-27', '2026-05-18']);
+    // a 10-day listing: what it cannot reach is null, never 0
+    expect(anchors(all.slice(-10))).toMatchObject({ perf1d: '2026-08-26', perf1w: '2026-08-20', perfWtd: '2026-08-21', perf20d: null, perf1m: null, perfMtd: null, perf1q: null, perfQtd: null, perf52w: null });
+    expect(Object.values(priceReturns([])).every((v) => v === null)).toBe(true);
+    expect([minusMonths('2026-10-31', 1), minusMonths('2026-05-31', 3), minusMonths('2028-03-31', 1), minusMonths('2026-01-15', 2)]).toEqual(['2026-09-30', '2026-02-28', '2028-02-29', '2025-11-15']);
+    expect([periodEve('2026-10-12', 'week'), periodEve('2026-10-18', 'week'), periodEve('2026-01-20', 'month'), periodEve('2026-10-15', 'quarter'), periodEve('2026-03-05', 'quarter')])
+      .toEqual(['2026-10-11', '2026-10-11', '2025-12-31', '2026-09-30', '2025-12-31']);
+  });
+
   test('dividends: yield, growth, the honest zero of a non-payer; multiples drop when currencies differ', () => {
     const d = [2021, 2022, 2023, 2024].flatMap((y) => [1, 4, 7, 10].map((m) => ({ date: `${y}-${String(m).padStart(2, '0')}-15`, amount: 0.25 * (1 + (y - 2021) * 0.1) })));
     const r = dividendMetrics(d, 100, '2025-03-01');
@@ -232,6 +265,7 @@ describe('metrics', () => {
     const b = completeMetrics({}, null);
     expect(Object.keys(a)).toEqual(Object.keys(b));
     expect(b.marketCap).toBeNull();
+    expect(Object.keys(b)).toEqual(expect.arrayContaining(['perf1d', 'perf1w', 'perfWtd', 'perf1m', 'perfMtd', 'perf40d', 'perf1q', 'perfQtd', 'perf52w']));
     expect(a.returnsBasis.length).toBeGreaterThan(10);
     expect(b.returnsBasis).toBe(a.returnsBasis);
     expect([a.performanceAsOf, b.performanceAsOf]).toEqual(['2026-10-02', null]);
