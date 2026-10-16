@@ -33,6 +33,16 @@ export function useApiRoot(root: URL): URL { const previous = API_ROOT; API_ROOT
 const indexFile = () => new URL('index.json', API_ROOT);
 const stateFile = () => new URL('update-state.json', API_ROOT);
 const companyDir = (ticker: string) => new URL(`companies/${ticker}/`, API_ROOT);
+/**
+ * Watchlist spellings of a ticker (scripts/All.txt, All.csv) -> the ticker in the SEC table. Grow it as new spellings show up.
+ * Exchange prefixes (NYSE:TTE) and . or / separators (BRK.B, BRK/B) are handled without an entry.
+ */
+export const TICKER_ALIASES: Record<string, string[]> = {
+  'BRK-A': ['BRKA'],
+  'BRK-B': ['BRKB'],
+};
+let WATCHLIST_DIR = new URL('./', import.meta.url);
+export function useWatchlistDir(dir: URL): URL { const previous = WATCHLIST_DIR; WATCHLIST_DIR = dir; return previous; }
 
 export const CONTROL_NAMES = [
   'MAX_FETCHES', 'REQUEST_SLEEP', 'CONCURRENCY', 'MAX_RETRIES', 'EXCHANGES', 'TICKERS', 'MARKET_CAP', 'DIVIDEND_YIELD',
@@ -987,6 +997,49 @@ export async function pruneCompanies(): Promise<string[]> {
   return removed;
 }
 
+/** Watchlist tickers: All.txt splits on whitespace, commas and semicolons, All.csv takes the first cell of each row; "NYSE:TTE" and BRK.B work, a header cell is ignored. */
+export function parseWatchlist(text: string, csv = false): string[] {
+  const cells = csv ? text.split(/\r?\n/).map((line) => line.split(/[,;\t]/)[0] ?? '') : text.split(/[\s,;]+/);
+  const out = new Set<string>();
+  for (const cell of cells) {
+    const ticker = watchTicker(cell);
+    if (/^[A-Z0-9][A-Z0-9-]*$/.test(ticker) && ticker !== 'SYMBOL' && ticker !== 'TICKER') out.add(ticker);
+  }
+  return [...out];
+}
+
+const watchTicker = (cell: string) => normalizeTicker(cell.replace(/["']/g, '').trim().replace(/^[A-Za-z]+:/, '').replace(/[/\s_]+/g, '-'));
+
+/**
+ * Maps watchlist spellings to known tickers: TICKER_ALIASES first, then an exact match, else the one known ticker
+ * with the same letters (BRKB -> BRK-B); an ambiguous or unknown one stays as written.
+ */
+export function resolveWatchlist(list: Iterable<string>, known: Iterable<string>, aliases: Record<string, string[]> = TICKER_ALIASES): Set<string> {
+  const alias = new Map<string, string>();
+  for (const [ticker, spellings] of Object.entries(aliases)) for (const spelling of spellings) alias.set(watchTicker(spelling), watchTicker(ticker));
+  const compact = (ticker: string) => ticker.replace(/[^A-Z0-9]/g, '');
+  const exact = new Set(known);
+  const byLetters = new Map<string, string[]>();
+  for (const ticker of exact) byLetters.set(compact(ticker), [...(byLetters.get(compact(ticker)) ?? []), ticker]);
+  const out = new Set<string>();
+  for (const ticker of list) {
+    const same = byLetters.get(compact(ticker)) ?? [];
+    out.add(alias.get(ticker) ?? (exact.has(ticker) || same.length !== 1 ? ticker : same[0]));
+  }
+  return out;
+}
+
+/** scripts/All.txt, else scripts/All.csv: the first one that lists tickers limits the feed to them; no file or an empty one means the full universe. */
+export async function readWatchlist(): Promise<{ file: string; tickers: Set<string> } | null> {
+  for (const file of ['All.txt', 'All.csv']) {
+    let text: string;
+    try { text = await readFile(fileURLToPath(new URL(file, WATCHLIST_DIR)), 'utf8'); } catch { continue; }
+    const tickers = parseWatchlist(text, file.endsWith('.csv'));
+    if (tickers.length) return { file, tickers: new Set(tickers) };
+  }
+  return null;
+}
+
 export function indexDocument(companies: JsonRecord[]): JsonRecord {
   return {
     generatedAt: stamp(),
@@ -1010,16 +1063,27 @@ export async function run(controls: Record<string, string | undefined>, options:
 
   const table = parseSecTickers(await fetchJson(SEC_TICKERS_URL, '[universe] SEC ticker table', config));
   const previous = await readPreviousRows(table);
-  const wanted = config.tickers ? [...config.tickers] : [...table.keys()];
+  // scripts/All.txt or All.csv with tickers: the feed holds only those stocks, every other row and folder is removed
+  const watchlist = await readWatchlist();
+  const allowed = watchlist ? resolveWatchlist(watchlist.tickers, [...table.keys(), ...previous.keys()]) : null;
+  if (watchlist && allowed) console.log(`[universe] watchlist scripts/${watchlist.file}: ${allowed.size} tickers`);
+  let wanted = config.tickers ? [...config.tickers] : allowed ? [...allowed] : [...table.keys()];
+  if (config.tickers && allowed && watchlist) {
+    const outside = wanted.filter((t) => !allowed.has(t));
+    if (outside.length) console.warn(`[universe] not in scripts/${watchlist.file}, skipped: ${listNames(outside)}`);
+    wanted = wanted.filter((t) => allowed.has(t));
+  }
   const universe: Listing[] = [];
+  const unlisted: string[] = [];
   let failed = 0;
   for (const ticker of wanted.sort()) {
     const listing = table.get(ticker);
-    if (!listing) { if (config.tickers) { failed += 1; console.warn(`[universe] ${ticker}: not found in the SEC exchange table`); } continue; }
-    if (!config.exchanges.has(listing.exchange.toUpperCase())) { if (config.tickers) console.warn(`[universe] ${ticker}: skipped, listed on ${listing.exchange}`); continue; }
-    if (!config.tickers && !isOperatingTicker(ticker)) continue; // an explicit TICKERS list always wins
+    if (!listing) { if (config.tickers) { failed += 1; console.warn(`[universe] ${ticker}: not found in the SEC exchange table`); } else if (allowed) unlisted.push(ticker); continue; }
+    if (!config.exchanges.has(listing.exchange.toUpperCase())) { if (config.tickers || allowed) console.warn(`[universe] ${ticker}: skipped, listed on ${listing.exchange}`); continue; }
+    if (!config.tickers && !allowed && !isOperatingTicker(ticker)) continue; // an explicit list always wins
     universe.push(listing);
   }
+  if (unlisted.length) console.log(`[universe] ${unlisted.length} watchlist tickers are not in the SEC exchange table (ETFs, funds): ${listNames(unlisted)}`);
   console.log(`[universe] ${universe.length} stocks on ${[...config.exchanges].join(', ')}`);
 
   // Rotation: full-universe runs continue after the committed cursor (a run that stops at MAX_FETCHES or the soft deadline resumes there);
@@ -1071,8 +1135,19 @@ export async function run(controls: Record<string, string | undefined>, options:
       if (!table.has(ticker) && String(row.asOfDate ?? '') < staleBefore) { byTicker.delete(ticker); delisted.push(ticker); }
     }
   }
+  const outsideWatchlist: string[] = [];
+  if (allowed) for (const ticker of byTicker.keys()) if (!allowed.has(ticker)) { byTicker.delete(ticker); outsideWatchlist.push(ticker); }
   const companies = [...byTicker.values()].sort((a, b) => String(a.ticker).localeCompare(String(b.ticker)));
   await writeIfChanged(indexFile(), indexDocument(companies), compactIndexText);
+  if (allowed && watchlist) {
+    // folders go only after the index stops listing them; a folder of a listed stock is never touched
+    let folders: string[] = [];
+    try { folders = (await readdir(new URL('companies/', API_ROOT))).sort(); } catch { /* first run */ }
+    const removed = folders.filter((ticker) => !allowed.has(ticker));
+    for (const ticker of removed) await rm(companyDir(ticker), { recursive: true, force: true });
+    const gone = [...new Set([...outsideWatchlist, ...removed])].sort();
+    if (gone.length) console.log(`[watchlist] removed ${gone.length} stocks not in scripts/${watchlist.file}: ${listNames(gone)}`);
+  }
   if (rotate) await writeIfChanged(stateFile(), { cursor: queue.length ? lastTicker : null, savedAt: stamp() });
   console.log(`[done    ] ${results.length} updated, ${skipped} skipped, ${failed} failed; index lists ${companies.length} companies`);
   if (delisted.length) console.log(`DELISTED (${delisted.length}): ${listNames(delisted)}`);
@@ -1116,6 +1191,11 @@ AND logic):
   SEC_UA=             SEC User-Agent override (declare a contact); blank uses the built-in default (daggerok ETF feed daggerok@gmail.com)
   VERBOSE=false
   USE_SYSTEM_CA=auto  TLS trust store: auto restarts once with --use-system-ca on an untrusted-certificate error | true | false
+
+Watchlist: when scripts/All.txt (else scripts/All.csv) lists tickers, only those
+stocks are updated and published; rows and folders of every other stock are
+removed. ETFs and funds in the list are not in the SEC table and are skipped.
+No file or an empty one means a full update of every stock on EXCHANGES.
 
 A full-universe run (no TICKERS) drops a delisted stock from the index: gone from
 the SEC exchange table and no price for 60 days. Its folder stays until
