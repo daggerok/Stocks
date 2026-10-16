@@ -43,6 +43,15 @@ Run `./scripts/update-data.ts -h` (or `--help`) to print every configuration var
 
 Defaults live in `scripts/update-data.config.json` (every control as a string). An explicitly set environment variable overrides the file, even when it is empty. The **Update Stocks data** GitHub Actions workflow uses the same resolver (`resolveControls` in `scripts/update-data.ts`): individual `workflow_dispatch` inputs are blank by default and inherit the file, and the `advanced` input accepts a JSON object with any control (for example `{"VERBOSE":"true"}`). Precedence: file defaults < advanced JSON < nonblank inputs < protected Actions variable or environment. `SEC_UA` and `USE_SYSTEM_CA` are set through `advanced`, and `SEC_UA` is also taken from the protected `SEC_UA` repository Actions variable when it is nonblank. The workflow always writes to `api/stocks` only. All supplied filters use **AND** logic
 
+### Watchlist
+
+When `scripts/All.txt` (or, if it is missing or lists nothing, `scripts/All.csv`) lists tickers, the updater updates and publishes only those stocks and removes the rows and `companies/*` folders of every other stock from `api/stocks`. No file, an empty file or a blank one means the full update of every stock on `EXCHANGES`
+
+- `All.txt`: tickers separated by new lines, spaces, commas or semicolons; `All.csv`: the first cell of each row, a `Symbol` or `Ticker` header is ignored
+- Spellings are matched to the SEC table: an exchange prefix is dropped (`NYSE:TTE` -> `TTE`) and `BRK.B`, `BRK/B` and `BRK-B` are the same ticker. Then the `TICKER_ALIASES` table at the top of `scripts/update-data.ts` maps known spellings (`BRKB` -> `BRK-B`); grow it when a new spelling shows up. Without an entry, a ticker that is not in the table as written matches the one listed ticker with the same letters, an ambiguous one is reported as not found
+- ETFs and funds in the list are not in the SEC table or are reported by Yahoo as funds, so they are skipped
+- `TICKERS` narrows a run inside the watchlist; tickers outside it are skipped
+
 ### Data sources
 
 | Block | Source |

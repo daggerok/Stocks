@@ -9,7 +9,7 @@ import { pathToFileURL } from 'node:url';
 import {
   annualSeries, buildAnnualRows, compactIndexText, completeMetrics, CONTROL_NAMES, dividendMetrics, fundamentalsMetrics, installSystemCa, isCertError, mergeAnnual,
   isOperatingTicker, minusMonths, normalizeTicker, parseChart, periodEve, parseRange, parseRanges, parseRetryAfter, parseSecTickers, parseSummary, parseYahooAnnual, priceReturns, readConfig, resolveControls,
-  indexDocument, pruneCompanies, run, runtimeControls, sampleHistory, useApiRoot, valuationMetrics, type ChartDay, type Snapshot,
+  indexDocument, parseWatchlist, pruneCompanies, resolveWatchlist, run, runtimeControls, sampleHistory, useApiRoot, useWatchlistDir, valuationMetrics, type ChartDay, type Snapshot,
 } from './update-data.ts';
 
 // ---------------------------------------------------------------------------
@@ -139,6 +139,17 @@ describe('parsing', () => {
     expect(() => parseSecTickers({ fields: ['cik'], data: [] })).toThrow('unexpected shape');
     for (const ticker of ['BAC-PB', 'XYZ-WT', 'ABC-WS', 'ABC-R', 'SPAC-UN', 'SPAC-U']) expect(isOperatingTicker(ticker)).toBe(false);
     for (const ticker of ['AAPL', 'BRK-B', 'BF-B', 'LEN-A']) expect(isOperatingTicker(ticker)).toBe(true);
+  });
+
+  test('watchlist: txt tokens, csv first cells, exchange prefixes and dots normalized, header and blanks ignored', () => {
+    expect(parseWatchlist('NVDA\nBRK.B\n\nNYSE:TTE TTE, aapl\n')).toEqual(['NVDA', 'BRK-B', 'TTE', 'AAPL']);
+    expect(parseWatchlist('Symbol,Name\r\n"BRK.B",Berkshire\r\nNYSE:OR,Osisko\r\n', true)).toEqual(['BRK-B', 'OR']);
+    expect(parseWatchlist(' \n\n')).toEqual([]);
+    expect(parseWatchlist('BRK/A brk.b BRK-B')).toEqual(['BRK-A', 'BRK-B']);
+    const known = ['BRK-A', 'BRK-B', 'AMP', 'AB', 'A-B', 'X-YZ', 'XY-Z'];
+    expect([...resolveWatchlist(['BRKA', 'BRK-B', 'AMP', 'AB', 'XYZ', 'VOO'], known, {})]).toEqual(['BRK-A', 'BRK-B', 'AMP', 'AB', 'XYZ', 'VOO']); // exact wins, ambiguous and unknown stay
+    expect([...resolveWatchlist(['XYZ', 'AB', 'FB'], known, { 'XY-Z': ['XYZ'], 'A-B': ['AB'], META: ['FB'] })]).toEqual(['XY-Z', 'A-B', 'META']); // the alias table wins over everything
+    expect(resolveWatchlist(['BRKB'], [])).toEqual(new Set(['BRK-B'])); // TICKER_ALIASES is the default
   });
 
   test('XBRL: annual 10-K facts only, tags merged across eras, D&A fallback, derived EBITDA and FCF', () => {
@@ -295,6 +306,7 @@ describe('pipeline', () => {
   const realFetch = globalThis.fetch;
   let dir: string;
   let restore: URL;
+  let restoreWatchlist: URL;
   let failChartFor = '';
 
   const chartPayload = () => {
@@ -326,12 +338,14 @@ describe('pipeline', () => {
   beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), 'stocks-'));
     restore = useApiRoot(new URL(`${pathToFileURL(dir).href}/`));
+    restoreWatchlist = useWatchlistDir(new URL(`${pathToFileURL(dir).href}/`)); // never the repo's scripts/All.txt
     globalThis.fetch = mockFetch;
     failChartFor = '';
   });
   afterEach(async () => {
     globalThis.fetch = realFetch;
     useApiRoot(restore);
+    useWatchlistDir(restoreWatchlist);
     await rm(dir, { recursive: true, force: true });
   });
 
@@ -425,6 +439,24 @@ describe('pipeline', () => {
     expect(await readText('index.json')).toBe(text); // the compact file is still a zero-diff rerun
   });
 
+  test('watchlist: All.txt keeps only its stocks and removes the rest, a blank file means a full update', async () => {
+    await run(controls());
+    const tickers = async () => (await readIndex()).companies.map((c: any) => c.ticker);
+    expect(await tickers()).toEqual(['AAA', 'BBB']);
+    await writeFile(join(dir, 'All.txt'), 'NASDAQ:aaa\nVOO\n'); // VOO is an ETF, absent from the SEC table
+    expect(await run(controls())).toMatchObject({ updated: 1, failed: 0, rows: 1 });
+    expect(await tickers()).toEqual(['AAA']);
+    expect((await readdir(join(dir, 'companies'))).sort()).toEqual(['AAA']);
+    expect(await run(controls({ TICKERS: 'BBB' }))).toMatchObject({ updated: 0, rows: 1 }); // TICKERS outside the list are skipped
+    await writeFile(join(dir, 'All.txt'), ' \n\n');
+    await writeFile(join(dir, 'All.csv'), 'Symbol\nBBB\n'); // an empty All.txt falls through to All.csv
+    await run(controls());
+    expect(await tickers()).toEqual(['BBB']);
+    await writeFile(join(dir, 'All.csv'), '');
+    await run(controls());
+    expect(await tickers()).toEqual(['AAA', 'BBB']);
+  });
+
   test('a failed source keeps the stock exactly as published', async () => {
     await run(controls());
     const before = { meta: await readText('companies/AAA/meta.json'), row: (await readIndex()).companies[0] };
@@ -441,6 +473,7 @@ describe('network', () => {
   const realFetch = globalThis.fetch;
   let dir: string;
   let restore: URL;
+  let restoreWatchlist: URL;
   let inFlight = 0;
   let peak = 0;
   const seen: Array<{ url: string; signal: unknown }> = [];
@@ -472,6 +505,7 @@ describe('network', () => {
   beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), 'stocks-net-'));
     restore = useApiRoot(new URL(`${pathToFileURL(dir).href}/`));
+    restoreWatchlist = useWatchlistDir(new URL(`${pathToFileURL(dir).href}/`));
     globalThis.fetch = mockFetch;
     inFlight = 0;
     peak = 0;
@@ -486,6 +520,7 @@ describe('network', () => {
     globalThis.fetch = realFetch;
     setSystemTime();
     useApiRoot(restore);
+    useWatchlistDir(restoreWatchlist);
     await rm(dir, { recursive: true, force: true });
   });
 
