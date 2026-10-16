@@ -8,16 +8,16 @@
   "currency": "USD",
   "financialCurrency": "MYR",
   "dataFile": "./companies/MGN/meta.json",
-  "price": 3.67,
-  "asOfDate": "2026-10-09",
+  "price": 2.71,
+  "asOfDate": "2026-10-16",
   "fundamentalsAsOf": "2025-12-31",
   "fundamentalsBasis": "Yahoo fundamentals-timeseries annual statements (no usable SEC history); valuation multiples from the Yahoo quoteSummary TTM snapshot",
   "metrics": {
-    "marketCap": 4526332,
+    "marketCap": 3342332,
     "enterpriseValue": null,
-    "price": 3.67,
+    "price": 2.71,
     "week52High": 6216,
-    "week52Low": 3,
+    "week52Low": 2.549,
     "beta": null,
     "sharesOutstanding": 1066667,
     "pe": null,
@@ -73,12 +73,27 @@
     "ebitdaMarginDelta3y": -11.18,
     "fcfMarginDelta": -19.55,
     "fcfMarginDelta3y": -16.47,
-    "perfYtd": -99.8,
+    "perf1d": 4.23,
+    "perf3d": -6.23,
+    "perf1w": -26.16,
+    "perfWtd": -26.16,
+    "perf2w": -26.95,
+    "perf20d": -30.6,
+    "perf1m": -32.08,
+    "perfMtd": -26.95,
+    "perf40d": -97.97,
+    "perf60d": -97.49,
+    "perf1q": -97.87,
+    "perfQtd": -26.95,
+    "perf4m": -98.41,
+    "perf6m": -98.98,
+    "perf52w": -99.91,
+    "perfYtd": -99.85,
     "perf1y": -99.9,
     "perf3y": null,
     "perf5y": null,
     "perf10y": null,
-    "ytd": -99.8,
+    "ytd": -99.85,
     "tr1y": -99.9,
     "tr3y": null,
     "tr5y": null,
@@ -86,9 +101,9 @@
     "cagr3y": null,
     "cagr5y": null,
     "cagr10y": null,
-    "siAnn": -99.92,
-    "returnsBasis": "Yahoo chart API: performance from unadjusted closes, total return and CAGR from dividend- and split-adjusted closes",
-    "performanceAsOf": "2026-10-09"
+    "siAnn": -99.93,
+    "returnsBasis": "Yahoo chart API: performance from unadjusted closes (D windows, 1W (5 daily candles) and 2W (10) count daily candles; 1M and 1Q take the candle closest to the same day 1 and 3 months earlier; WTD, MTD, QTD and YTD start at the last close before the current calendar week, month, quarter or year; 4M, 6M and 52W are calendar windows anchored on the last close on or before the target date), total return and CAGR from dividend- and split-adjusted closes",
+    "performanceAsOf": "2026-10-16"
   },
   "sources": {
     "universe": "https://www.sec.gov/files/company_tickers_exchange.json",
@@ -97,10 +112,10 @@
     "snapshot": "Yahoo Finance quoteSummary"
   },
   "market": {
-    "price": 3.67,
-    "asOfDate": "2026-10-09",
+    "price": 2.71,
+    "asOfDate": "2026-10-16",
     "valuation": {
-      "marketCap": 4526332,
+      "marketCap": 3342332,
       "enterpriseValue": null,
       "pe": null,
       "forwardPe": null,
@@ -114,12 +129,27 @@
       "sharesOutstanding": 1066667
     },
     "returns": {
-      "perfYtd": -99.8,
+      "perf1d": 4.23,
+      "perf3d": -6.23,
+      "perf1w": -26.16,
+      "perfWtd": -26.16,
+      "perf2w": -26.95,
+      "perf20d": -30.6,
+      "perf1m": -32.08,
+      "perfMtd": -26.95,
+      "perf40d": -97.97,
+      "perf60d": -97.49,
+      "perf1q": -97.87,
+      "perfQtd": -26.95,
+      "perf4m": -98.41,
+      "perf6m": -98.98,
+      "perf52w": -99.91,
+      "perfYtd": -99.85,
       "perf1y": -99.9,
       "perf3y": null,
       "perf5y": null,
       "perf10y": null,
-      "ytd": -99.8,
+      "ytd": -99.85,
       "tr1y": -99.9,
       "tr3y": null,
       "tr5y": null,
@@ -127,7 +157,7 @@
       "cagr3y": null,
       "cagr5y": null,
       "cagr10y": null,
-      "siAnn": -99.92
+      "siAnn": -99.93
     },
     "dividends": {
       "dividendYield": 0,
@@ -139,7 +169,7 @@
     "annualDps": [],
     "recentDividends": [],
     "week52High": 6216,
-    "week52Low": 3
+    "week52Low": 2.549
   },
   "fundamentals": {
     "asOf": "2025-12-31",
@@ -240,10 +270,10 @@
     ],
     "pageSize": 1000,
     "totalRows": 36,
-    "asOf": "2026-10-09",
+    "asOf": "2026-10-16",
     "granularity": {
-      "monthlyBefore": "2026-09-09",
-      "dailyFrom": "2026-09-09"
+      "monthlyBefore": "2026-09-16",
+      "dailyFrom": "2026-09-16"
     },
     "source": "Yahoo Finance public chart API (adjusted close); monthly rows (month-end close, summed volume) with daily rows for the last 31 days"
   }

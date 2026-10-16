@@ -1,6 +1,6 @@
 {
   "ticker": "SLP",
-  "name": "Simulations Plus, Inc.",
+  "name": "Simulations Plus Inc",
   "exchange": "Nasdaq",
   "sector": "Healthcare",
   "industry": "Health Information Services",
@@ -28,8 +28,8 @@
     "evEbitda": 21.62,
     "fcfToEbitda": 122.58,
     "pb": 2.69,
-    "dividendYield": 0.86,
-    "dividendRate": 0.16,
+    "dividendYield": 0,
+    "dividendRate": null,
     "dividendGrowth": null,
     "dividendGrowth3y": null,
     "dividendGrowth5y": null,
@@ -73,6 +73,21 @@
     "ebitdaMarginDelta3y": -113.25,
     "fcfMarginDelta": 3.78,
     "fcfMarginDelta3y": -9.69,
+    "perf1d": null,
+    "perf3d": null,
+    "perf1w": null,
+    "perfWtd": null,
+    "perf2w": null,
+    "perf20d": null,
+    "perf1m": null,
+    "perfMtd": null,
+    "perf40d": null,
+    "perf60d": null,
+    "perf1q": null,
+    "perfQtd": null,
+    "perf4m": null,
+    "perf6m": null,
+    "perf52w": null,
     "perfYtd": null,
     "perf1y": null,
     "perf3y": null,
@@ -87,7 +102,7 @@
     "cagr5y": null,
     "cagr10y": null,
     "siAnn": null,
-    "returnsBasis": "Yahoo chart API: performance from unadjusted closes, total return and CAGR from dividend- and split-adjusted closes",
+    "returnsBasis": "Yahoo chart API: performance from unadjusted closes (D windows, 1W (5 daily candles) and 2W (10) count daily candles; 1M and 1Q take the candle closest to the same day 1 and 3 months earlier; WTD, MTD, QTD and YTD start at the last close before the current calendar week, month, quarter or year; 4M, 6M and 52W are calendar windows anchored on the last close on or before the target date), total return and CAGR from dividend- and split-adjusted closes",
     "performanceAsOf": "2026-10-07"
   },
   "sources": {
@@ -114,6 +129,21 @@
       "sharesOutstanding": 20224838
     },
     "returns": {
+      "perf1d": null,
+      "perf3d": null,
+      "perf1w": null,
+      "perfWtd": null,
+      "perf2w": null,
+      "perf20d": null,
+      "perf1m": null,
+      "perfMtd": null,
+      "perf40d": null,
+      "perf60d": null,
+      "perf1q": null,
+      "perfQtd": null,
+      "perf4m": null,
+      "perf6m": null,
+      "perf52w": null,
       "perfYtd": null,
       "perf1y": null,
       "perf3y": null,
@@ -130,32 +160,14 @@
       "siAnn": null
     },
     "dividends": {
-      "dividendYield": 0.86,
-      "dividendRate": 0.16,
+      "dividendYield": 0,
+      "dividendRate": null,
       "dividendGrowth": null,
       "dividendGrowth3y": null,
       "dividendGrowth5y": null
     },
-    "annualDps": [
-      {
-        "year": 2026,
-        "dps": 0.16
-      }
-    ],
-    "recentDividends": [
-      {
-        "date": "2026-10-09",
-        "amount": 0.06
-      },
-      {
-        "date": "2026-10-08",
-        "amount": 0.05
-      },
-      {
-        "date": "2026-10-07",
-        "amount": 0.05
-      }
-    ],
+    "annualDps": [],
+    "recentDividends": [],
     "week52High": 21.01,
     "week52Low": 11.09
   },

@@ -8,16 +8,16 @@
   "currency": "USD",
   "financialCurrency": "AUD",
   "dataFile": "./companies/CHWM/meta.json",
-  "price": 5.2,
-  "asOfDate": "2026-10-14",
+  "price": 4.65,
+  "asOfDate": "2026-10-16",
   "fundamentalsAsOf": "2024-06-30",
   "fundamentalsBasis": "Yahoo fundamentals-timeseries annual statements (no usable SEC history); valuation multiples from the Yahoo quoteSummary TTM snapshot",
   "metrics": {
-    "marketCap": 542642560,
+    "marketCap": 485247712,
     "enterpriseValue": null,
-    "price": 5.2,
+    "price": 4.65,
     "week52High": 7.08,
-    "week52Low": 5.04,
+    "week52Low": 4.36,
     "beta": -0.11,
     "sharesOutstanding": 104354342,
     "pe": null,
@@ -73,11 +73,11 @@
     "ebitdaMarginDelta3y": null,
     "fcfMarginDelta": null,
     "fcfMarginDelta3y": null,
-    "perf1d": 0.97,
-    "perf3d": 0,
-    "perf1w": -0.95,
-    "perfWtd": 0,
-    "perf2w": null,
+    "perf1d": -9.53,
+    "perf3d": -9.71,
+    "perf1w": -10.58,
+    "perfWtd": -10.58,
+    "perf2w": -14.36,
     "perf20d": null,
     "perf1m": null,
     "perfMtd": null,
@@ -103,7 +103,7 @@
     "cagr10y": null,
     "siAnn": null,
     "returnsBasis": "Yahoo chart API: performance from unadjusted closes (D windows, 1W (5 daily candles) and 2W (10) count daily candles; 1M and 1Q take the candle closest to the same day 1 and 3 months earlier; WTD, MTD, QTD and YTD start at the last close before the current calendar week, month, quarter or year; 4M, 6M and 52W are calendar windows anchored on the last close on or before the target date), total return and CAGR from dividend- and split-adjusted closes",
-    "performanceAsOf": "2026-10-14"
+    "performanceAsOf": "2026-10-16"
   },
   "sources": {
     "universe": "https://www.sec.gov/files/company_tickers_exchange.json",
@@ -112,10 +112,10 @@
     "snapshot": "Yahoo Finance quoteSummary"
   },
   "market": {
-    "price": 5.2,
-    "asOfDate": "2026-10-14",
+    "price": 4.65,
+    "asOfDate": "2026-10-16",
     "valuation": {
-      "marketCap": 542642560,
+      "marketCap": 485247712,
       "enterpriseValue": null,
       "pe": null,
       "forwardPe": null,
@@ -129,11 +129,11 @@
       "sharesOutstanding": 104354342
     },
     "returns": {
-      "perf1d": 0.97,
-      "perf3d": 0,
-      "perf1w": -0.95,
-      "perfWtd": 0,
-      "perf2w": null,
+      "perf1d": -9.53,
+      "perf3d": -9.71,
+      "perf1w": -10.58,
+      "perfWtd": -10.58,
+      "perf2w": -14.36,
       "perf20d": null,
       "perf1m": null,
       "perfMtd": null,
@@ -169,7 +169,7 @@
     "annualDps": [],
     "recentDividends": [],
     "week52High": 7.08,
-    "week52Low": 5.04
+    "week52Low": 4.36
   },
   "fundamentals": {
     "asOf": "2024-06-30",
@@ -225,8 +225,8 @@
       "history/001.json"
     ],
     "pageSize": 1000,
-    "totalRows": 10,
-    "asOf": "2026-10-14",
+    "totalRows": 12,
+    "asOf": "2026-10-16",
     "granularity": {
       "monthlyBefore": "2026-10-01",
       "dailyFrom": "2026-10-01"

@@ -1,6 +1,6 @@
 {
   "ticker": "PSKY",
-  "name": "Paramount Skydance Corporation",
+  "name": "Paramount Skydance Corp",
   "exchange": "Nasdaq",
   "sector": "Communication Services",
   "industry": "Entertainment",
@@ -8,31 +8,31 @@
   "currency": "USD",
   "financialCurrency": "USD",
   "dataFile": "./companies/PSKY/meta.json",
-  "price": 9.5,
-  "asOfDate": "2026-10-02",
+  "price": 9.775,
+  "asOfDate": "2026-10-15",
   "fundamentalsAsOf": "2025-12-31",
   "fundamentalsBasis": "SEC EDGAR XBRL annual 10-K facts with gaps filled from Yahoo fundamentals-timeseries; valuation multiples from the Yahoo quoteSummary TTM snapshot",
   "metrics": {
-    "marketCap": 10632144896,
-    "enterpriseValue": 26272485376,
-    "price": 9.5,
-    "week52High": 19.22,
-    "week52Low": 7.62,
-    "beta": 1.52,
-    "sharesOutstanding": 1087672971,
-    "pe": 316.67,
-    "forwardPe": 11.23,
-    "ps": 0.37,
-    "forwardPs": 0.35,
-    "pFcf": 0.6,
-    "evEbitda": 7.94,
+    "marketCap": 10992190464,
+    "enterpriseValue": 26306144256,
+    "price": 9.775,
+    "week52High": 17.2899,
+    "week52Low": 6.63,
+    "beta": 1.55,
+    "sharesOutstanding": 1093020754,
+    "pe": null,
+    "forwardPe": 11.62,
+    "ps": 0.38,
+    "forwardPs": 0.36,
+    "pFcf": 0.62,
+    "evEbitda": 7.95,
     "fcfToEbitda": 531.51,
-    "pb": 0.9,
-    "dividendYield": 2.11,
-    "dividendRate": 0.2,
-    "dividendGrowth": 0,
-    "dividendGrowth3y": -40.72,
-    "dividendGrowth5y": -26.93,
+    "pb": 0.93,
+    "dividendYield": 93.71,
+    "dividendRate": 9.16,
+    "dividendGrowth": null,
+    "dividendGrowth3y": null,
+    "dividendGrowth5y": null,
     "payoutRatio": null,
     "fcfPayout": null,
     "currentRatio": 1.26,
@@ -73,22 +73,37 @@
     "ebitdaMarginDelta3y": null,
     "fcfMarginDelta": null,
     "fcfMarginDelta3y": null,
-    "perfYtd": -29.1,
-    "perf1y": -49.71,
-    "perf3y": -24.54,
-    "perf5y": -76.19,
-    "perf10y": -82.65,
-    "ytd": -28.07,
-    "tr1y": -48.78,
-    "tr3y": -20.58,
-    "tr5y": -73.22,
-    "tr10y": -78.42,
-    "cagr3y": -7.39,
-    "cagr5y": -23.16,
-    "cagr10y": -14.22,
-    "siAnn": -2.66,
-    "returnsBasis": "Yahoo chart API: performance from unadjusted closes, total return and CAGR from dividend- and split-adjusted closes",
-    "performanceAsOf": "2026-10-02"
+    "perf1d": 2.83,
+    "perf3d": -20.74,
+    "perf1w": -21.77,
+    "perfWtd": -20.74,
+    "perf2w": -22.6,
+    "perf20d": null,
+    "perf1m": -33.21,
+    "perfMtd": -33.21,
+    "perf40d": null,
+    "perf60d": null,
+    "perf1q": null,
+    "perfQtd": -33.21,
+    "perf4m": null,
+    "perf6m": null,
+    "perf52w": null,
+    "perfYtd": null,
+    "perf1y": null,
+    "perf3y": null,
+    "perf5y": null,
+    "perf10y": null,
+    "ytd": null,
+    "tr1y": null,
+    "tr3y": null,
+    "tr5y": null,
+    "tr10y": null,
+    "cagr3y": null,
+    "cagr5y": null,
+    "cagr10y": null,
+    "siAnn": null,
+    "returnsBasis": "Yahoo chart API: performance from unadjusted closes (D windows, 1W (5 daily candles) and 2W (10) count daily candles; 1M and 1Q take the candle closest to the same day 1 and 3 months earlier; WTD, MTD, QTD and YTD start at the last close before the current calendar week, month, quarter or year; 4M, 6M and 52W are calendar windows anchored on the last close on or before the target date), total return and CAGR from dividend- and split-adjusted closes",
+    "performanceAsOf": "2026-10-15"
   },
   "sources": {
     "universe": "https://www.sec.gov/files/company_tickers_exchange.json",
@@ -97,159 +112,118 @@
     "snapshot": "Yahoo Finance quoteSummary"
   },
   "market": {
-    "price": 9.5,
-    "asOfDate": "2026-10-02",
+    "price": 9.775,
+    "asOfDate": "2026-10-15",
     "valuation": {
-      "marketCap": 10632144896,
-      "enterpriseValue": 26272485376,
-      "pe": 316.67,
-      "forwardPe": 11.23,
-      "ps": 0.37,
-      "forwardPs": 0.35,
-      "pFcf": 0.6,
-      "evEbitda": 7.94,
+      "marketCap": 10992190464,
+      "enterpriseValue": 26306144256,
+      "pe": null,
+      "forwardPe": 11.62,
+      "ps": 0.38,
+      "forwardPs": 0.36,
+      "pFcf": 0.62,
+      "evEbitda": 7.95,
       "fcfToEbitda": 531.51,
-      "pb": 0.9,
-      "beta": 1.52,
-      "sharesOutstanding": 1087672971
+      "pb": 0.93,
+      "beta": 1.55,
+      "sharesOutstanding": 1093020754
     },
     "returns": {
-      "perfYtd": -29.1,
-      "perf1y": -49.71,
-      "perf3y": -24.54,
-      "perf5y": -76.19,
-      "perf10y": -82.65,
-      "ytd": -28.07,
-      "tr1y": -48.78,
-      "tr3y": -20.58,
-      "tr5y": -73.22,
-      "tr10y": -78.42,
-      "cagr3y": -7.39,
-      "cagr5y": -23.16,
-      "cagr10y": -14.22,
-      "siAnn": -2.66
+      "perf1d": 2.83,
+      "perf3d": -20.74,
+      "perf1w": -21.77,
+      "perfWtd": -20.74,
+      "perf2w": -22.6,
+      "perf20d": null,
+      "perf1m": -33.21,
+      "perfMtd": -33.21,
+      "perf40d": null,
+      "perf60d": null,
+      "perf1q": null,
+      "perfQtd": -33.21,
+      "perf4m": null,
+      "perf6m": null,
+      "perf52w": null,
+      "perfYtd": null,
+      "perf1y": null,
+      "perf3y": null,
+      "perf5y": null,
+      "perf10y": null,
+      "ytd": null,
+      "tr1y": null,
+      "tr3y": null,
+      "tr5y": null,
+      "tr10y": null,
+      "cagr3y": null,
+      "cagr5y": null,
+      "cagr10y": null,
+      "siAnn": null
     },
     "dividends": {
-      "dividendYield": 2.11,
-      "dividendRate": 0.2,
-      "dividendGrowth": 0,
-      "dividendGrowth3y": -40.72,
-      "dividendGrowth5y": -26.93
+      "dividendYield": 93.71,
+      "dividendRate": 9.16,
+      "dividendGrowth": null,
+      "dividendGrowth3y": null,
+      "dividendGrowth5y": null
     },
     "annualDps": [
       {
         "year": 2026,
-        "dps": 0.15
-      },
-      {
-        "year": 2025,
-        "dps": 0.2
-      },
-      {
-        "year": 2024,
-        "dps": 0.2
-      },
-      {
-        "year": 2023,
-        "dps": 0.39
-      },
-      {
-        "year": 2022,
-        "dps": 0.96
-      },
-      {
-        "year": 2021,
-        "dps": 0.96
-      },
-      {
-        "year": 2020,
-        "dps": 0.96
-      },
-      {
-        "year": 2019,
-        "dps": 0.78
-      },
-      {
-        "year": 2018,
-        "dps": 0.72
-      },
-      {
-        "year": 2017,
-        "dps": 0.72
-      },
-      {
-        "year": 2016,
-        "dps": 0.66
-      },
-      {
-        "year": 2015,
-        "dps": 0.6
-      },
-      {
-        "year": 2014,
-        "dps": 0.54
-      },
-      {
-        "year": 2013,
-        "dps": 0.48
-      },
-      {
-        "year": 2012,
-        "dps": 0.44
+        "dps": 9.16
       }
     ],
     "recentDividends": [
       {
-        "date": "2026-09-15",
+        "date": "2026-10-16",
         "amount": 0.05
       },
       {
-        "date": "2026-06-15",
-        "amount": 0.05
+        "date": "2026-10-15",
+        "amount": 0.18
       },
       {
-        "date": "2026-03-16",
-        "amount": 0.05
+        "date": "2026-10-14",
+        "amount": 0.18
       },
       {
-        "date": "2025-12-18",
-        "amount": 0.05
+        "date": "2026-10-13",
+        "amount": 0.18
       },
       {
-        "date": "2025-09-15",
-        "amount": 0.05
+        "date": "2026-10-12",
+        "amount": 0.18
       },
       {
-        "date": "2025-06-16",
-        "amount": 0.05
+        "date": "2026-10-09",
+        "amount": 0.18
       },
       {
-        "date": "2025-03-17",
-        "amount": 0.05
+        "date": "2026-10-08",
+        "amount": 0.15
       },
       {
-        "date": "2024-12-16",
-        "amount": 0.05
+        "date": "2026-10-07",
+        "amount": 0.15
       },
       {
-        "date": "2024-09-16",
-        "amount": 0.05
+        "date": "2026-10-06",
+        "amount": 0.15
       },
       {
-        "date": "2024-06-17",
-        "amount": 0.05
+        "date": "2026-10-05",
+        "amount": 0.15
       },
       {
-        "date": "2024-03-14",
-        "amount": 0.05
+        "date": "2026-10-02",
+        "amount": 0.15
       },
       {
-        "date": "2023-12-14",
-        "amount": 0.05
+        "date": "2026-10-01",
+        "amount": 0.15
       }
     ],
-    "week52High": 19.22,
-    "week52Low": 7.62
+    "week52High": 17.2899,
+    "week52Low": 6.63
   },
   "fundamentals": {
     "asOf": "2025-12-31",
@@ -349,11 +323,11 @@
       "history/001.json"
     ],
     "pageSize": 1000,
-    "totalRows": 272,
-    "asOf": "2026-10-02",
+    "totalRows": 12,
+    "asOf": "2026-10-15",
     "granularity": {
-      "monthlyBefore": "2026-09-02",
-      "dailyFrom": "2026-09-02"
+      "monthlyBefore": "2026-10-05",
+      "dailyFrom": "2026-10-05"
     },
     "source": "Yahoo Finance public chart API (adjusted close); monthly rows (month-end close, summed volume) with daily rows for the last 31 days"
   }
