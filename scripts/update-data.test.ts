@@ -65,7 +65,7 @@ const SNAPSHOT: Snapshot = {
   pe: 20, forwardPe: 18, ps: 5, forwardRevenue: 2e11, evEbitda: 10, pb: 3, freeCashflow: 1e11, ebitda: 2e11, week52High: 1, week52Low: 1,
 };
 
-const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
+const read = (path: string) => readFileSync(join(__dirname, '..', path), 'utf8');
 const file = () => JSON.parse(read('scripts/update-data.config.json'));
 
 // ---------------------------------------------------------------------------
@@ -102,7 +102,7 @@ describe('controls', () => {
     expect(config.skipYahoo).toBe(false);
     expect(config.tickers).toBeNull(); // blank = the whole universe
     expect(config.concurrency).toBe(24);
-    expect([...(readConfig({ TICKERS: 'aapl, brk.b;MSFT' }).tickers ?? [])].sort()).toEqual(['AAPL', 'BRK-B', 'MSFT']);
+    expect(Array.from(readConfig({ TICKERS: 'aapl, brk.b;MSFT' }).tickers ?? []).sort()).toEqual(['AAPL', 'BRK-B', 'MSFT']);
     expect(config.marketCap).toEqual({});
     expect(config.performance).toEqual({});
     expect(config.secUa).toBe('daggerok ETF feed daggerok@gmail.com');
@@ -121,7 +121,7 @@ describe('controls', () => {
     expect(Object.keys(file()).sort()).toEqual([...CONTROL_NAMES].sort());
     for (const value of Object.values(file())) expect(typeof value).toBe('string');
     expect((await runtimeControls({ REQUEST_SLEEP: '0', TICKERS: 'AAPL MSFT' })).TICKERS).toBe('AAPL MSFT');
-    const help = spawnSync('bun', [new URL('./update-data.ts', import.meta.url).pathname, '--help'], { encoding: 'utf8' }).stdout;
+    const help = spawnSync('bun', [join(__dirname, 'update-data.ts'), '--help'], { encoding: 'utf8' }).stdout;
     for (const name of CONTROL_NAMES) {
       const tenor = name.match(/^(PERFORMANCE|TOTAL_RETURN)_/);
       expect(help).toMatch(tenor ? new RegExp(`${tenor[1]}_([0-9A-Z]+\\|)*${name.slice(tenor[0].length)}[|=]`) : new RegExp(name));
@@ -147,8 +147,8 @@ describe('parsing', () => {
     expect(parseWatchlist(' \n\n')).toEqual([]);
     expect(parseWatchlist('BRK/A brk.b BRK-B')).toEqual(['BRK-A', 'BRK-B']);
     const known = ['BRK-A', 'BRK-B', 'AMP', 'AB', 'A-B', 'X-YZ', 'XY-Z'];
-    expect([...resolveWatchlist(['BRKA', 'BRK-B', 'AMP', 'AB', 'XYZ', 'VOO'], known, {})]).toEqual(['BRK-A', 'BRK-B', 'AMP', 'AB', 'XYZ', 'VOO']); // exact wins, ambiguous and unknown stay
-    expect([...resolveWatchlist(['XYZ', 'AB', 'FB'], known, { 'XY-Z': ['XYZ'], 'A-B': ['AB'], META: ['FB'] })]).toEqual(['XY-Z', 'A-B', 'META']); // the alias table wins over everything
+    expect(Array.from(resolveWatchlist(['BRKA', 'BRK-B', 'AMP', 'AB', 'XYZ', 'VOO'], known, {}))).toEqual(['BRK-A', 'BRK-B', 'AMP', 'AB', 'XYZ', 'VOO']); // exact wins, ambiguous and unknown stay
+    expect(Array.from(resolveWatchlist(['XYZ', 'AB', 'FB'], known, { 'XY-Z': ['XYZ'], 'A-B': ['AB'], META: ['FB'] }))).toEqual(['XY-Z', 'A-B', 'META']); // the alias table wins over everything
     expect(resolveWatchlist(['BRKB'], [])).toEqual(new Set(['BRK-B'])); // TICKER_ALIASES is the default
   });
 
@@ -156,7 +156,7 @@ describe('parsing', () => {
     const facts = syntheticFacts();
     facts.facts['us-gaap'].SalesRevenueNet.units.USD.push({ start: '2026-01-01', end: '2026-03-31', val: 1, form: '10-Q', filed: '2026-04-30' });
     const merged = annualSeries(facts, ['RevenueFromContractWithCustomerExcludingAssessedTax', 'SalesRevenueNet'], 'flow');
-    expect([...merged.keys()]).toHaveLength(6);
+    expect(Array.from(merged.keys())).toHaveLength(6);
     expect(merged.has('2026-03-31')).toBe(false);
     const rows = buildAnnualRows(facts);
     expect(rows[0].end).toBe('2026-12-31');
@@ -294,7 +294,7 @@ describe('metrics', () => {
     expect(monthly.length).toBeLessThan(112);
     expect(rows.length - monthly.length).toBeLessThanOrEqual(31);
     expect(rows.reduce((s, r) => s + r.volume, 0)).toBe(long.length);
-    expect(monthly[1].close).toBe(long.filter((r) => r.date.startsWith(monthly[1].date.slice(0, 7))).at(-1)?.close as number);
+    expect(monthly[1].close).toBe(long.filter((r) => r.date.startsWith(monthly[1].date.slice(0, 7))).pop()?.close as number);
     expect(rows[rows.length - 1].date).toBe(long[long.length - 1].date);
     expect(sampleHistory([])).toEqual({ rows: [], dailyFrom: null });
   });

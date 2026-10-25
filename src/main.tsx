@@ -1213,7 +1213,7 @@ function nonLatinText(): string {
       for (const ch of `${store.name[id]}${store.industryText[id]}${store.sectorText[id]}`) if (ch.charCodeAt(0) > 0xff) chars.add(ch);
     }
   }
-  return [...chars].join('');
+  return Array.from(chars).join('');
 }
 
 /** Loads the Inter subsets that cover the given text, for the weights the table uses, before the rows are laid out. */
@@ -1310,7 +1310,7 @@ function stockRaw(key: string): any {
 function selectedKeys(): string[] {
   if (!store) return [];
   const present = store.keyIndex;
-  return [...state.selected].filter(key => present.has(key));
+  return Array.from(state.selected).filter(key => present.has(key));
 }
 
 /** meta.json requests are deduplicated while in flight; failed fetches are not cached so they can retry. */
@@ -1423,15 +1423,15 @@ function catalogQuery(): string {
 }
 
 function hiddenExchangesSig(): string {
-  return [...state.hiddenExchanges].sort().join(',');
+  return Array.from(state.hiddenExchanges).sort().join(',');
 }
 
 function hiddenSectorsSig(): string {
-  return [...state.hiddenSectors].sort().join(',');
+  return Array.from(state.hiddenSectors).sort().join(',');
 }
 
 function hiddenColsSig(): string {
-  return [...state.hiddenCols].sort().join(',');
+  return Array.from(state.hiddenCols).sort().join(',');
 }
 
 function isStaleId(id: number): boolean {
@@ -1650,7 +1650,7 @@ function catalogBaseline(): { ids: number[]; rank: Int32Array } {
   const sig = [
     s.version, state.activeTab, hiddenExchangesSig(), hiddenSectorsSig(), blacklistVersion, catalogQuery(),
     state.hideStale ? state.staleDays : 'off', state.sortKey, state.sortDir,
-    state.activeTab === 'watchlist' ? [...state.selected].sort().join(',') : '',
+    state.activeTab === 'watchlist' ? Array.from(state.selected).sort().join(',') : '',
     state.hideStale ? Math.floor(Date.now() / DAY_MS) : '',
   ].join('|');
   if (baselineCache && baselineCache.sig === sig) return baselineCache;
@@ -2199,7 +2199,7 @@ function createDropdown(cfg: DropdownConfig): Dropdown {
     event.preventDefault();
     close();
     if (event.shiftKey) { trigger.focus({ preventScroll: true }); return; }
-    const page = [...document.querySelectorAll('a[href], button, input, select, textarea, [tabindex]')]
+    const page = Array.from(document.querySelectorAll('a[href], button, input, select, textarea, [tabindex]'))
       .filter((node: any) => !panel.contains(node) && node.tabIndex >= 0 && !node.disabled && (node.offsetParent !== null || node === trigger));
     const next: any = page[page.indexOf(trigger) + 1];
     if (next) next.focus();
@@ -2368,7 +2368,7 @@ function initSearchSuggest(): void {
     const kindItems = item.kind === 'exchange' ? exchangeItems : sectorItems;
     const current = new Set(kindItems.filter(entry => entry.selected).map(entry => entry.id));
     const everything = current.size === kindItems.length;
-    const next = only || everything ? new Set([item.id]) : new Set([...current, item.id]);
+    const next = only || everything ? new Set([item.id]) : new Set(Array.from(current).concat(item.id));
     const value = input.value;
     input.value = `${value.slice(0, term.start)}${value.slice(term.end)}`.replace(/\s{2,}/g, ' ').trimStart();
     setCurrentQuery(input.value.trim());
@@ -3438,7 +3438,7 @@ function renderHeaderSummary(subtitle: HTMLElement, keys: Iterable<string>, acti
   // Move existing nodes: provenance links and their handlers remain intact.
   panel.replaceChildren(...Array.from(subtitle.childNodes));
   subtitle.replaceChildren();
-  const selected = [...keys].sort((a, b) => collator.compare(a, b));
+  const selected = Array.from(keys).sort((a, b) => collator.compare(a, b));
   if (!selected.length) return;
   const paint = (count: number): void => {
     subtitle.replaceChildren();
@@ -3726,7 +3726,7 @@ function blacklistTickers(rawTickers: string[]): void {
     .filter(Boolean)
     .forEach(ticker => { if (store && store.keyIndex.has(ticker)) state.blacklist.add(ticker); });
   blacklistVersion += 1;
-  [...state.selected].forEach(key => { if (state.blacklist.has(key)) state.selected.delete(key); });
+  Array.from(state.selected).forEach(key => { if (state.blacklist.has(key)) state.selected.delete(key); });
   if (state.activeKey && state.blacklist.has(state.activeKey)) state.activeKey = selectedKeys()[0] || null;
   persistBlacklist();
   persistSelection();
@@ -3756,7 +3756,7 @@ function clearBlacklist(): void {
 
 function renderBlacklistPanel(): void {
   el.blacklistChips.innerHTML = '';
-  const keys = [...state.blacklist].sort((a, b) => collator.compare(a, b));
+  const keys = Array.from(state.blacklist).sort((a, b) => collator.compare(a, b));
   keys.forEach(key => {
     const chip = document.createElement('span');
     chip.className = 'inline-flex items-center gap-1.5 bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-700/50 rounded-full pl-3 pr-1.5 py-1 text-xs font-medium';
@@ -3898,20 +3898,20 @@ function fitTableHeight(): void {
 // =========================================================================
 
 function persistSelection(): void {
-  lsSet(SELECTED_KEY, JSON.stringify([...state.selected]));
+  lsSet(SELECTED_KEY, JSON.stringify(Array.from(state.selected)));
   if (state.activeKey) lsSet(ACTIVE_KEY, state.activeKey);
   else lsRemove(ACTIVE_KEY);
 }
 
 function persistBlacklist(): void {
-  lsSet(BLACKLIST_KEY, JSON.stringify([...state.blacklist]));
+  lsSet(BLACKLIST_KEY, JSON.stringify(Array.from(state.blacklist)));
 }
 
 function persistViewFilters(): void {
   lsSet(VIEW_FILTERS_KEY, JSON.stringify({
-    hiddenExchanges: [...state.hiddenExchanges],
-    hiddenSectors: [...state.hiddenSectors],
-    hiddenCols: [...state.hiddenCols],
+    hiddenExchanges: Array.from(state.hiddenExchanges),
+    hiddenSectors: Array.from(state.hiddenSectors),
+    hiddenCols: Array.from(state.hiddenCols),
     hideStale: state.hideStale,
     staleDays: state.staleDays,
   }));
@@ -3978,7 +3978,7 @@ function stringList(value: unknown): string[] {
 function restoreSelectedStocks(): void {
   state.selected = new Set(stringList(lsGetJson(SELECTED_KEY, [])));
   const savedActive = lsGet(ACTIVE_KEY) || '';
-  state.activeKey = savedActive && state.selected.has(savedActive) ? savedActive : ([...state.selected][0] || null);
+  state.activeKey = savedActive && state.selected.has(savedActive) ? savedActive : (Array.from(state.selected)[0] || null);
 }
 
 function restoreBlacklist(): void {

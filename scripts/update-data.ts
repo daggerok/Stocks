@@ -2,7 +2,7 @@
 // Bun provides Node-compatible fs/promises; node types are intentionally not required at runtime.
 /// <reference types="bun" />
 import { appendFile, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 // Stocks listed on Nasdaq, NYSE and Cboe: static ./api/stocks feed.
 //   universe      SEC company_tickers_exchange.json (ticker, CIK, exchange)
@@ -27,8 +27,10 @@ const SOFT_DEADLINE_MS = 25 * 60_000;
 const DAY_MS = 86_400_000;
 const YEAR_MS = 365.25 * DAY_MS;
 
-const CONFIG_FILE_URL = new URL('./update-data.config.json', import.meta.url);
-let API_ROOT = new URL('../api/stocks/', import.meta.url);
+// __dirname instead of import.meta: the owner's IDE checks this file with the TypeScript defaults (ES5, commonjs)
+const SCRIPTS_DIR = new URL(`${pathToFileURL(__dirname).href}/`);
+const CONFIG_FILE_URL = new URL('./update-data.config.json', SCRIPTS_DIR);
+let API_ROOT = new URL('../api/stocks/', SCRIPTS_DIR);
 export function useApiRoot(root: URL): URL { const previous = API_ROOT; API_ROOT = root; return previous; }
 const indexFile = () => new URL('index.json', API_ROOT);
 const stateFile = () => new URL('update-state.json', API_ROOT);
@@ -41,7 +43,7 @@ export const TICKER_ALIASES: Record<string, string[]> = {
   'BRK-A': ['BRKA'],
   'BRK-B': ['BRKB'],
 };
-let WATCHLIST_DIR = new URL('./', import.meta.url);
+let WATCHLIST_DIR = new URL('./', SCRIPTS_DIR);
 export function useWatchlistDir(dir: URL): URL { const previous = WATCHLIST_DIR; WATCHLIST_DIR = dir; return previous; }
 
 export const CONTROL_NAMES = [
@@ -303,7 +305,7 @@ export function annualSeries(facts: JsonRecord, tags: string[], kind: 'flow' | '
       const seen = best.get(fact.end);
       if (!seen || String(fact.filed) >= String(seen.filed)) best.set(fact.end, fact);
     }
-    for (const [end, fact] of best) if (!out.has(end)) out.set(end, fact.val);
+    best.forEach((fact, end) => { if (!out.has(end)) out.set(end, fact.val); });
   }
   return out;
 }
@@ -380,7 +382,7 @@ export function buildAnnualRows(facts: JsonRecord, limit = 15): AnnualRow[] {
   const cp = inst(TAGS.commercialPaper);
   const equity = inst(TAGS.equity);
 
-  const ends = [...(revenue.size ? revenue.keys() : ocf.keys())].sort().reverse().slice(0, limit);
+  const ends = Array.from(revenue.size ? revenue.keys() : ocf.keys()).sort().reverse().slice(0, limit);
   return ends.map((end): AnnualRow => {
     const rev = revenue.get(end);
     const gp = gross.get(end) ?? (rev !== undefined && cost.has(end) ? rev - cost.get(end)! : undefined);
@@ -450,7 +452,7 @@ export function mergeAnnual(sec: AnnualRow[], yahoo: Map<string, Partial<AnnualR
   const rows = sec.map((r) => ({ ...r }));
   let filled = false;
   const usable = new Set<string>();
-  for (const [date, values] of yahoo) {
+  for (const [date, values] of Array.from(yahoo)) {
     const near = rows.find((r) => Math.abs(dayDiff(r.end, date)) <= 10);
     if (near) {
       usable.add(near.end);
@@ -627,7 +629,7 @@ export function dividendMetrics(dividends: ParsedChart['dividends'], price: numb
   };
   const cutoff = new Date(Date.parse(`${lastDate}T00:00:00Z`) - YEAR_MS).toISOString().slice(0, 10);
   const ttm = dividends.filter((d) => d.date > cutoff).reduce((sum, d) => sum + d.amount, 0);
-  const annual = [...byYear.entries()].sort((a, b) => b[0] - a[0]).slice(0, 15).map(([year, v]) => ({ year, dps: round(v, 4) }));
+  const annual = Array.from(byYear.entries()).sort((a, b) => b[0] - a[0]).slice(0, 15).map(([year, v]) => ({ year, dps: round(v, 4) }));
   return {
     metrics: {
       dividendYield: price ? (ttm > 0 ? rounded((ttm / price) * 100) : 0) : null, // no payments in the last year is an honest 0
@@ -1019,7 +1021,7 @@ export function parseWatchlist(text: string, csv = false): string[] {
     const ticker = watchTicker(cell);
     if (/^[A-Z0-9][A-Z0-9-]*$/.test(ticker) && ticker !== 'SYMBOL' && ticker !== 'TICKER') out.add(ticker);
   }
-  return [...out];
+  return Array.from(out);
 }
 
 const watchTicker = (cell: string) => normalizeTicker(cell.replace(/["']/g, '').trim().replace(/^[A-Za-z]+:/, '').replace(/[/\s_]+/g, '-'));
@@ -1034,9 +1036,9 @@ export function resolveWatchlist(list: Iterable<string>, known: Iterable<string>
   const compact = (ticker: string) => ticker.replace(/[^A-Z0-9]/g, '');
   const exact = new Set(known);
   const byLetters = new Map<string, string[]>();
-  for (const ticker of exact) byLetters.set(compact(ticker), [...(byLetters.get(compact(ticker)) ?? []), ticker]);
+  exact.forEach((ticker) => byLetters.set(compact(ticker), [...(byLetters.get(compact(ticker)) ?? []), ticker]));
   const out = new Set<string>();
-  for (const ticker of list) {
+  for (const ticker of Array.from(list)) {
     const same = byLetters.get(compact(ticker)) ?? [];
     out.add(alias.get(ticker) ?? (exact.has(ticker) || same.length !== 1 ? ticker : same[0]));
   }
@@ -1079,9 +1081,9 @@ export async function run(controls: Record<string, string | undefined>, options:
   const previous = await readPreviousRows(table);
   // scripts/All.txt or All.csv with tickers: the feed holds only those stocks, every other row and folder is removed
   const watchlist = await readWatchlist();
-  const allowed = watchlist ? resolveWatchlist(watchlist.tickers, [...table.keys(), ...previous.keys()]) : null;
+  const allowed = watchlist ? resolveWatchlist(watchlist.tickers, Array.from(table.keys()).concat(Array.from(previous.keys()))) : null;
   if (watchlist && allowed) console.log(`[universe] watchlist scripts/${watchlist.file}: ${allowed.size} tickers`);
-  let wanted = config.tickers ? [...config.tickers] : allowed ? [...allowed] : [...table.keys()];
+  let wanted = Array.from(config.tickers ?? allowed ?? table.keys());
   if (config.tickers && allowed && watchlist) {
     const outside = wanted.filter((t) => !allowed.has(t));
     if (outside.length) console.warn(`[universe] not in scripts/${watchlist.file}, skipped: ${listNames(outside)}`);
@@ -1098,7 +1100,7 @@ export async function run(controls: Record<string, string | undefined>, options:
     universe.push(listing);
   }
   if (unlisted.length) console.log(`[universe] ${unlisted.length} watchlist tickers are not in the SEC exchange table (ETFs, funds): ${listNames(unlisted)}`);
-  console.log(`[universe] ${universe.length} stocks on ${[...config.exchanges].join(', ')}`);
+  console.log(`[universe] ${universe.length} stocks on ${Array.from(config.exchanges).join(', ')}`);
 
   // Rotation: full-universe runs continue after the committed cursor (a run that stops at MAX_FETCHES or the soft deadline resumes there);
   // runs with an explicit TICKERS list never read or move it
@@ -1145,13 +1147,13 @@ export async function run(controls: Record<string, string | undefined>, options:
   const delisted: string[] = [];
   if (!config.tickers) {
     const staleBefore = delistedBefore();
-    for (const [ticker, row] of byTicker) {
+    for (const [ticker, row] of Array.from(byTicker)) {
       if (!table.has(ticker) && String(row.asOfDate ?? '') < staleBefore) { byTicker.delete(ticker); delisted.push(ticker); }
     }
   }
   const outsideWatchlist: string[] = [];
-  if (allowed) for (const ticker of byTicker.keys()) if (!allowed.has(ticker)) { byTicker.delete(ticker); outsideWatchlist.push(ticker); }
-  const companies = [...byTicker.values()].sort((a, b) => String(a.ticker).localeCompare(String(b.ticker)));
+  if (allowed) for (const ticker of Array.from(byTicker.keys())) if (!allowed.has(ticker)) { byTicker.delete(ticker); outsideWatchlist.push(ticker); }
+  const companies = Array.from(byTicker.values()).sort((a, b) => String(a.ticker).localeCompare(String(b.ticker)));
   await writeIfChanged(indexFile(), indexDocument(companies), compactIndexText);
   if (allowed && watchlist) {
     // folders go only after the index stops listing them; a folder of a listed stock is never touched
@@ -1159,7 +1161,7 @@ export async function run(controls: Record<string, string | undefined>, options:
     try { folders = (await readdir(new URL('companies/', API_ROOT))).sort(); } catch { /* first run */ }
     const removed = folders.filter((ticker) => !allowed.has(ticker));
     for (const ticker of removed) await rm(companyDir(ticker), { recursive: true, force: true });
-    const gone = [...new Set([...outsideWatchlist, ...removed])].sort();
+    const gone = Array.from(new Set([...outsideWatchlist, ...removed])).sort();
     if (gone.length) console.log(`[watchlist] removed ${gone.length} stocks not in scripts/${watchlist.file}: ${listNames(gone)}`);
   }
   if (rotate) await writeIfChanged(stateFile(), { cursor: queue.length ? lastTicker : null, savedAt: stamp() });
@@ -1263,8 +1265,11 @@ export async function runtimeControls(env: Record<string, string | undefined> = 
   return resolveControls(file, {}, {}, env);
 }
 
-if ((import.meta as { main?: boolean }).main) {
+// require.main === module instead of import.meta.main and a main() instead of top-level await: same IDE defaults as above
+async function main(): Promise<void> {
   if (process.argv.some((arg) => ['-h', '--help', 'help'].includes(arg))) console.log(USAGE.trim());
   else if (process.argv.includes('--prune')) await pruneCompanies().then((removed) => console.log(`[prune   ] removed ${removed.length} delisted folders${removed.length ? `: ${listNames(removed)}` : ''}`)).catch((error) => { console.error(error instanceof Error ? error.message : String(error)); process.exitCode = 1; });
   else await runtimeControls().then((controls) => { installSystemCa(controls.USE_SYSTEM_CA ?? 'auto'); return run(controls); }).catch((error) => { console.error(error instanceof Error ? error.stack : String(error)); process.exitCode = 1; });
 }
+
+if (require.main === module) main().catch((error: unknown) => { console.error(error); process.exitCode = 1; });
