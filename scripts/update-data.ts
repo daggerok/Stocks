@@ -841,17 +841,26 @@ async function pruneHistoryPages(dir: URL, keep: string[]): Promise<void> {
   } catch { /* no history dir yet */ }
 }
 
-async function writeHistory(dir: URL, ticker: string, fullDays: ChartDay[], pageSize: number): Promise<JsonRecord> {
+/** History pages built in memory; they are written only for a stock that is published, right before its meta.json. */
+function buildHistory(ticker: string, fullDays: ChartDay[], pageSize: number): { files: Array<{ path: string; page: JsonRecord }>; history: JsonRecord } {
   const { rows: days, dailyFrom } = sampleHistory(fullDays);
-  const pages: string[] = [];
+  const files: Array<{ path: string; page: JsonRecord }> = [];
   const total = days.length;
   for (let i = 0; i * pageSize < total; i += 1) {
     const rows = days.slice(i * pageSize, (i + 1) * pageSize).map((d) => ({ Date: d.date, Close: String(round(d.close, 4)), 'Adj Close': String(round(d.adjClose, 4)), Volume: String(d.volume) }));
-    const name = `${String(i + 1).padStart(3, '0')}.json`;
-    await writeIfChanged(new URL(`history/${name}`, dir), { ticker, page: i + 1, pageSize, totalRows: total, headers: ['Date', 'Close', 'Adj Close', 'Volume'], rows });
-    pages.push(`history/${name}`);
+    files.push({ path: `history/${String(i + 1).padStart(3, '0')}.json`, page: { ticker, page: i + 1, pageSize, totalRows: total, headers: ['Date', 'Close', 'Adj Close', 'Volume'], rows } });
   }
-  return { pages, pageSize, totalRows: total, asOf: days[days.length - 1]?.date ?? null, granularity: { monthlyBefore: dailyFrom, dailyFrom }, source: 'Yahoo Finance public chart API (adjusted close); monthly rows (month-end close, summed volume) with daily rows for the last 31 days' };
+  const history = { pages: files.map((f) => f.path), pageSize, totalRows: total, asOf: days[days.length - 1]?.date ?? null, granularity: { monthlyBefore: dailyFrom, dailyFrom }, source: 'Yahoo Finance public chart API (adjusted close); monthly rows (month-end close, summed volume) with daily rows for the last 31 days' };
+  return { files, history };
+}
+
+/** Lowest and highest close of the last 52 weeks: the 52-week range when the quoteSummary snapshot failed. */
+function closeRange52w(days: ChartDay[]): { low: number | null; high: number | null } {
+  const last = days[days.length - 1];
+  if (!last) return { low: null, high: null };
+  const from = minusDays(last.date, 52 * 7);
+  const closes = days.filter((d) => d.date >= from).map((d) => d.close);
+  return { low: round(Math.min(...closes), 4), high: round(Math.max(...closes), 4) };
 }
 
 export type Outcome = { row: JsonRecord } | { skipped: string };
@@ -913,16 +922,18 @@ export async function processCompany(listing: Listing, config: UpdaterConfig, pr
   const prevMarket = prevMeta?.market ?? null;
   let market: JsonRecord;
   let history: JsonRecord;
+  let historyFiles: Array<{ path: string; page: JsonRecord }> = [];
   if (chart) {
     const last = chart.days[chart.days.length - 1];
     const price = chart.price ?? last.close;
     const div = dividendMetrics(chart.dividends, price, last.date);
     const valuation = snapshot ? valuationMetrics(snapshot) : (prevMarket?.valuation ?? {});
+    const range = snapshot ? { low: snapshot.week52Low, high: snapshot.week52High } : closeRange52w(chart.days); // a failed snapshot: the closes still give the range
     market = {
       price, asOfDate: last.date, valuation, returns: priceReturns(chart.days), dividends: div.metrics, annualDps: div.annual,
-      recentDividends: chart.dividends.slice(-12).reverse(), week52High: snapshot?.week52High ?? null, week52Low: snapshot?.week52Low ?? null,
+      recentDividends: chart.dividends.slice(-12).reverse(), week52High: range.high, week52Low: range.low,
     };
-    history = await writeHistory(dir, ticker, chart.days, config.historyPageSize);
+    ({ files: historyFiles, history } = buildHistory(ticker, chart.days, config.historyPageSize));
   } else {
     if (!prevMarket) throw new Error(`${ticker}: SKIP_YAHOO is set and no previous market data exists`);
     market = prevMarket;
@@ -940,7 +951,8 @@ export async function processCompany(listing: Listing, config: UpdaterConfig, pr
     ticker, name: snapshot?.name || prevMeta?.name || listing.name, exchange: listing.exchange, sector: snapshot?.sector ?? prevMeta?.sector ?? null, industry: snapshot?.industry ?? prevMeta?.industry ?? null,
     cik: listing.cik, currency: snapshot?.currency || chart?.currency || prevMeta?.currency || null, financialCurrency: snapshot?.financialCurrency || prevMeta?.financialCurrency || null,
     dataFile: `./companies/${ticker}/meta.json`, price: market.price, asOfDate: market.asOfDate,
-    fundamentalsAsOf: rows[0]?.end ?? null, fundamentalsBasis: rows.length ? FUNDAMENTALS_BASIS[fundamentalsSource] : fundamentalsNote, metrics,
+    // a failed SEC download reuses the previous annual rows, so their basis travels with them (a Yahoo-only stock stays Yahoo)
+    fundamentalsAsOf: rows[0]?.end ?? null, fundamentalsBasis: (secFailed ? prevMeta?.fundamentalsBasis : null) ?? (rows.length ? FUNDAMENTALS_BASIS[fundamentalsSource] : fundamentalsNote), metrics,
   };
 
   // 4. post-fetch filters keep the previously published state of unselected companies
@@ -951,6 +963,8 @@ export async function processCompany(listing: Listing, config: UpdaterConfig, pr
   for (const [period, range] of Object.entries(config.totalReturn)) if (range && !inRange(metrics[TOTAL_RETURN_KEYS[period]], range)) reasons.push(`TOTAL_RETURN_${period}`);
   if (reasons.length) return { skipped: `filtered by ${reasons.join(', ')}` };
 
+  // 5. ordered writes of a published stock only: history pages, then meta.json, then stale pages removed
+  for (const file of historyFiles) await writeIfChanged(new URL(file.path, dir), file.page);
   const meta = { ...row, sources: { universe: SEC_TICKERS_URL, fundamentals: `${SEC_FACTS_URL}/CIK${toCik(listing.cik)}.json`, market: 'Yahoo Finance chart API', snapshot: 'Yahoo Finance quoteSummary' }, market, fundamentals: { asOf: rows[0]?.end ?? null, annual: rows }, history };
   await writeIfChanged(new URL('meta.json', dir), meta);
   await pruneHistoryPages(dir, Array.isArray(history.pages) ? history.pages : []);
