@@ -420,16 +420,24 @@ function formatInteger(value: unknown): string {
   return parsed === null ? DASH : Math.round(parsed).toLocaleString('en-US');
 }
 
-function formatMoney(value: unknown): string {
+/** `$` for USD or an unknown currency; any other currency prints the bare amount (named in the column header) so the column stays numeric. */
+function formatMoney(value: unknown, currency?: string | null): string {
   const parsed = numberOrNull(value);
   if (parsed === null) return DASH;
   const sign = parsed < 0 ? '-' : '';
+  const unit = foreignCurrency(currency) ? '' : '$';
   const abs = Math.abs(parsed);
-  if (abs >= 1e12) return `${sign}$${(abs / 1e12).toFixed(2)}T`;
-  if (abs >= 1e9) return `${sign}$${(abs / 1e9).toFixed(2)}B`;
-  if (abs >= 1e6) return `${sign}$${(abs / 1e6).toFixed(2)}M`;
-  if (abs >= 1e3) return `${sign}$${(abs / 1e3).toFixed(2)}K`;
-  return `${sign}$${abs.toFixed(2)}`;
+  if (abs >= 1e12) return `${sign}${unit}${(abs / 1e12).toFixed(2)}T`;
+  if (abs >= 1e9) return `${sign}${unit}${(abs / 1e9).toFixed(2)}B`;
+  if (abs >= 1e6) return `${sign}${unit}${(abs / 1e6).toFixed(2)}M`;
+  if (abs >= 1e3) return `${sign}${unit}${(abs / 1e3).toFixed(2)}K`;
+  return `${sign}${unit}${abs.toFixed(2)}`;
+}
+
+/** The reporting currency when it is not USD (TSM: TWD, ASML: EUR), else an empty string. */
+function foreignCurrency(currency: unknown): string {
+  const code = String(currency ?? '').trim().toUpperCase();
+  return code && code !== 'USD' ? code : '';
 }
 
 function formatPrice(value: unknown): string {
@@ -3268,10 +3276,13 @@ const FUNDAMENTAL_COLS: Array<{ label: string; key: string; fmt: 'money' | 'eps'
 
 function fundamentalsGrid(meta: any): { cols: GridCol[]; rows: any[] } {
   const annual: any[] = meta && meta.fundamentals && Array.isArray(meta.fundamentals.annual) ? meta.fundamentals.annual : [];
-  const cols: GridCol[] = [{ label: 'Period', key: 'c0', numeric: false }].concat(FUNDAMENTAL_COLS.map((col, i) => ({ label: col.label, key: `c${i + 1}`, numeric: true })));
+  // annual rows are in the reporting currency (financialCurrency): a non-USD one is named in every amount header
+  const currency = meta ? meta.financialCurrency : null;
+  const foreign = foreignCurrency(currency);
+  const cols: GridCol[] = [{ label: 'Period', key: 'c0', numeric: false }].concat(FUNDAMENTAL_COLS.map((col, i) => ({ label: foreign ? `${col.label} (${foreign})` : col.label, key: `c${i + 1}`, numeric: true })));
   const source = (): Array<{ raw: any[]; cells: string[] }> => annual.map(item => ({
     raw: [item.end].concat(FUNDAMENTAL_COLS.map(col => item[col.key])),
-    cells: [String(item.end)].concat(FUNDAMENTAL_COLS.map(col => (col.fmt === 'eps' ? (numberOrNull(item[col.key])?.toFixed(2) ?? DASH) : formatMoney(item[col.key])))),
+    cells: [String(item.end)].concat(FUNDAMENTAL_COLS.map(col => (col.fmt === 'eps' ? (numberOrNull(item[col.key])?.toFixed(2) ?? DASH) : formatMoney(item[col.key], currency)))),
   }));
   return { cols, rows: gridView(cols, annual, source, 'fundamentals') };
 }
@@ -3280,7 +3291,8 @@ function renderFundamentalsTable(stock: StockRef, meta: any): void {
   const grid = fundamentalsGrid(meta);
   renderGrid(grid.cols, grid.rows, 'No annual fundamentals match your search and filters.', 'fundamentals');
   el.tickerCount.textContent = stock.ticker;
-  renderSubtitle(`${stock.ticker} fundamentals · one row per fiscal year, newest first; ${stock.raw.fundamentalsBasis || 'source unavailable'}.`);
+  const foreign = foreignCurrency(meta && meta.financialCurrency ? meta.financialCurrency : stock.raw.financialCurrency);
+  renderSubtitle(`${stock.ticker} fundamentals · one row per fiscal year, newest first${foreign ? `; amounts in ${foreign}` : ''}; ${stock.raw.fundamentalsBasis || 'source unavailable'}.`);
 }
 
 function dividendRows(meta: any): Array<{ raw: any[]; cells: string[] }> {
