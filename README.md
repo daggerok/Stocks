@@ -85,7 +85,7 @@ Caveats:
 - Fundamentals describe the latest fiscal year of the 10-K, not the trailing twelve months; the row carries `fundamentalsAsOf` and `fundamentalsBasis` (SEC, SEC with Yahoo gap fill, or Yahoo only)
 - EBITDA is operating income plus depreciation and amortization (the combined D&A line, or depreciation plus intangible amortization when a filer tags them separately); it excludes non-operating income, so it can differ from Yahoo's EBITDA, which the `evEbitda` and `fcfToEbitda` multiples use
 - Banks, insurers and other issuers without an operating income, capital expenditures or a classified balance sheet have those metrics unavailable
-- ADRs and other issuers whose reporting currency differs from the price currency keep growth and margins but lose every multiple that mixes the two currencies
+- ADRs and other issuers whose reporting currency differs from the price currency keep growth and margins but lose every multiple that mixes the two currencies; their Fundamentals tab shows the annual statements in the reporting currency, named in the column headers (`Revenue (TWD)`) and in the subtitle, with no `$` on the amounts
 - Share classes (GOOG and GOOGL, BRK-B) share one set of fundamentals and differ only in market data
 - Price history is published as month-end rows with daily rows for the last 31 days; returns are computed from the full daily series before that sampling
 - NYSE Arca has no stock rows in the SEC company table; Arca-listed stocks are not covered
