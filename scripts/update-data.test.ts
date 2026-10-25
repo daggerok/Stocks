@@ -308,10 +308,13 @@ describe('pipeline', () => {
   let restore: URL;
   let restoreWatchlist: URL;
   let failChartFor = '';
+  let failSummaryFor = '';
+  let failSecFor = '';
+  let chartLength = 400;
 
   const chartPayload = () => {
     const start = Date.parse('2020-01-02T00:00:00Z') / 1000;
-    const timestamp = Array.from({ length: 400 }, (_, i) => start + i * 86_400 * 3);
+    const timestamp = Array.from({ length: chartLength }, (_, i) => start + i * 86_400 * 3);
     const close = timestamp.map((_, i) => 50 + i * 0.05);
     return { chart: { result: [{ meta: { regularMarketPrice: 70, currency: 'USD', fullExchangeName: 'NasdaqGS' }, timestamp, indicators: { quote: [{ close, volume: close.map(() => 10) }], adjclose: [{ adjclose: close }] }, events: { dividends: { [String(timestamp[300])]: { amount: 0.5 } } } }] } };
   };
@@ -325,12 +328,14 @@ describe('pipeline', () => {
     if (url.startsWith('https://fc.yahoo.com')) return new Response('', { status: 404, headers: { 'set-cookie': 'A3=abc; Path=/' } });
     if (url.includes('getcrumb')) return new Response('crumb123', { status: 200 });
     if (url.includes('quoteSummary')) {
+      if (failSummaryFor && url.includes(`/${failSummaryFor}?`)) return new Response('boom', { status: 500 });
       const body = summary(url.includes('/CCC') ? 'ETF' : 'EQUITY');
       if (url.includes('/EEE')) delete (body.quoteSummary.result[0].price as any).marketCap; // a warrant has no market cap
       return json(body);
     }
     if (url.includes('/v8/finance/chart/')) return failChartFor && url.includes(`/${failChartFor}?`) ? new Response('boom', { status: 500 }) : json(chartPayload());
     if (url.includes('fundamentals-timeseries')) return json({ timeseries: { result: [] } });
+    if (url.includes('companyfacts') && failSecFor && url.includes(failSecFor)) return new Response('boom', { status: 500 });
     if (url.includes('companyfacts')) return url.includes('CIK0000000006') ? new Response('nope', { status: 404 }) : json(syntheticFacts()); // FFF has no XBRL facts
     return new Response('not found', { status: 404 });
   }) as typeof fetch;
@@ -341,6 +346,9 @@ describe('pipeline', () => {
     restoreWatchlist = useWatchlistDir(new URL(`${pathToFileURL(dir).href}/`)); // never the repo's scripts/All.txt
     globalThis.fetch = mockFetch;
     failChartFor = '';
+    failSummaryFor = '';
+    failSecFor = '';
+    chartLength = 400;
   });
   afterEach(async () => {
     globalThis.fetch = realFetch;
@@ -362,14 +370,18 @@ describe('pipeline', () => {
     expect(metrics.forwardPs).toBe(2);
     expect(metrics.performanceAsOf).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect([...(await readdir(join(dir, 'companies', 'AAA', 'history')))].sort()).toEqual(['001.json']);
+    expect((await readdir(join(dir, 'companies'))).sort()).toEqual(['AAA', 'BBB']); // skipped stocks (EEE no market cap, FFF no SEC facts) leave no history behind
   });
 
   test('a filtered one-ticker run and a market cap filter never shrink the index', async () => {
     await run(controls());
     expect((await run(controls({ TICKERS: 'AAA' }))).rows).toBe(2);
+    const history = await readText('companies/AAA/history/001.json');
+    chartLength = 401; // a new candle: a filtered-out stock keeps its history with its meta
     const filtered = await run(controls({ MARKET_CAP: '10B:' }));
     expect(filtered.updated).toBe(0);
     expect((await readIndex()).companies).toHaveLength(2);
+    expect(await readText('companies/AAA/history/001.json')).toBe(history);
   });
 
   test('a delisted stock (not in the SEC table, no price for 60 days) leaves the index on a full run only; --prune removes its folder', async () => {
@@ -464,6 +476,24 @@ describe('pipeline', () => {
     expect(await run(controls())).toMatchObject({ updated: 1, failed: 1 });
     expect(await readText('companies/AAA/meta.json')).toBe(before.meta);
     expect((await readIndex()).companies[0]).toEqual(before.row);
+  });
+
+  test('a failed quoteSummary keeps the 52-week range from the closes; a failed SEC download keeps the fundamentals basis', async () => {
+    await run(controls());
+    const meta = JSON.parse(await readText('companies/AAA/meta.json'));
+    meta.fundamentalsBasis = 'Yahoo fundamentals-timeseries annual statements (no usable SEC history); valuation multiples from the Yahoo quoteSummary TTM snapshot';
+    await writeFile(join(dir, 'companies', 'AAA', 'meta.json'), JSON.stringify(meta));
+    failSummaryFor = 'AAA';
+    failSecFor = 'CIK0000000001';
+    expect(await run(controls())).toMatchObject({ updated: 2, failed: 0 });
+    const after = JSON.parse(await readText('companies/AAA/meta.json'));
+    // closes are 50 + 0.05 i every 3 days: the last 52 weeks start at candle 278 and end at candle 399
+    expect([after.metrics.week52Low, after.metrics.week52High]).toEqual([63.9, 69.95]);
+    expect(after.fundamentalsBasis).toBe(meta.fundamentalsBasis);
+    expect(after.fundamentals.annual).toEqual(meta.fundamentals.annual);
+    const bbb = JSON.parse(await readText('companies/BBB/meta.json'));
+    expect(bbb.fundamentalsBasis).toMatch(/^SEC EDGAR/); // the stock whose sources answered is not touched
+    expect([bbb.metrics.week52Low, bbb.metrics.week52High]).toEqual([null, null]); // an honest null from a working quoteSummary stays null
   });
 });
 
