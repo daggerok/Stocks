@@ -1999,7 +1999,7 @@ function createDropdown(cfg: DropdownConfig): Dropdown {
   }
 
   function paintActive(scroll: boolean): void {
-    const rows: any[] = [...list.querySelectorAll('.dd-opt')];
+    const rows: any[] = Array.from(list.querySelectorAll('.dd-opt'));
     let activeEl: any = null;
     rows.forEach(row => {
       const on = row.dataset.id === activeId;
@@ -2097,7 +2097,7 @@ function createDropdown(cfg: DropdownConfig): Dropdown {
     trigger.setAttribute('aria-expanded', 'true');
     input.focus({ preventScroll: true });
     input.setSelectionRange(input.value.length, input.value.length);
-    const row: any = [...list.querySelectorAll('.dd-opt')].find((r: any) => r.dataset.id === activeId);
+    const row: any = Array.from(list.querySelectorAll('.dd-opt')).find((r: any) => r.dataset.id === activeId);
     if (row) list.scrollTop = Math.max(0, row.offsetTop - list.offsetTop - list.clientHeight / 3);
     paintActive(false);
   }
@@ -2192,7 +2192,7 @@ function createDropdown(cfg: DropdownConfig): Dropdown {
   // The panel lives at the end of <body>, so Tab at its edges hands focus back to the page order around the trigger.
   panel.addEventListener('keydown', (event: any) => {
     if (event.key !== 'Tab') return;
-    const focusable = [...panel.querySelectorAll('input, button')].filter((node: any) => node.tabIndex >= 0 && node.offsetParent !== null);
+    const focusable = Array.from(panel.querySelectorAll('input, button')).filter((node: any) => node.tabIndex >= 0 && node.offsetParent !== null);
     if (!focusable.length) return;
     const edge = event.shiftKey ? focusable[0] : focusable[focusable.length - 1];
     if (event.target !== edge) return;
@@ -3074,7 +3074,7 @@ function rerenderKeepingFilterFocusNow(): void {
   render();
   suppressTableAnimation = false;
   if (key === undefined) return;
-  const next: any = [...el.tableHead.querySelectorAll('input[data-filter-col]')].find((node: any) => node.dataset.filterCol === key && node.dataset.filterScope === scope);
+  const next: any = Array.from(el.tableHead.querySelectorAll('input[data-filter-col]')).find((node: any) => node.dataset.filterCol === key && node.dataset.filterScope === scope);
   if (next) { next.focus(); try { next.setSelectionRange(caret, caret); } catch { /* not a text input */ } }
 }
 
