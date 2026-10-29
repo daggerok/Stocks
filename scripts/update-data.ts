@@ -783,7 +783,7 @@ const ROW_KEYS = ['ticker', 'name', 'exchange', 'sector', 'industry', 'cik', 'cu
 export const rowFromMeta = (meta: JsonRecord): JsonRecord => Object.fromEntries(ROW_KEYS.map((k) => [k, meta[k] ?? null]));
 
 const METRIC_KEYS = [
-  'marketCap', 'enterpriseValue', 'price', 'week52High', 'week52Low', 'beta', 'sharesOutstanding',
+  'marketCap', 'enterpriseValue', 'price', 'week52High', 'week52Low', 'range52w', 'beta', 'sharesOutstanding',
   'pe', 'forwardPe', 'ps', 'forwardPs', 'pFcf', 'evEbitda', 'fcfToEbitda', 'pb',
   'dividendYield', 'dividendRate', 'dividendGrowth', 'dividendGrowth3y', 'dividendGrowth5y', 'payoutRatio', 'fcfPayout',
   'currentRatio', 'quickRatio', 'debtToEquity', 'netDebtToEbitda', 'roic',
@@ -854,6 +854,27 @@ function buildHistory(ticker: string, fullDays: ChartDay[], pageSize: number): {
   }
   const history = { pages: files.map((f) => f.path), pageSize, totalRows: total, asOf: days[days.length - 1]?.date ?? null, granularity: { monthlyBefore: dailyFrom, dailyFrom }, source: 'Yahoo Finance public chart API (adjusted close); monthly rows (month-end close, summed volume) with daily rows for the last 31 days' };
   return { files, history };
+}
+
+/** The row with metrics.range52w set from metrics.price, week52Low and week52High (key order kept: METRIC_KEYS has it). */
+export function withRange52w(row: JsonRecord): JsonRecord {
+  const m = row.metrics;
+  if (!m || typeof m !== 'object') return row;
+  const metrics: JsonRecord = {};
+  for (const key of Object.keys(m)) { metrics[key] = m[key]; if (key === 'week52Low') metrics.range52w = null; }
+  metrics.range52w = range52wPosition(m.price, m.week52Low, m.week52High);
+  return { ...row, metrics };
+}
+
+/**
+ * Position of the price inside its 52-week range in percent: 0 = at the low, 100 = at the high, 2 decimals (owner, 2026-10-29,
+ * sorted like Fidelity's 52-week range). The range is Yahoo's intraday one (or the closes when the snapshot failed) while the
+ * price is the last close, so a price a little outside it is clamped to 0..100. Null when a value is missing or high <= low.
+ */
+export function range52wPosition(price: unknown, low: unknown, high: unknown): number | null {
+  const p = typeof price === 'number' ? price : NaN, l = typeof low === 'number' ? low : NaN, h = typeof high === 'number' ? high : NaN;
+  if (!Number.isFinite(p) || !Number.isFinite(l) || !Number.isFinite(h) || h <= l) return null;
+  return Number(Math.min(100, Math.max(0, ((p - l) / (h - l)) * 100)).toFixed(2));
 }
 
 /** Lowest and highest close of the last 52 weeks: the 52-week range when the quoteSummary snapshot failed. */
@@ -943,7 +964,7 @@ export async function processCompany(listing: Listing, config: UpdaterConfig, pr
   }
 
   const fundamentals = fundamentalsMetrics(rows);
-  const parts: JsonRecord = { ...fundamentals, ...(market.valuation ?? {}), ...(market.returns ?? {}), ...(market.dividends ?? {}), price: market.price, week52High: market.week52High, week52Low: market.week52Low };
+  const parts: JsonRecord = { ...fundamentals, ...(market.valuation ?? {}), ...(market.returns ?? {}), ...(market.dividends ?? {}), price: market.price, week52High: market.week52High, week52Low: market.week52Low, range52w: range52wPosition(market.price, market.week52Low, market.week52High) };
   if (parts.marketCap === undefined || parts.marketCap === null) parts.marketCap = null;
   const metrics = completeMetrics(parts, market.asOfDate ?? null);
   if (metrics.marketCap === null) return { skipped: 'no market cap (unit, warrant, preferred share or note)' };
@@ -1153,7 +1174,8 @@ export async function run(controls: Record<string, string | undefined>, options:
   }
   const outsideWatchlist: string[] = [];
   if (allowed) for (const ticker of Array.from(byTicker.keys())) if (!allowed.has(ticker)) { byTicker.delete(ticker); outsideWatchlist.push(ticker); }
-  const companies = Array.from(byTicker.values()).sort((a, b) => String(a.ticker).localeCompare(String(b.ticker)));
+  // every row gets range52w from its own price and 52-week low and high, also the rows this run did not refresh
+  const companies = Array.from(byTicker.values()).sort((a, b) => String(a.ticker).localeCompare(String(b.ticker))).map(withRange52w);
   await writeIfChanged(indexFile(), indexDocument(companies), compactIndexText);
   if (allowed && watchlist) {
     // folders go only after the index stops listing them; a folder of a listed stock is never touched
