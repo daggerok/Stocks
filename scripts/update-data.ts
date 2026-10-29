@@ -442,7 +442,7 @@ export function parseYahooAnnual(payload: JsonRecord): Map<string, Partial<Annua
 
 async function fetchYahooAnnual(ticker: string, config: UpdaterConfig): Promise<Map<string, Partial<AnnualRow>>> {
   const query = new URLSearchParams({ type: Object.keys(YAHOO_ANNUAL_TYPES).join(','), period1: '1262304000', period2: String(Math.floor(Date.now() / 1000) + 86_400) });
-  return parseYahooAnnual(await fetchJson(`${YAHOO_TIMESERIES_URL}/${encodeURIComponent(ticker)}?${query}`, `[fundamen] ${ticker}`, config, { 'User-Agent': BROWSER_UA }));
+  return parseYahooAnnual(await fetchJson(`${YAHOO_TIMESERIES_URL}/${encodeURIComponent(ticker)}?${query}`, `[ fundamen  ] ${ticker}`, config, { 'User-Agent': BROWSER_UA }));
 }
 
 const emptyRow = (end: string): AnnualRow => ({ end, revenue: null, grossProfit: null, operatingIncome: null, ebitda: null, netIncome: null, eps: null, operatingCashFlow: null, capex: null, fcf: null, dividendsPaid: null, assets: null, currentAssets: null, currentLiabilities: null, cash: null, longInvestments: null, receivables: null, debt: null, equity: null, taxRate: null });
@@ -652,11 +652,11 @@ async function openYahooSession(config: UpdaterConfig): Promise<YahooSession> {
     const home = await fetch(YAHOO_COOKIE_URL, { headers: { 'User-Agent': BROWSER_UA }, redirect: 'manual', signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
     const cookie = (home.headers.getSetCookie?.() ?? []).map((c) => c.split(';')[0]).filter(Boolean).join('; ');
     if (!cookie) throw new Error('no cookie');
-    const crumb = (await fetchText(YAHOO_CRUMB_URL, '[yahoo   ] crumb', config, { 'User-Agent': BROWSER_UA, Cookie: cookie })).trim();
+    const crumb = (await fetchText(YAHOO_CRUMB_URL, '[ yahoo     ] crumb', config, { 'User-Agent': BROWSER_UA, Cookie: cookie })).trim();
     if (!crumb || /[<{\s]/.test(crumb)) throw new Error('invalid crumb');
     return { cookie, crumb };
   } catch (error) {
-    note(`[yahoo   ] session unavailable: ${error instanceof Error ? error.message : String(error)}`);
+    note(`[ yahoo     ] session unavailable: ${error instanceof Error ? error.message : String(error)}`);
     return null;
   }
 }
@@ -708,7 +708,7 @@ async function fetchSummary(ticker: string, config: UpdaterConfig): Promise<Snap
     if (!session) return null;
     const modules = 'price,summaryDetail,defaultKeyStatistics,financialData,earningsTrend,assetProfile';
     try {
-      const payload = await fetchJson(`${YAHOO_SUMMARY_URL}/${encodeURIComponent(ticker)}?modules=${modules}&crumb=${encodeURIComponent(session.crumb)}`, `[summary ] ${ticker}`, config, { 'User-Agent': BROWSER_UA, Cookie: session.cookie });
+      const payload = await fetchJson(`${YAHOO_SUMMARY_URL}/${encodeURIComponent(ticker)}?modules=${modules}&crumb=${encodeURIComponent(session.crumb)}`, `[ summary   ] ${ticker}`, config, { 'User-Agent': BROWSER_UA, Cookie: session.cookie });
       return parseSummary(payload);
     } catch (error) {
       if (attempt === 0 && /401|Invalid Crumb/i.test(String(error))) { yahooSession = null; continue; } // refresh the session once
@@ -883,11 +883,11 @@ export async function processCompany(listing: Listing, config: UpdaterConfig, pr
   let snapshot: Snapshot | null = null;
   let chart: ParsedChart | null = null;
   if (!config.skipYahoo) {
-    try { snapshot = await fetchSummary(ticker, config); } catch (error) { note(`[summary ] ${ticker}: ${error instanceof Error ? error.message : String(error)}`); }
+    try { snapshot = await fetchSummary(ticker, config); } catch (error) { note(`[ summary   ] ${ticker}: ${error instanceof Error ? error.message : String(error)}`); }
     if (snapshot && snapshot.quoteType && snapshot.quoteType !== 'EQUITY') return { skipped: `not a stock (${snapshot.quoteType})` };
     const { period1, period2 } = historyPeriods(config.historyRange);
     const query = new URLSearchParams({ period1: String(period1), period2: String(period2), interval: '1d', events: 'div,split', includeAdjustedClose: 'true' });
-    chart = parseChart(await fetchJson(`${YAHOO_CHART_URL}/${encodeURIComponent(ticker)}?${query}`, `[chart   ] ${ticker}`, config, { 'User-Agent': BROWSER_UA }));
+    chart = parseChart(await fetchJson(`${YAHOO_CHART_URL}/${encodeURIComponent(ticker)}?${query}`, `[ chart     ] ${ticker}`, config, { 'User-Agent': BROWSER_UA }));
     if (!chart.days.length) return { skipped: 'no price history' };
   }
 
@@ -898,14 +898,14 @@ export async function processCompany(listing: Listing, config: UpdaterConfig, pr
   let secFailed = false;
   let secMissing = false; // the CIK has no XBRL company facts at all (funds, trusts, non-filers)
   try {
-    const facts = await fetchJson(`${SEC_FACTS_URL}/CIK${toCik(listing.cik)}.json`, `[sec     ] ${ticker}`, config);
+    const facts = await fetchJson(`${SEC_FACTS_URL}/CIK${toCik(listing.cik)}.json`, `[ sec       ] ${ticker}`, config);
     rows = buildAnnualRows(facts);
   } catch (error) {
     if (!prevMeta && /: 404 /.test(String(error))) secMissing = true;
     else if (!prevMeta) throw error; // nothing to fall back to
     else secFailed = true;
     if (secFailed) {
-      note(`[sec     ] ${ticker}: ${error instanceof Error ? error.message : String(error)} - keeping previous fundamentals`);
+      note(`[ sec       ] ${ticker}: ${error instanceof Error ? error.message : String(error)} - keeping previous fundamentals`);
       rows = prevMeta?.fundamentals?.annual ?? [];
     }
   }
@@ -916,7 +916,7 @@ export async function processCompany(listing: Listing, config: UpdaterConfig, pr
       const merged = mergeAnnual(rows, await fetchYahooAnnual(ticker, config));
       rows = merged.rows;
       fundamentalsSource = merged.source;
-    } catch (error) { note(`[fundamen] ${ticker}: ${error instanceof Error ? error.message : String(error)}`); }
+    } catch (error) { note(`[ fundamen  ] ${ticker}: ${error instanceof Error ? error.message : String(error)}`); }
   }
   if (!rows.length) fundamentalsNote = 'no annual fundamentals available';
 
@@ -1077,16 +1077,16 @@ export async function run(controls: Record<string, string | undefined>, options:
   yahooSession = null;
   yahooSessionRetryAt = 0;
 
-  const table = parseSecTickers(await fetchJson(SEC_TICKERS_URL, '[universe] SEC ticker table', config));
+  const table = parseSecTickers(await fetchJson(SEC_TICKERS_URL, '[ universe  ] SEC ticker table', config));
   const previous = await readPreviousRows(table);
   // scripts/All.txt or All.csv with tickers: the feed holds only those stocks, every other row and folder is removed
   const watchlist = await readWatchlist();
   const allowed = watchlist ? resolveWatchlist(watchlist.tickers, Array.from(table.keys()).concat(Array.from(previous.keys()))) : null;
-  if (watchlist && allowed) console.log(`[universe] watchlist scripts/${watchlist.file}: ${allowed.size} tickers`);
+  if (watchlist && allowed) console.log(`[ universe  ] watchlist scripts/${watchlist.file}: ${allowed.size} tickers`);
   let wanted = Array.from(config.tickers ?? allowed ?? table.keys());
   if (config.tickers && allowed && watchlist) {
     const outside = wanted.filter((t) => !allowed.has(t));
-    if (outside.length) console.warn(`[universe] not in scripts/${watchlist.file}, skipped: ${listNames(outside)}`);
+    if (outside.length) console.warn(`[ universe  ] not in scripts/${watchlist.file}, skipped: ${listNames(outside)}`);
     wanted = wanted.filter((t) => allowed.has(t));
   }
   const universe: Listing[] = [];
@@ -1094,13 +1094,13 @@ export async function run(controls: Record<string, string | undefined>, options:
   let failed = 0;
   for (const ticker of wanted.sort()) {
     const listing = table.get(ticker);
-    if (!listing) { if (config.tickers) { failed += 1; console.warn(`[universe] ${ticker}: not found in the SEC exchange table`); } else if (allowed) unlisted.push(ticker); continue; }
-    if (!config.exchanges.has(listing.exchange.toUpperCase())) { if (config.tickers || allowed) console.warn(`[universe] ${ticker}: skipped, listed on ${listing.exchange}`); continue; }
+    if (!listing) { if (config.tickers) { failed += 1; console.warn(`[ universe  ] ${ticker}: not found in the SEC exchange table`); } else if (allowed) unlisted.push(ticker); continue; }
+    if (!config.exchanges.has(listing.exchange.toUpperCase())) { if (config.tickers || allowed) console.warn(`[ universe  ] ${ticker}: skipped, listed on ${listing.exchange}`); continue; }
     if (!config.tickers && !allowed && !isOperatingTicker(ticker)) continue; // an explicit list always wins
     universe.push(listing);
   }
-  if (unlisted.length) console.log(`[universe] ${unlisted.length} watchlist tickers are not in the SEC exchange table (ETFs, funds): ${listNames(unlisted)}`);
-  console.log(`[universe] ${universe.length} stocks on ${Array.from(config.exchanges).join(', ')}`);
+  if (unlisted.length) console.log(`[ universe  ] ${unlisted.length} watchlist tickers are not in the SEC exchange table (ETFs, funds): ${listNames(unlisted)}`);
+  console.log(`[ universe  ] ${universe.length} stocks on ${Array.from(config.exchanges).join(', ')}`);
 
   // Rotation: full-universe runs continue after the committed cursor (a run that stops at MAX_FETCHES or the soft deadline resumes there);
   // runs with an explicit TICKERS list never read or move it
@@ -1127,13 +1127,13 @@ export async function run(controls: Record<string, string | undefined>, options:
       const n = ++processed;
       try {
         const out = await processCompany(listing, config, previous.get(listing.ticker) ?? null);
-        if ('skipped' in out) { skipped += 1; console.log(`[${String(n).padStart(3)}/${total}] ${listing.ticker.padEnd(6)} skipped: ${out.skipped}`); continue; }
+        if ('skipped' in out) { skipped += 1; console.log(`[ ${`${String(n).padStart(String(total).length)}/${total}`.padEnd(9)} ] ${listing.ticker.padEnd(6)} skipped: ${out.skipped}`); continue; }
         results.push(out.row);
         const m = out.row.metrics;
-        console.log(`[${String(n).padStart(3)}/${total}] ${listing.ticker.padEnd(6)} updated  cap ${m.marketCap === null ? '-' : `$${round(m.marketCap / 1e9, 1)}B`}  P/E ${m.pe ?? '-'}  FY ${out.row.fundamentalsAsOf ?? '-'}`);
+        console.log(`[ ${`${String(n).padStart(String(total).length)}/${total}`.padEnd(9)} ] ${listing.ticker.padEnd(6)} updated  cap ${m.marketCap === null ? '-' : `$${round(m.marketCap / 1e9, 1)}B`}  P/E ${m.pe ?? '-'}  FY ${out.row.fundamentalsAsOf ?? '-'}`);
       } catch (error) {
         failed += 1;
-        console.warn(`[${String(n).padStart(3)}/${total}] ${listing.ticker.padEnd(6)} failed: ${error instanceof Error ? error.message : String(error)}`);
+        console.warn(`[ ${`${String(n).padStart(String(total).length)}/${total}`.padEnd(9)} ] ${listing.ticker.padEnd(6)} failed: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
   };
@@ -1162,10 +1162,10 @@ export async function run(controls: Record<string, string | undefined>, options:
     const removed = folders.filter((ticker) => !allowed.has(ticker));
     for (const ticker of removed) await rm(companyDir(ticker), { recursive: true, force: true });
     const gone = Array.from(new Set([...outsideWatchlist, ...removed])).sort();
-    if (gone.length) console.log(`[watchlist] removed ${gone.length} stocks not in scripts/${watchlist.file}: ${listNames(gone)}`);
+    if (gone.length) console.log(`[ watchlist ] removed ${gone.length} stocks not in scripts/${watchlist.file}: ${listNames(gone)}`);
   }
   if (rotate) await writeIfChanged(stateFile(), { cursor: queue.length ? lastTicker : null, savedAt: stamp() });
-  console.log(`[done    ] ${results.length} updated, ${skipped} skipped, ${failed} failed; index lists ${companies.length} companies`);
+  console.log(`[ done      ] ${results.length} updated, ${skipped} skipped, ${failed} failed; index lists ${companies.length} companies`);
   if (delisted.length) console.log(`DELISTED (${delisted.length}): ${listNames(delisted)}`);
   if (added.length) {
     console.log(`NEW STOCKS (${added.length}): ${listNames(added)}`);
@@ -1254,7 +1254,7 @@ export function installSystemCa(mode: string, reexec: () => never = reexecWithSy
     try { return await realFetch(...args); }
     catch (error) {
       if (!isCertError(error)) throw error;
-      console.error('[ notice   ] TLS certificate not trusted; restarting once with --use-system-ca');
+      console.error('[ notice    ] TLS certificate not trusted; restarting once with --use-system-ca');
       return reexec();
     }
   }) as typeof fetch;
@@ -1268,7 +1268,7 @@ export async function runtimeControls(env: Record<string, string | undefined> = 
 // require.main === module instead of import.meta.main and a main() instead of top-level await: same IDE defaults as above
 async function main(): Promise<void> {
   if (process.argv.some((arg) => ['-h', '--help', 'help'].includes(arg))) console.log(USAGE.trim());
-  else if (process.argv.includes('--prune')) await pruneCompanies().then((removed) => console.log(`[prune   ] removed ${removed.length} delisted folders${removed.length ? `: ${listNames(removed)}` : ''}`)).catch((error) => { console.error(error instanceof Error ? error.message : String(error)); process.exitCode = 1; });
+  else if (process.argv.includes('--prune')) await pruneCompanies().then((removed) => console.log(`[ prune     ] removed ${removed.length} delisted folders${removed.length ? `: ${listNames(removed)}` : ''}`)).catch((error) => { console.error(error instanceof Error ? error.message : String(error)); process.exitCode = 1; });
   else await runtimeControls().then((controls) => { installSystemCa(controls.USE_SYSTEM_CA ?? 'auto'); return run(controls); }).catch((error) => { console.error(error instanceof Error ? error.stack : String(error)); process.exitCode = 1; });
 }
 
