@@ -9,7 +9,7 @@ import { pathToFileURL } from 'node:url';
 import {
   annualSeries, buildAnnualRows, compactIndexText, completeMetrics, CONTROL_NAMES, dividendMetrics, fundamentalsMetrics, installSystemCa, isCertError, mergeAnnual,
   isOperatingTicker, minusMonths, normalizeTicker, parseChart, periodEve, parseRange, parseRanges, parseRetryAfter, parseSecTickers, parseSummary, parseYahooAnnual, priceReturns, readConfig, resolveControls,
-  indexDocument, parseWatchlist, pruneCompanies, resolveWatchlist, run, runtimeControls, sampleHistory, useApiRoot, useWatchlistDir, valuationMetrics, type ChartDay, type Snapshot,
+  indexDocument, parseWatchlist, range52wPosition, pruneCompanies, resolveWatchlist, run, runtimeControls, sampleHistory, useApiRoot, useWatchlistDir, valuationMetrics, type ChartDay, type Snapshot,
 } from './update-data.ts';
 
 // ---------------------------------------------------------------------------
@@ -282,6 +282,10 @@ describe('metrics', () => {
     expect(a.returnsBasis.length).toBeGreaterThan(10);
     expect(b.returnsBasis).toBe(a.returnsBasis);
     expect([a.performanceAsOf, b.performanceAsOf]).toEqual(['2026-10-02', null]);
+    // 52-week range position: 0 at the low, 100 at the high, clamped, null without a usable range
+    expect(Object.keys(b)).toContain('range52w');
+    expect([range52wPosition(150, 100, 200), range52wPosition(100, 100, 200), range52wPosition(201, 100, 200), range52wPosition(99, 100, 200)]).toEqual([50, 0, 100, 0]);
+    expect([range52wPosition(150, null, 200), range52wPosition(150, 200, 200), range52wPosition(null, 100, 200)]).toEqual([null, null, null]);
   });
 
   test('published history: monthly rows with daily rows for the last 31 days, volume summed, nothing lost', () => {
