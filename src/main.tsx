@@ -142,6 +142,7 @@ function buildColumns(): Col[] {
   });
   add('enterpriseValue', 'EV', 'Market', 'money', 'Enterprise Value - market cap plus debt minus cash (Yahoo Finance).');
   add('beta', 'Beta', 'Market', 'x', 'Beta - sensitivity to the market (Yahoo Finance, 5-year monthly).');
+  add('range52w', '52W Range', 'Market', 'pct', '52W Range - where the price sits between the 52-week low (0%) and high (100%); sorts by that position. The range is the intraday 52-week low and high (Yahoo), the price the last close.');
   add('week52High', '52W High', 'Market', 'price', '52-week high price.');
   add('week52Low', '52W Low', 'Market', 'price', '52-week low price.');
   add('sharesOutstanding', 'Shares', 'Market', 'int', 'Shares outstanding.');
@@ -2744,6 +2745,11 @@ function cellHtml(col: Col, id: number): string {
     const tip = stale ? ` title="${text ? 'The last price is older than ' + state.staleDays + ' days' : 'Return as-of date is unknown'}"` : '';
     return `<td class="py-2.5 px-4 font-mono ${stale ? 'text-amber-600 dark:text-amber-400' : 'text-slate-600 dark:text-slate-400'}"${tip}>${escapeHtml(text || DASH)}</td>`;
   }
+  if (col.key === 'range52w') {
+    // the shared 52-week range cell (bar and tooltip); a stock's range is Yahoo's intraday low and high, measured on the last close
+    const m = s.raw[id].metrics || {};
+    return range52wCellHtml({ range52w: m.range52w, week52Low: m.week52Low, week52High: m.week52High, range52wClose: m.price, range52wAsOf: m.performanceAsOf || s.raw[id].asOfDate, range52wBasis: 'High and Low' }, numCls);
+  }
   return `<td class="${numCls}">${formatByFmt(col.fmt, s.num[col.key][id])}</td>`;
 }
 
@@ -4239,6 +4245,59 @@ function init(): void {
     el.tableBody.innerHTML = `<tr><td colspan="10" class="py-12 text-center text-rose-500 dark:text-rose-300">${escapeHtml(`Unable to load the stock feed: ${message}`)}</td></tr>`;
   });
 }
+
+// ---- 52-week range (owner 2026-10-29): index.json metrics week52Low, week52High, range52w, range52wClose, range52wAsOf, range52wSince, range52wBasis ----
+// Shared block of .claude/tools/etfs/ui-std/range52w-block.tsx: never edit it in one repo. CSS: range52w.css.
+
+/** A finite number or null (local copy, so the block needs nothing else from the app). */
+function range52wNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = typeof value === 'number' ? value : Number(String(value).replace(/[$,%\s]/g, ''));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/** The three sortable row fields from a row's metrics: spread them into the flattened table row. */
+function range52wRowFields(metrics: any): { range52w: number | null; week52Low: number | null; week52High: number | null } {
+  const m = metrics && typeof metrics === 'object' ? metrics : {};
+  return { range52w: range52wNumber(m.range52w), week52Low: range52wNumber(m.week52Low), week52High: range52wNumber(m.week52High) };
+}
+
+/** `42.25%` (the `%` type of the column filters), or an em dash. */
+function range52wText(value: unknown): string {
+  const parsed = range52wNumber(value);
+  return parsed === null ? '—' : `${parsed.toFixed(2)}%`;
+}
+
+/** A 52-week low or high as a share price: `$25.29`, `$1,234.50`, or an em dash. */
+function range52wPriceText(value: unknown): string {
+  const parsed = range52wNumber(value);
+  return parsed === null ? '—' : `$${parsed.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+/** Tooltip: what the percent means, the close it is measured on, the range, the basis, and the note for a young fund. */
+function range52wTitle(metrics: any): string {
+  const m = metrics && typeof metrics === 'object' ? metrics : {};
+  const position = range52wNumber(m.range52w);
+  if (position === null) return '52-week range: not available (no price history, or the price did not move)';
+  const lines = [
+    `52-week range: ${range52wText(position)} (0% = at the 52-week low, 100% = at the 52-week high)`,
+    `Close ${range52wPriceText(m.range52wClose)}${m.range52wAsOf ? ` on ${m.range52wAsOf}` : ''}`,
+    `Low ${range52wPriceText(m.week52Low)}, high ${range52wPriceText(m.week52High)} (daily ${m.range52wBasis ? String(m.range52wBasis).toLowerCase() : 'close'} prices)`,
+  ];
+  if (m.range52wSince) lines.push(`Less than 52 weeks of history: range since ${m.range52wSince}`);
+  return lines.join('\n');
+}
+
+/** The table cell: the percent as text (so sorting, filters and exports keep working) over a thin bar of the same value. */
+function range52wCellHtml(metrics: any, tdClass: string): string {
+  const m = metrics && typeof metrics === 'object' ? metrics : {};
+  const position = range52wNumber(m.range52w);
+  // a fund with less than 52 weeks of history gets an amber bar instead of a blue one; the text stays the bare percent
+  const young = position !== null && m.range52wSince ? ' range52w-young' : '';
+  const bar = position === null ? '' : ` range52w-cell${young}" style="--range52w:${Math.min(100, Math.max(0, position))}%`;
+  return `<td class="${tdClass}${bar}" title="${escapeHtml(range52wTitle(m))}">${range52wText(position)}</td>`;
+}
+// ---- end of 52-week range ----
 
 init();
 
