@@ -843,6 +843,20 @@ async function pruneHistoryPages(dir: URL, keep: string[]): Promise<void> {
   } catch { /* no history dir yet */ }
 }
 
+/** The date of the first published history row (pages are oldest first), or null when nothing is published. */
+async function publishedHistoryStart(dir: URL, prevMeta: JsonRecord | null): Promise<string | null> {
+  const first = prevMeta?.history?.pages?.[0];
+  if (typeof first !== 'string') return null;
+  const page = await readJson(new URL(first, dir));
+  const date = page?.rows?.[0]?.Date;
+  return typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null;
+}
+
+/** Does a fresh chart start more than 31 days after the published history? (the published first row is a month-end) */
+export function truncatedChart(firstFresh: string, publishedStart: string): boolean {
+  return Date.parse(`${firstFresh}T00:00:00Z`) - Date.parse(`${publishedStart}T00:00:00Z`) > 31 * 86_400_000;
+}
+
 /** History pages built in memory; they are written only for a stock that is published, right before its meta.json. */
 function buildHistory(ticker: string, fullDays: ChartDay[], pageSize: number): { files: Array<{ path: string; page: JsonRecord }>; history: JsonRecord } {
   const { rows: days, dailyFrom } = sampleHistory(fullDays);
@@ -910,6 +924,13 @@ export async function processCompany(listing: Listing, config: UpdaterConfig, pr
     const query = new URLSearchParams({ period1: String(period1), period2: String(period2), interval: '1d', events: 'div,split', includeAdjustedClose: 'true' });
     chart = parseChart(await fetchJson(`${YAHOO_CHART_URL}/${encodeURIComponent(ticker)}?${query}`, `[ chart     ] ${ticker}`, config, { 'User-Agent': BROWSER_UA }));
     if (!chart.days.length) return { skipped: 'no price history' };
+    // A truncated `max` answer never shrinks the published history: Yahoo served 2 bars for some funds on 2026-10-29, and a
+    // stock's full answer starts at its listing. A chart that starts more than a month after the published history (whose
+    // first row is a month-end) is a failed source: the stock keeps its published state.
+    const publishedStart = period1 === 0 ? await publishedHistoryStart(dir, prevMeta) : null;
+    if (publishedStart && truncatedChart(chart.days[0].date, publishedStart)) {
+      throw new Error(`the Yahoo chart starts ${chart.days[0].date}, the published history ${publishedStart} (${chart.days.length} days): kept as published`);
+    }
   }
 
   // 2. SEC fundamentals

@@ -315,12 +315,13 @@ describe('pipeline', () => {
   let failSummaryFor = '';
   let failSecFor = '';
   let chartLength = 400;
+  let chartSkip = 0; // candles missing at the start: a truncated Yahoo answer
 
   const chartPayload = () => {
     const start = Date.parse('2020-01-02T00:00:00Z') / 1000;
-    const timestamp = Array.from({ length: chartLength }, (_, i) => start + i * 86_400 * 3);
+    const timestamp = Array.from({ length: chartLength - chartSkip }, (_, i) => start + (i + chartSkip) * 86_400 * 3);
     const close = timestamp.map((_, i) => 50 + i * 0.05);
-    return { chart: { result: [{ meta: { regularMarketPrice: 70, currency: 'USD', fullExchangeName: 'NasdaqGS' }, timestamp, indicators: { quote: [{ close, volume: close.map(() => 10) }], adjclose: [{ adjclose: close }] }, events: { dividends: { [String(timestamp[300])]: { amount: 0.5 } } } }] } };
+    return { chart: { result: [{ meta: { regularMarketPrice: 70, currency: 'USD', fullExchangeName: 'NasdaqGS' }, timestamp, indicators: { quote: [{ close, volume: close.map(() => 10) }], adjclose: [{ adjclose: close }] }, events: { dividends: { [String(timestamp[300 - chartSkip])]: { amount: 0.5 } } } }] } };
   };
   const summary = (type: string) => ({ quoteSummary: { result: [{ price: { quoteType: type, longName: 'Mock Corp', currency: 'USD', marketCap: { raw: 2e9 } }, summaryDetail: { trailingPE: { raw: 15 } }, defaultKeyStatistics: { forwardPE: { raw: 12 } }, financialData: { financialCurrency: 'USD', freeCashflow: { raw: 1e8 }, ebitda: { raw: 4e8 } }, earningsTrend: { trend: [{ period: '+1y', revenueEstimate: { avg: { raw: 1e9 } } }] }, assetProfile: { sector: 'Tech', industry: 'Software' } }] } });
 
@@ -353,6 +354,7 @@ describe('pipeline', () => {
     failSummaryFor = '';
     failSecFor = '';
     chartLength = 400;
+    chartSkip = 0;
   });
   afterEach(async () => {
     globalThis.fetch = realFetch;
@@ -478,6 +480,12 @@ describe('pipeline', () => {
     const before = { meta: await readText('companies/AAA/meta.json'), row: (await readIndex()).companies[0] };
     failChartFor = 'AAA';
     expect(await run(controls())).toMatchObject({ updated: 1, failed: 1 });
+    expect(await readText('companies/AAA/meta.json')).toBe(before.meta);
+    expect((await readIndex()).companies[0]).toEqual(before.row);
+    // a truncated `max` answer (the first 300 days missing) counts as a failed source too: the history is never shrunk
+    failChartFor = '';
+    chartSkip = 100;
+    expect(await run(controls())).toMatchObject({ updated: 0 }); // every published stock gets the short answer and fails
     expect(await readText('companies/AAA/meta.json')).toBe(before.meta);
     expect((await readIndex()).companies[0]).toEqual(before.row);
   });
