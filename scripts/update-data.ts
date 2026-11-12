@@ -11,7 +11,7 @@ import { pctFrom52wHigh, swingMetrics } from './metrics/swing';
 import { column, parseCompanyFacts, type SecFundamentals, type Split } from './sec/companyfacts';
 import { fxPairs, fxPoints, usdLayer, usdView, type FxSeries, type UsdLayer } from './sec/fx';
 import { TAGS } from './sec/tags';
-import { computeSignals, parseSignals, SIGNALS_FILE, type SignalsResult } from '../src/core/signals';
+import { computeSignals, parseSignals, signalNames, signalsIssue, SIGNALS_FILE, type SignalsResult } from '../src/core/signals';
 import { loadSignalSources } from '../src/core/signals/load';
 
 // Stocks listed on Nasdaq, NYSE and Cboe: static ./api/stocks feed.
@@ -1264,7 +1264,8 @@ export async function pruneCompanies(): Promise<string[]> {
 }
 
 /** The published feed: the update workflow and a fresh local clone restore the previous state from here (api/stocks is not in git). */
-export const PUBLISHED_FEED_URL = 'https://daggerok.github.io/Stocks/api/stocks/';
+export const PUBLISHED_SITE_URL = 'https://daggerok.github.io/Stocks/';
+export const PUBLISHED_FEED_URL = `${PUBLISHED_SITE_URL}api/stocks/`;
 const RESTORE_TICKER = /^[A-Z0-9][A-Z0-9.-]{0,15}$/;
 const RESTORE_PAGE = /^history\/\d{3}\.json$/;
 
@@ -1334,6 +1335,9 @@ export async function restoreFeed(base: string = PUBLISHED_FEED_URL, concurrency
   await Promise.all(Array.from({ length: Math.max(1, Math.min(concurrency, tickers.length)) }, worker));
   const stateText = await fetchFeedFile(`${root}update-state.json`);
   if (stateText !== null) { await writeFeedFile(stateFile(), stateText); files += 1; }
+  // the signals of the last 12 weeks and the pending preset exits (plan stage 8); none yet before the first run with --signals
+  const signalsText = await fetchFeedFile(`${root}${SIGNALS_FILE}`);
+  if (signalsText !== null) { await writeFeedFile(signalsFile(), signalsText); files += 1; }
   await writeFeedFile(indexFile(), indexText);
   return { companies: tickers.length, files: files + 1 };
 }
@@ -1420,6 +1424,21 @@ export async function updateSignals(previous: JsonRecord | null, current: JsonRe
   console.log(`[ signals   ] ${line}`);
   if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY, `- ${line}\n\n`, 'utf8');
   return result;
+}
+
+/**
+ * --signals-issue <dir> [siteUrl]: title.txt and body.md of the weekly GitHub issue from api/stocks/signals.json (the signals of
+ * the last 7 days with links to the site); prints the count and writes count=N to $GITHUB_OUTPUT, 0 means no issue
+ */
+export async function writeSignalsIssue(dir: string, siteUrl: string = PUBLISHED_SITE_URL, now: Date = new Date()): Promise<number> {
+  const sources = loadSignalSources();
+  const issue = signalsIssue(parseSignals(await readJson(signalsFile())), { now, siteUrl, names: signalNames(sources.presets, sources.scoring) });
+  await mkdir(dir, { recursive: true });
+  await writeFile(`${dir}/title.txt`, `${issue.title}\n`, 'utf8');
+  await writeFile(`${dir}/body.md`, issue.body, 'utf8');
+  console.log(`[ signals   ] ${issue.title}: ${issue.count} signals -> ${dir}`);
+  if (process.env.GITHUB_OUTPUT) await appendFile(process.env.GITHUB_OUTPUT, `count=${issue.count}\n`, 'utf8');
+  return issue.count;
 }
 
 export async function run(controls: Record<string, string | undefined>, options: { deadlineMs?: number; signals?: boolean; now?: Date } = {}): Promise<{ updated: number; skipped: number; failed: number; rows: number; signals: number | null }> {
@@ -1639,6 +1658,8 @@ Signals (plan stage 8): --signals also writes api/stocks/signals.json after the
 run: preset entries and exits, new and removed flags, status, archetype and large
 score changes against the index as it was before the run (last 12 weeks kept).
   ./scripts/update-data.ts --signals
+The weekly issue text (signals of the last 7 days, links to the site):
+  ./scripts/update-data.ts --signals-issue <dir> [siteUrl]
 
 Examples:
   TICKERS="AAPL MSFT JPM" ./scripts/update-data.ts
@@ -1691,6 +1712,11 @@ export async function runtimeControls(env: Record<string, string | undefined> = 
 async function main(): Promise<void> {
   if (process.argv.some((arg) => ['-h', '--help', 'help'].includes(arg))) console.log(USAGE.trim());
   else if (process.argv.includes('--prune')) await pruneCompanies().then((removed) => console.log(`[ prune     ] removed ${removed.length} delisted folders${removed.length ? `: ${listNames(removed)}` : ''}`)).catch((error) => { console.error(error instanceof Error ? error.message : String(error)); process.exitCode = 1; });
+  else if (process.argv.includes('--signals-issue')) {
+    const [dir, site] = process.argv.slice(process.argv.indexOf('--signals-issue') + 1);
+    if (!dir || dir.startsWith('-')) { console.error('usage: ./scripts/update-data.ts --signals-issue <dir> [siteUrl]'); process.exitCode = 2; }
+    else await writeSignalsIssue(dir, site && !site.startsWith('-') ? site : PUBLISHED_SITE_URL).catch((error) => { console.error(error instanceof Error ? error.message : String(error)); process.exitCode = 1; });
+  }
   else if (process.argv.includes('--restore-from')) {
     const next = process.argv[process.argv.indexOf('--restore-from') + 1];
     await restoreFeed(next && !next.startsWith('-') ? next : PUBLISHED_FEED_URL).then((done) => console.log(done
