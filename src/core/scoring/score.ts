@@ -3,8 +3,9 @@
  * Scoring (plan stage 5): five scores 0-100, archetype, status score, status, stop factors, flags and Why notes for every row of
  * a screener universe. No DOM: the page, tests and the signals job (plan stage 8) call the same functions.
  *
- * - a score metric becomes its percentile in the row's group with 100 = best: the sector of a stock, the whole stock market when
- *   the sector has fewer than minGroupSize values, all ETFs for an ETF; ties share the mean rank
+ * - a score metric becomes its percentile in the row's group with 100 = best: the sector of a stock (the stocks of small sectors
+ *   together when the sector has fewer than minGroupSize values), the fund category of an ETF (owner answer N4; all ETFs when the
+ *   category has fewer than minGroupSize values); ties share the mean rank
  * - a score is the weighted mean of the items with a value, empty below minWeightShare of the weight of the items that apply to
  *   the row type; the weights may differ per archetype
  * - the status score combines the scores with the archetype's score weights in the same way; a stop factor of the archetype
@@ -34,8 +35,8 @@ const appliesToType = (universe: Universe, metric: string, type: AssetType): boo
 };
 
 /**
- * Percentile (0-100, 100 = best) of every row's value of `metric` in its group: sector of a stock (the stock market below
- * minGroupSize values), all ETFs of an ETF. NaN without a value or rejected by include; a group with one value gives 50
+ * Percentile (0-100, 100 = best) of every row's value of `metric` in its group: sector of a stock or category of an ETF (the
+ * stock market or all ETFs below minGroupSize values). NaN without a value or rejected by include; a group with one value gives 50
  */
 export function groupPercentiles(universe: Universe, metric: string, direction: Direction, minGroupSize: number, include?: (row: ScreenerRow) => boolean): Float64Array {
   const rows = universe.rows;
@@ -50,15 +51,19 @@ export function groupPercentiles(universe: Universe, metric: string, direction: 
     if (v === null) continue;
     values[i] = v;
     has[i] = 1;
-    if (rows[i].type === 'stock' && rows[i].sector) sectorCount[rows[i].sector as string] = (sectorCount[rows[i].sector as string] ?? 0) + 1;
+    if (rows[i].sector) { const g = `${rows[i].type}:${rows[i].sector}`; sectorCount[g] = (sectorCount[g] ?? 0) + 1; }
   }
   const groups: Record<string, number[]> = {};
+  const rankedIn: string[] = new Array(n).fill(''); // the group whose ranking a row takes
+  const push = (key: string, i: number) => (groups[key] || (groups[key] = [])).push(i);
   for (let i = 0; i < n; i += 1) {
     if (!has[i]) continue;
     const row = rows[i];
-    const sector = row.sector || '';
-    const key = row.type === 'etf' ? 'etf' : sector && sectorCount[sector] >= minGroupSize ? `stock:${sector}` : 'stock:';
-    (groups[key] || (groups[key] = [])).push(i);
+    const group = row.sector ? `${row.type}:${row.sector}` : '';
+    const key = group && sectorCount[group] >= minGroupSize ? group : `${row.type}:`;
+    rankedIn[i] = key;
+    push(key, i);
+    if (row.type === 'etf' && key !== 'etf:') push('etf:', i); // every ETF also counts in the all-ETF group a small category falls back to
   }
   const sign = direction === 'lower-is-better' ? -1 : 1;
   Object.keys(groups).forEach((key) => {
@@ -69,7 +74,7 @@ export function groupPercentiles(universe: Universe, metric: string, direction: 
       let k = j;
       while (k + 1 < m && values[members[k + 1]] === values[members[j]]) k += 1;
       const pct = m === 1 ? 50 : (((j + k) / 2) / (m - 1)) * 100; // mean rank of the tie, worst 0, best 100
-      for (let x = j; x <= k; x += 1) out[members[x]] = pct;
+      for (let x = j; x <= k; x += 1) if (rankedIn[members[x]] === key) out[members[x]] = pct;
       j = k + 1;
     }
   });

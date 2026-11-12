@@ -68,7 +68,7 @@ export const numeric = (v: unknown): number | null => (typeof v === 'number' && 
 function groupKey(universe: Universe, index: number, scope: Scope): string | null {
   const row = universe.rows[index];
   if (scope === 'market') return '';
-  if (scope === 'sector') return row.sector || null;
+  if (scope === 'sector') return row.sector ? `${row.type}:${row.sector}` : null; // an ETF category never shares a group with a stock sector
   if (scope === 'industry') return row.industry || null;
   if (scope === 'peers') return universe.peerGroupOf[index];
   return null;

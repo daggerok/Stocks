@@ -2839,7 +2839,6 @@ function cellHtml(col: Col, id: number): string {
     return range52wCellHtml({ range52w: m.range52w, week52Low: m.week52Low, week52High: m.week52High, range52wClose: m.price, range52wAsOf: m.performanceAsOf || s.raw[id].asOfDate, range52wBasis: 'High and Low' }, numCls);
   }
   if (SCORE_COLUMN_KEYS.includes(col.key)) return `<td class="${numCls}">${scoreBadgeHtml(s.num[col.key][id])}</td>`;
-  if (col.key === 'perf1y' && s.raw[id].perf1yBasis === 'tr1y') return `<td class="${numCls}" title="${escapeHtml(t('etf.perf1y.tip'))}">${formatByFmt(col.fmt, s.num[col.key][id])}</td>`;
   return `<td class="${numCls}">${formatByFmt(col.fmt, s.num[col.key][id])}</td>`;
 }
 
@@ -4384,15 +4383,13 @@ let guideOpen = false;
 let metricOptionsHtml = '';
 let metricOptionsLocale = '';
 
-/** An ETF fund row of a brand feed in the shape of a stock row of the store; stock-only fields stay empty, perf1y falls back to tr1y */
+/** An ETF fund row of a brand feed in the shape of a stock row of the store; stock-only fields stay empty (perf1y too: the 1-year return is tr1y) */
 function etfStoreRow(fund: any, brand: EtfBrand): any {
   const metrics = etfMetrics(fund);
-  const own = fund.metrics && typeof fund.metrics === 'object' ? fund.metrics : {};
   return {
     ...fund, ticker: normalizeTicker(fund.ticker), assetType: 'etf', brand: brand.repo, exchange: typeof fund.exchange === 'string' ? fund.exchange : '',
     sector: null, industry: null, cik: null, dataFile: null, fundamentalsAsOf: null, fundamentalsBasis: null,
     price: numberOrNull(metrics.range52wClose) ?? numberOrNull(fund.navValue), metrics,
-    perf1yBasis: numberOrNull(own.perf1y) === null && numberOrNull(own.tr1y) !== null ? 'tr1y' : null,
   };
 }
 
