@@ -11,6 +11,14 @@ import {
 } from './core/screener';
 import { createSimilarContext, filterFromX, SIMILAR_CONFIG, SimilarContext, SimilarResult, similarTo } from './core/similar';
 import {
+  cents, dcf, DCF_DEFAULTS, DCF_GAP_PCT, DcfFeedInputs, DcfInput, dcfInputsFromMeta, DcfResult, defaultGrowth, marginOfSafety, SCENARIO_NAMES, scenarioInput, valueGap,
+} from './core/dcf';
+import {
+  emptyNotes, emptyTam, indexFiles, notesFileText, notesFilled, NotesDoc, parseNotes, parsePromises, parseTam, PROMISE_KINDS, PROMISE_STATUSES, PromiseItem, promiseProgress,
+  PromisesDoc, promisesFileText, recordState, RESEARCH_KINDS, RESEARCH_QUESTIONS, RESEARCH_SCHEMA_VERSION, researchFileName, ResearchKind, TAM_SCENARIOS, TamDoc, tamFileText, tamScenarios,
+} from './core/research';
+import { chartScale, ChartSeries, longRunSeries, peerRow, peerTickers, statementTable, STATEMENTS } from './core/ticker';
+import {
   archetypeText, computeScoring, flagTexts, RowScoring, SCORE_IDS, SCORE_METRICS, SCORING_CONFIG_URL, ScoringConfig, ScoringResult, statusText,
   validateScoringConfig, whyText, withScoreMetrics,
 } from './core/scoring';
@@ -58,6 +66,8 @@ const SCREENER_KEY = 'stocks-screener'; // chosen preset chips, edits, Stocks / 
 const OWN_PRESETS_KEY = 'stocks-own-presets'; // own presets of this browser (data: Clear keeps them)
 const PEERS_KEY = 'stocks-peers'; // peer groups changed in this browser over user-data/peers.json (data: Clear keeps them)
 const SIMILAR_KEY = 'stocks-similar'; // the metric group and own set of Similar to X (a convenience: Clear keeps it)
+const RESEARCH_KEY = 'stocks-research'; // TAM, notes and promises saved in this browser (data: Clear keeps them)
+const DCF_KEY = 'stocks-dcf'; // DCF inputs edited per ticker (Clear keeps them)
 const FILTER_DEBOUNCE_MS = 250;
 const SEARCH_DEBOUNCE_MS = 200;
 const FONT_WAIT_MS = 2500; // longest the first render waits for the web font
@@ -4339,7 +4349,7 @@ const ETF_CONCURRENCY = 6;
 const TYPE_FILTERS: TypeFilter[] = ['stock', 'etf', 'all'];
 const SCREENER_OPS: Op[] = ['>', '>=', '<', '<=', '=', 'range', 'in'];
 const MISSING_MODES: Missing[] = ['fail', 'skip'];
-const GUIDE_SECTIONS = ['presets', 'scopes', 'missing', 'swings', 'scores', 'archetypes', 'flags', 'thresholds', 'own', 'peers', 'similar'];
+const GUIDE_SECTIONS = ['presets', 'scopes', 'missing', 'swings', 'scores', 'archetypes', 'flags', 'thresholds', 'own', 'peers', 'similar', 'dcf', 'tenk', 'method', 'owndata'];
 
 const scr: ScreenerState = {
   type: 'stock', any: false, chips: {}, drafts: {}, expanded: null, base: [], repoOwn: [], browserOwn: [], lastExported: {}, peers: {},
@@ -5322,10 +5332,12 @@ type TickerPageState = {
   custom: string[];
   picked: Record<string, boolean>; // hits ticked for "Add to peer group"
   message: string;
+  usd: boolean; // statements and charts of a foreign issuer in USD
 };
 
-const tickerPage: TickerPageState = { ticker: null, tab: 'similar', group: 'business', custom: [], picked: {}, message: '' };
-const TICKER_PAGE_TABS = ['similar'];
+const tickerPage: TickerPageState = { ticker: null, tab: 'overview', group: 'business', custom: [], picked: {}, message: '', usd: false };
+const TICKER_PAGE_TABS = ['overview', 'statements', 'charts', 'peers', 'similar', 'dcf', 'tam', 'notes'];
+const metaTried = new Set<string>(); // tickers whose meta.json the page already asked for (a failed load is not retried in a loop)
 let similarCache: { universe: Universe; ctx: SimilarContext } | null = null;
 let lastSimilar: { ticker: string; metrics: string[]; result: SimilarResult } | null = null;
 
@@ -5450,7 +5462,25 @@ function renderTickerPage(): void {
     el.tickerPageBody.innerHTML = `<p class="scr-muted">${escapeHtml(t('tp.noStock', { ticker }))}</p>`;
     return;
   }
-  el.tickerPageBody.innerHTML = similarTabHtml(ticker, index);
+  const scroll = el.tickerPageBody.scrollTop;
+  const focused: any = document.activeElement;
+  const focusKey = focused && focused.dataset && el.tickerPageBody.contains(focused) ? ['dcf', 'tam', 'notes', 'promiseField'].map(k => (focused.dataset[k] ? `[data-${k === 'promiseField' ? 'promise-field' : k}="${focused.dataset[k]}"]${focused.dataset.pi ? `[data-pi="${focused.dataset.pi}"]` : ''}` : '')).join('') : '';
+  const ready = ensureTickerPageData(ticker);
+  const meta = metaCache.has(ticker) ? metaCache.get(ticker) : null;
+  const message = tickerPage.message ? `<p class="scr-muted" id="tp-message">${escapeHtml(tickerPage.message)}</p>` : '';
+  const tab = tickerPage.tab;
+  let body = '';
+  if (!ready) body = `<p class="scr-muted">${escapeHtml(t('tp.loading', { ticker }))}</p>`;
+  else if (tab === 'overview') body = overviewTabHtml(ticker, index);
+  else if (tab === 'similar') body = similarTabHtml(ticker, index);
+  else if (tab === 'peers') body = peersTabHtml(ticker, index);
+  else if (tab === 'statements' || tab === 'charts') body = meta ? (tab === 'statements' ? statementsTabHtml(ticker, meta) : chartsTabHtml(ticker, meta)) : `<p class="scr-muted">${escapeHtml(t('tp.noMeta', { ticker }))}</p>`;
+  else if (tab === 'dcf') body = dcfTabHtml(ticker, index, meta);
+  else if (tab === 'tam') body = message + tamTabHtml(ticker, meta);
+  else if (tab === 'notes') body = message + notesTabHtml(ticker, meta);
+  el.tickerPageBody.innerHTML = body;
+  el.tickerPageBody.scrollTop = scroll;
+  if (focusKey) { const again: any = el.tickerPageBody.querySelector(focusKey); if (again && typeof again.focus === 'function') again.focus(); }
 }
 
 /** Adds X and the picked hits to the chosen group, or to a new group named in the input */
@@ -5492,7 +5522,7 @@ function onTickerPageClick(event: any): void {
   if (!target || typeof target.closest !== 'function') return;
   if (target === el.tickerPage) { closeTickerPage(); return; }
   const tab = target.closest('[data-tp-tab]');
-  if (tab) { tickerPage.tab = tab.dataset.tpTab; renderTickerPage(); return; }
+  if (tab) { tickerPage.tab = tab.dataset.tpTab; tickerPage.message = ''; renderTickerPage(); return; }
   const open = target.closest('[data-tp-open]');
   if (open) { openTickerPage(open.dataset.tpOpen); return; }
   const button = target.closest('[data-tp-act]');
@@ -5501,12 +5531,30 @@ function onTickerPageClick(event: any): void {
   if (act === 'group') { tickerPage.group = button.dataset.value; tickerPage.picked = {}; persistSimilar(); renderTickerPage(); }
   else if (act === 'add-peers') addSimilarToPeers();
   else if (act === 'make-filter') makeFilterFromTicker();
+  else if (act === 'usd') { tickerPage.usd = !tickerPage.usd; renderTickerPage(); }
+  else if (act === 'dcf-reset' && tickerPage.ticker) { delete dcfSaved[tickerPage.ticker]; lsSet(DCF_KEY, JSON.stringify(dcfSaved)); renderTickerPage(); }
+  else if ((act === 'research-export' || act === 'research-delete') && tickerPage.ticker) {
+    const kind = RESEARCH_KINDS.filter(k => k === button.dataset.kind)[0];
+    if (kind && act === 'research-export') exportResearch(kind, tickerPage.ticker);
+    else if (kind) { delete research.browser[kind][tickerPage.ticker]; persistResearch(); renderTickerPage(); }
+  }
+  else if (act === 'promise-add') editPromises(doc => { doc.items.push({ kind: 'buyback', text: '', announced: today(), deadline: '', amount: null, status: 'open' }); });
+  else if (act === 'promise-remove') editPromises(doc => { doc.items.splice(Number(button.dataset.pi), 1); });
 }
 
 function onTickerPageChange(event: any): void {
   const target = event.target;
   if (!target) return;
   if (target.dataset && target.dataset.tpPick) { tickerPage.picked[target.dataset.tpPick] = !!target.checked; return; }
+  if (target.dataset && target.dataset.researchImport) {
+    const kind = RESEARCH_KINDS.filter(k => k === target.dataset.researchImport)[0];
+    if (kind) void importResearchFiles(kind, target.files).finally(() => { target.value = ''; });
+    return;
+  }
+  if (target.dataset && target.dataset.dcf) { onDcfInput(target); return; }
+  if (target.dataset && target.dataset.tam) { onTamInput(target); return; }
+  if (target.dataset && target.dataset.notes) { onNotesInput(target, true); return; }
+  if (target.dataset && target.dataset.promiseField) { onPromiseInput(target); return; }
   if (target.id === 'tp-custom') {
     tickerPage.custom = String(target.value || '').split(/[\s,;]+/).map(m => m.trim()).filter(m => !!REGISTRY.byId[m]).filter((m, k, all) => all.indexOf(m) === k);
     persistSimilar();
@@ -5517,8 +5565,525 @@ function onTickerPageChange(event: any): void {
 function bindTickerPageEvents(): void {
   el.tickerPage.addEventListener('click', onTickerPageClick);
   el.tickerPage.addEventListener('change', onTickerPageChange);
+  // notes are saved while typing (no re-render, the caret stays); every other field on change
+  el.tickerPage.addEventListener('input', (event: any) => { const target = event.target; if (target && target.dataset && target.dataset.notes && target.tagName === 'TEXTAREA') onNotesInput(target, false); });
   el.tickerPageClose.addEventListener('click', closeTickerPage);
   document.addEventListener('keydown', (event: any) => { if (event.key === 'Escape' && tickerPage.ticker && !guideOpen) closeTickerPage(); });
+}
+
+// ---- ticker page sections of plan stage 7: overview, statements, long-run charts, peers, DCF, TAM, research notes ----
+
+type DcfFields = { g1: number; g2: number; wacc: number; terminalGrowth: number; fcf: number | null; eps: number | null; netDebt: number | null; shares: number | null };
+type ResearchStore = {
+  index: Record<ResearchKind, string[] | null>; // file lists of user-data/<kind>/index.json, null until loaded
+  repo: Record<ResearchKind, Record<string, string | null>>; // committed texts by ticker (null: not in the repo), loaded on demand
+  browser: Record<ResearchKind, Record<string, string>>; // texts saved in this browser (they win)
+  exported: Record<string, string>; // '<kind>/<T>' -> text of the last export or import
+};
+
+const research: ResearchStore = {
+  index: { tam: null, notes: null, promises: null },
+  repo: { tam: {}, notes: {}, promises: {} },
+  browser: { tam: {}, notes: {}, promises: {} },
+  exported: {},
+};
+let dcfSaved: Record<string, DcfFields> = {}; // per ticker, only after the inputs were edited (else the feed values)
+
+function restoreResearch(): void {
+  const saved = lsGetJson(RESEARCH_KEY, null);
+  if (saved && typeof saved === 'object') {
+    RESEARCH_KINDS.forEach(kind => {
+      const texts = saved[kind];
+      if (texts && typeof texts === 'object') Object.keys(texts).forEach(ticker => { if (typeof texts[ticker] === 'string') research.browser[kind][ticker] = texts[ticker]; });
+    });
+    if (saved.exported && typeof saved.exported === 'object') Object.keys(saved.exported).forEach(key => { if (typeof saved.exported[key] === 'string') research.exported[key] = saved.exported[key]; });
+  }
+  const dcfState = lsGetJson(DCF_KEY, null);
+  if (dcfState && typeof dcfState === 'object') dcfSaved = dcfState;
+}
+
+function persistResearch(): void {
+  lsSet(RESEARCH_KEY, JSON.stringify({ schemaVersion: 1, tam: research.browser.tam, notes: research.browser.notes, promises: research.browser.promises, exported: research.exported }));
+}
+
+async function fetchText(url: string): Promise<string> {
+  const response = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS), cache: 'no-cache' });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.text();
+}
+
+/** The committed file of a ticker (user-data/<kind>/), read once: the folder index first, the file only when the index lists it */
+async function loadRepoResearch(kind: ResearchKind, ticker: string): Promise<void> {
+  if (Object.prototype.hasOwnProperty.call(research.repo[kind], ticker)) return;
+  if (research.index[kind] === null) {
+    try { research.index[kind] = indexFiles(await fetchJson(`./user-data/${kind}/index.json`)); } catch (error) {
+      research.index[kind] = [];
+      console.warn(`user-data/${kind}/index.json unavailable:`, error);
+    }
+  }
+  const file = researchFileName(kind, ticker);
+  const files = research.index[kind] || [];
+  let text: string | null = null;
+  if (files.indexOf(file) >= 0) {
+    try { text = await fetchText(`./user-data/${kind}/${encodeURIComponent(file)}`); } catch (error) { console.warn(`user-data/${kind}/${file} unavailable:`, error); }
+  }
+  research.repo[kind][ticker] = text;
+}
+
+function researchRecord(kind: ResearchKind, ticker: string): { text: string | null; source: 'browser' | 'repo' | 'none'; exported: boolean } {
+  const repo = Object.prototype.hasOwnProperty.call(research.repo[kind], ticker) ? research.repo[kind][ticker] : null;
+  const browser = Object.prototype.hasOwnProperty.call(research.browser[kind], ticker) ? research.browser[kind][ticker] : null;
+  return recordState(repo, browser, research.exported[`${kind}/${ticker}`] ?? null);
+}
+
+function saveResearch(kind: ResearchKind, ticker: string, text: string): void {
+  research.browser[kind][ticker] = text;
+  persistResearch();
+}
+
+function today(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function tamDoc(ticker: string): TamDoc {
+  const record = researchRecord('tam', ticker);
+  const parsed = record.text ? parseTam(record.text, ticker) : null;
+  return parsed && parsed.doc ? parsed.doc : emptyTam(ticker, today());
+}
+
+function notesDoc(ticker: string): NotesDoc {
+  const record = researchRecord('notes', ticker);
+  return record.text ? parseNotes(record.text, ticker) : emptyNotes(ticker);
+}
+
+function promisesDoc(ticker: string): PromisesDoc {
+  const record = researchRecord('promises', ticker);
+  const parsed = record.text ? parsePromises(record.text, ticker) : null;
+  return parsed && parsed.doc ? parsed.doc : { schemaVersion: RESEARCH_SCHEMA_VERSION, ticker, items: [] };
+}
+
+function researchText(kind: ResearchKind, ticker: string): string {
+  if (kind === 'tam') return tamFileText(tamDoc(ticker));
+  if (kind === 'notes') return notesFileText(notesDoc(ticker));
+  return promisesFileText(promisesDoc(ticker));
+}
+
+/** Downloads the file of a record under its user-data name; returns what was downloaded */
+function exportResearch(kind: ResearchKind, ticker: string): { fileName: string; text: string } {
+  const text = researchText(kind, ticker);
+  const fileName = researchFileName(kind, ticker);
+  downloadText(text, fileName, kind === 'notes' ? 'text/markdown' : 'application/json');
+  research.exported[`${kind}/${ticker}`] = text;
+  persistResearch();
+  renderTickerPage();
+  return { fileName, text };
+}
+
+/** Reads an exported file of the open ticker; the kind comes from the file name or the content */
+function importResearchText(kind: ResearchKind, ticker: string, text: string): string[] {
+  let canonical = '';
+  let errors: string[] = [];
+  if (kind === 'notes') canonical = notesFileText(parseNotes(text, ticker));
+  else if (kind === 'tam') { const parsed = parseTam(text, ticker); errors = parsed.errors; if (parsed.doc) canonical = tamFileText(parsed.doc); }
+  else { const parsed = parsePromises(text, ticker); errors = parsed.errors; if (parsed.doc) canonical = promisesFileText(parsed.doc); }
+  const file = researchFileName(kind, ticker);
+  if (!canonical) tickerPage.message = t('research.importFailed', { errors: errors.join('; ') });
+  else {
+    saveResearch(kind, ticker, canonical);
+    research.exported[`${kind}/${ticker}`] = canonical;
+    persistResearch();
+    tickerPage.message = t('research.imported', { file });
+  }
+  renderTickerPage();
+  return errors;
+}
+
+async function importResearchFiles(kind: ResearchKind, files: any): Promise<void> {
+  const ticker = tickerPage.ticker;
+  const list: any[] = files ? Array.from(files) : [];
+  for (const file of list) if (ticker) importResearchText(kind, ticker, await file.text());
+}
+
+function researchToolsHtml(kind: ResearchKind, ticker: string): string {
+  const record = researchRecord(kind, ticker);
+  const file = researchFileName(kind, ticker);
+  const folder = `user-data/${kind}/`;
+  const where = record.source === 'browser' ? t('research.saved') : record.source === 'repo' ? t('research.fromRepo') : '';
+  return `<span class="scr-ed-actions">
+    ${where ? `<span class="scr-muted">${escapeHtml(where)}</span>` : ''}
+    ${record.exported ? '' : `<span class="scr-flag" data-research-flag="${kind}" title="${escapeHtml(t('screener.notExported.tip'))}">${escapeHtml(t('screener.notExported'))}</span>`}
+    <button type="button" class="dd-act" data-tp-act="research-export" data-kind="${kind}" title="${escapeHtml(t('research.export.tip', { file, folder }))}">${escapeHtml(t('research.export', { file }))}</button>
+    <label class="dd-act scr-import" title="${escapeHtml(t('research.import.tip', { file }))}">${escapeHtml(t('research.import'))}<input type="file" data-research-import="${kind}" accept="${kind === 'notes' ? '.md,text/markdown,text/plain' : '.json,application/json'}" hidden /></label>
+    ${record.source === 'browser' ? `<button type="button" class="dd-act" data-tp-act="research-delete" data-kind="${kind}" title="${escapeHtml(t('research.delete.tip'))}">${escapeHtml(t('research.delete'))}</button>` : ''}
+  </span>`;
+}
+
+// ---- overview ----
+
+const OVERVIEW_KEYS: Array<{ key: string; fmt: CellFormat }> = [
+  { key: 'price', fmt: 'price' }, { key: 'marketCap', fmt: 'money' }, { key: 'pe', fmt: 'x' }, { key: 'forwardPe', fmt: 'x' }, { key: 'peg', fmt: 'x' }, { key: 'pb', fmt: 'x' },
+  { key: 'ps', fmt: 'x' }, { key: 'dividendYield', fmt: 'pct' }, { key: 'roic', fmt: 'pct' }, { key: 'grossMargin', fmt: 'pct' }, { key: 'netMargin', fmt: 'pct' },
+  { key: 'fcfMargin', fmt: 'pct' }, { key: 'revenueGrowth3y', fmt: 'pct' }, { key: 'epsGrowth3y', fmt: 'pct' }, { key: 'debtToEquity', fmt: 'x' }, { key: 'pctFromAth', fmt: 'pct' },
+];
+
+function overviewTabHtml(ticker: string, id: number): string {
+  const s = store;
+  if (!s) return '';
+  const raw = s.raw[id];
+  const metrics = raw.metrics || {};
+  const value = (key: string, fmt: CellFormat) => {
+    const v = key === 'price' ? numberOrNull(raw.price) ?? numberOrNull(metrics.price) : numberOrNull(metrics[key]);
+    return v === null ? DASH : formatByFmt(fmt, v);
+  };
+  const figures = OVERVIEW_KEYS.map(k => `<div class="tp-kv"><span>${escapeHtml(t(`tp.k.${k.key}`))}</span><strong>${escapeHtml(value(k.key, k.fmt))}</strong></div>`).join('')
+    + `<div class="tp-kv tp-kv-wide"><span>${escapeHtml(t('tp.k.sector'))}</span><strong>${escapeHtml([raw.sector, raw.industry].filter(Boolean).join(' · ') || DASH)}</strong></div>`;
+  const scoring = scoringRowOf(id);
+  const texts = scoringTexts().texts;
+  const scores = SCORE_COLUMN_KEYS.map(key => `<div class="tp-kv"><span>${escapeHtml(metricLabel(key))}</span>${scoreBadgeHtml(s.num[key] ? s.num[key][id] : NaN)}</div>`).join('');
+  const status = scoring && scoring.status ? `<span class="scr-status is-${scoring.status}">${escapeHtml(texts.status[id])}</span>` : DASH;
+  return `<section class="tp-section" data-tp-section="overview">
+    <h3>${escapeHtml(t('tp.key'))}</h3><div class="tp-grid">${figures}</div>
+    <h3>${escapeHtml(t('tp.scores'))}</h3><div class="tp-grid" id="tp-scores">${scores}</div>
+    <div class="tp-grid tp-grid-text">
+      <div class="tp-kv"><span>${escapeHtml(t('tp.archetype'))}</span><strong>${escapeHtml(texts.archetype[id] || DASH)}</strong></div>
+      <div class="tp-kv"><span>${escapeHtml(t('tp.status'))}</span>${status}</div>
+      <div class="tp-kv tp-kv-wide"><span>${escapeHtml(t('tp.why'))}</span><strong>${escapeHtml(texts.why[id] || DASH)}</strong></div>
+      <div class="tp-kv tp-kv-wide"><span>${escapeHtml(t('tp.flags'))}</span><strong class="${texts.flags[id] ? 'tp-bad' : ''}">${escapeHtml(texts.flags[id] || t('tp.noFlags'))}</strong></div>
+    </div>
+  </section>`;
+}
+
+// ---- statements and charts ----
+
+function statementCell(kind: string, value: number | null, currency: string): string {
+  if (value === null) return DASH;
+  if (kind === 'perShare') return value.toFixed(2);
+  if (kind === 'shares') return `${(value / 1e6).toLocaleString('en-US', { maximumFractionDigits: 1 })}M`;
+  return formatMoney(value, currency);
+}
+
+function statementsTabHtml(ticker: string, meta: any): string {
+  const table = statementTable(meta, { years: 5, usd: tickerPage.usd });
+  const locale = getLocale();
+  const source = t(`tp.st.source.${table.source}`, { currency: table.currency });
+  if (table.source === 'none') return `<section class="tp-section" data-tp-section="statements"><p class="scr-muted">${escapeHtml(source)}</p></section>`;
+  const localCurrency = meta && meta.fundamentals && meta.fundamentals.sec ? String(meta.fundamentals.sec.currency) : table.currency;
+  const toggle = table.hasUsd ? `<button type="button" class="dd-act" data-tp-act="usd" aria-pressed="${tickerPage.usd}">${escapeHtml(tickerPage.usd ? t('tp.st.local', { currency: localCurrency }) : t('tp.st.usd'))}</button>` : '';
+  const heads = table.periods.map(p => `<th class="tp-num">${escapeHtml(p)}</th>`).join('');
+  const blocks = STATEMENTS.map(st => {
+    const rows = st.lines.map(line => `<tr data-line="${line.key}"><td>${escapeHtml(pick(line.label, locale))}</td>${table.values[line.key].map((v, i) => {
+      const yoy = table.yoy[line.key][i];
+      return `<td class="tp-num">${escapeHtml(statementCell(line.kind, v, table.currency))}${yoy === null ? '' : `<div class="tp-yoy ${yoy >= 0 ? 'is-up' : 'is-down'}">${yoy >= 0 ? '+' : ''}${yoy.toFixed(1)}%</div>`}</td>`;
+    }).join('')}</tr>`).join('');
+    return `<h3>${escapeHtml(pick(st.title, locale))}</h3><div class="scr-table-wrap themed-scroll tp-table-wrap"><table class="scr-conds tp-table" data-statement="${st.id}"><thead><tr><th>${escapeHtml(t('tp.st.line'))}</th>${heads}</tr></thead><tbody>${rows}</tbody></table></div>`;
+  }).join('');
+  return `<section class="tp-section" data-tp-section="statements"><div class="tp-row"><p class="scr-muted">${escapeHtml(source)}; ${escapeHtml(t('tp.st.yoy'))}</p>${toggle}</div>${blocks}</section>`;
+}
+
+const CHART_COLORS = ['#2563eb', '#16a34a', '#d97706', '#db2777'];
+
+function chartSvg(series: ChartSeries[], label: (v: number) => string, title: string): string {
+  const periods = series.length ? series[0].points.map(p => p.period) : [];
+  if (periods.length < 2) return `<p class="scr-muted">${escapeHtml(t('tp.ch.none'))}</p>`;
+  const W = 720, H = 240, L = 64, R = 12, T = 12, B = 28;
+  const scale = chartScale(series);
+  const x = (i: number) => L + (i * (W - L - R)) / (periods.length - 1);
+  const y = (v: number) => T + ((scale.max - v) * (H - T - B)) / (scale.max - scale.min);
+  const ticks = [scale.min, scale.min + (scale.max - scale.min) / 2, scale.max].concat(scale.min < 0 ? [0] : []);
+  const grid = ticks.map(v => `<line x1="${L}" x2="${W - R}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" class="${v === 0 ? 'tp-axis' : 'tp-grid-line'}"/><text x="${L - 6}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end" class="tp-tick">${escapeHtml(label(v))}</text>`).join('');
+  const xs = periods.map((p, i) => `<text x="${x(i).toFixed(1)}" y="${H - 8}" text-anchor="middle" class="tp-tick">${escapeHtml(p)}</text>`).join('');
+  const lines = series.map((s, k) => {
+    const segments: string[] = [];
+    let current: string[] = [];
+    s.points.forEach((p, i) => {
+      if (p.value === null) { if (current.length) segments.push(current.join(' ')); current = []; return; }
+      current.push(`${x(i).toFixed(1)},${y(p.value).toFixed(1)}`);
+    });
+    if (current.length) segments.push(current.join(' '));
+    const dots = s.points.map((p, i) => (p.value === null ? '' : `<circle cx="${x(i).toFixed(1)}" cy="${y(p.value).toFixed(1)}" r="2.5" fill="${CHART_COLORS[k]}"><title>${escapeHtml(`${pick(s.label)} ${p.period}: ${label(p.value)}`)}</title></circle>`)).join('');
+    return segments.map(points => `<polyline points="${points}" fill="none" stroke="${CHART_COLORS[k]}" stroke-width="2"/>`).join('') + dots;
+  }).join('');
+  const legend = series.map((s, k) => `<span class="tp-legend"><i style="background:${CHART_COLORS[k]}"></i>${escapeHtml(pick(s.label))}</span>`).join('');
+  return `<figure class="tp-chart"><figcaption>${escapeHtml(title)} ${legend}</figcaption><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${escapeHtml(title)}">${grid}${xs}${lines}</svg></figure>`;
+}
+
+function chartsTabHtml(ticker: string, meta: any): string {
+  const data = longRunSeries(meta, tickerPage.usd);
+  return `<section class="tp-section" data-tp-section="charts">
+    ${chartSvg(data.amounts, v => formatMoney(v, data.currency), t('tp.ch.amounts', { currency: data.currency }))}
+    ${chartSvg(data.margins, v => `${v.toFixed(0)}%`, t('tp.ch.margins'))}
+  </section>`;
+}
+
+// ---- peers table ----
+
+function peersTabHtml(ticker: string, id: number): string {
+  const s = store;
+  if (!s) return '';
+  const stocks = s.raw.filter((_: any, i: number) => s.assetType[i] === 0);
+  const chosen = peerTickers(ticker, scr.peers, stocks);
+  const basis = chosen.basis === 'group' ? t('tp.peers.basis.group', { name: chosen.group || '' }) : chosen.basis === 'industry' ? t('tp.peers.basis.industry', { industry: s.raw[id].industry || '' }) : t('tp.peers.basis.none');
+  const rows = chosen.tickers.map(tk => {
+    const index = s.keyIndex.get(tk);
+    if (index === undefined) return '';
+    const r = peerRow(s.raw[index]);
+    const x = (v: number | null) => (v === null ? DASH : formatRatio(v));
+    return `<tr data-peer="${escapeHtml(tk)}"${tk === ticker ? ' class="tp-self"' : ''}><td>${tk === ticker ? escapeHtml(tk) : `<button type="button" class="tp-link" data-tp-open="${escapeHtml(tk)}">${escapeHtml(tk)}</button>`}</td><td>${escapeHtml(s.name[index])}</td>
+      <td class="tp-num">${formatMoney(r.marketCap)}</td><td class="tp-num">${formatMoney(r.revenue)}</td><td class="tp-num">${formatMoney(r.netIncome)}</td><td class="tp-num">${formatMoney(r.fcf)}</td>
+      <td class="tp-num">${x(r.pe)}</td><td class="tp-num">${x(r.peg)}</td><td class="tp-num">${x(r.pegHist)}</td><td class="tp-num">${x(r.pb)}</td><td class="tp-num">${x(r.ps)}</td></tr>`;
+  }).join('');
+  return `<section class="tp-section" data-tp-section="peers"><p class="scr-muted">${escapeHtml(basis)}. ${escapeHtml(t('tp.peers.note'))}</p>
+    <div class="scr-table-wrap themed-scroll tp-table-wrap"><table class="scr-conds tp-table" id="tp-peers-table"><thead><tr><th>${escapeHtml(t('similar.col.ticker'))}</th><th>${escapeHtml(t('similar.col.name'))}</th>
+    <th class="tp-num">${escapeHtml(t('tp.k.marketCap'))}</th><th class="tp-num">${escapeHtml(t('tp.peers.revenue'))}</th><th class="tp-num">${escapeHtml(t('tp.peers.ni'))}</th><th class="tp-num">${escapeHtml(t('tp.peers.fcf'))}</th>
+    <th class="tp-num">P/E</th><th class="tp-num">PEG</th><th class="tp-num">${escapeHtml(t('tp.peers.pegHist'))}</th><th class="tp-num">P/B</th><th class="tp-num">P/S</th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
+}
+
+// ---- DCF ----
+
+function dcfFeedFields(ticker: string, id: number, meta: any): { fields: DcfFields; feed: DcfFeedInputs } {
+  const s = store;
+  const raw = s ? s.raw[id] : null;
+  const feed = dcfInputsFromMeta(meta, raw);
+  const growth = defaultGrowth(raw ? raw.metrics : null);
+  return { feed, fields: { g1: growth.g1, g2: growth.g2, wacc: DCF_DEFAULTS.wacc, terminalGrowth: DCF_DEFAULTS.terminalGrowth, fcf: feed.fcf, eps: feed.eps, netDebt: feed.netDebt, shares: feed.shares } };
+}
+
+function dcfFields(ticker: string, id: number, meta: any): { fields: DcfFields; feed: DcfFeedInputs } {
+  const fromFeed = dcfFeedFields(ticker, id, meta);
+  const saved = dcfSaved[ticker];
+  return saved ? { feed: fromFeed.feed, fields: { ...fromFeed.fields, ...saved } } : fromFeed;
+}
+
+function dcfInputOf(fields: DcfFields, kind: 'fcf' | 'eps'): DcfInput {
+  const common = { g1: fields.g1, g2: fields.g2, wacc: fields.wacc, terminalGrowth: fields.terminalGrowth };
+  return kind === 'fcf'
+    ? { kind, base: fields.fcf ?? NaN, netDebt: fields.netDebt ?? 0, shares: fields.shares ?? NaN, ...common }
+    : { kind, base: fields.eps ?? NaN, ...common };
+}
+
+/** The DCF of the open ticker as the page shows it: both flows, base and scenarios (the browser test reads it) */
+function dcfView(ticker: string): { fcf: DcfResult; eps: DcfResult; scenarios: Record<string, { fcf: number | null; eps: number | null }>; price: number | null; gap: { gap: number | null; flagged: boolean } } | null {
+  const s = store;
+  const id = s ? s.keyIndex.get(ticker) : undefined;
+  if (!s || id === undefined) return null;
+  const meta = metaCache.get(ticker);
+  const fields = dcfFields(ticker, id, meta === undefined ? null : meta).fields;
+  const fcf = dcf(dcfInputOf(fields, 'fcf'));
+  const eps = dcf(dcfInputOf(fields, 'eps'));
+  const per = (r: DcfResult) => (r.ok ? r.perShare : null);
+  const scenarios: Record<string, { fcf: number | null; eps: number | null }> = {};
+  SCENARIO_NAMES.forEach(name => {
+    scenarios[name] = { fcf: per(dcf(scenarioInput(dcfInputOf(fields, 'fcf'), name))), eps: per(dcf(scenarioInput(dcfInputOf(fields, 'eps'), name))) };
+  });
+  return { fcf, eps, scenarios, price: numberOrNull(s.raw[id].price), gap: valueGap(per(fcf), per(eps)) };
+}
+
+function dcfNumberInput(field: string, value: number | null, label: string, scale: number, step: string): string {
+  const shown = value === null ? '' : String(Number((value / scale).toPrecision(10)));
+  return `<label class="tp-field"><span>${escapeHtml(label)}</span><input type="number" step="${step}" class="scr-input scr-num" data-dcf="${field}" data-scale="${scale}" value="${escapeHtml(shown)}" /></label>`;
+}
+
+function dcfResultHtml(r: DcfResult, price: number | null, kind: 'fcf' | 'eps'): string {
+  if (!r.ok) return `<div class="tp-dcf-col" data-dcf-result="${kind}"><h4>${escapeHtml(t(`dcf.flow.${kind}`))}</h4><p class="scr-error" data-dcf-error="${r.error}">${escapeHtml(t(`dcf.err.${r.error}`))}</p></div>`;
+  const mos = marginOfSafety(r.perShare, price);
+  const money = (v: number) => (kind === 'fcf' ? formatMoney(v) : `$${cents(v).toFixed(2)}`);
+  const years = r.years.map(y => `<tr><td>${y.year}</td><td class="tp-num">${y.growth}%</td><td class="tp-num">${escapeHtml(money(y.flow))}</td><td class="tp-num">${y.factor.toFixed(6)}</td><td class="tp-num">${escapeHtml(money(y.pv))}</td></tr>`).join('');
+  return `<div class="tp-dcf-col" data-dcf-result="${kind}"><h4>${escapeHtml(t(`dcf.flow.${kind}`))}</h4>
+    <div class="tp-kv"><span>${escapeHtml(t('dcf.perShare'))}</span><strong class="tp-big" data-dcf-value="${kind}">$${cents(r.perShare).toFixed(2)}</strong></div>
+    <div class="tp-kv"><span>${escapeHtml(t('dcf.mos', { price: price === null ? DASH : `$${price.toFixed(2)}` }))}</span><strong class="${mos !== null && mos >= 0 ? 'tp-good' : 'tp-bad'}">${mos === null ? DASH : `${cents(mos).toFixed(2)}%`}</strong></div>
+    <div class="tp-kv"><span>${escapeHtml(t('dcf.sumPv'))}</span><strong>${escapeHtml(money(r.sumPv))}</strong></div>
+    <div class="tp-kv"><span>${escapeHtml(t('dcf.pvTerminal'))}</span><strong>${escapeHtml(money(r.pvTerminal))}</strong></div>
+    ${kind === 'fcf' ? `<div class="tp-kv"><span>${escapeHtml(t('dcf.value'))}</span><strong>${escapeHtml(money(r.value))}</strong></div><div class="tp-kv"><span>${escapeHtml(t('dcf.equity'))}</span><strong>${escapeHtml(money(r.equity))}</strong></div>` : ''}
+    <details><summary>${escapeHtml(t('dcf.years'))}</summary><table class="scr-conds tp-table"><thead><tr><th>${escapeHtml(t('dcf.year'))}</th><th class="tp-num">${escapeHtml(t('dcf.growth'))}</th><th class="tp-num">${escapeHtml(t('dcf.flow'))}</th><th class="tp-num">${escapeHtml(t('dcf.factor'))}</th><th class="tp-num">${escapeHtml(t('dcf.pv'))}</th></tr></thead><tbody>${years}</tbody></table></details>
+  </div>`;
+}
+
+function dcfTabHtml(ticker: string, id: number, meta: any): string {
+  const { fields, feed } = dcfFields(ticker, id, meta);
+  const view = dcfView(ticker);
+  if (!view) return '';
+  const price = view.price;
+  const pct = (v: number | null) => (v === null ? DASH : `${v.toFixed(1)}%`);
+  const scenarioRows = SCENARIO_NAMES.map(name => {
+    const sc = view.scenarios[name];
+    const cell = (v: number | null) => (v === null ? DASH : `$${cents(v).toFixed(2)}`);
+    const mos = (v: number | null) => { const m = marginOfSafety(v, price); return m === null ? DASH : `${cents(m).toFixed(1)}%`; };
+    return `<tr data-scenario="${name}"><td>${escapeHtml(t(`dcf.scenario.${name}`))}</td><td class="tp-num">${cell(sc.fcf)}</td><td class="tp-num">${mos(sc.fcf)}</td><td class="tp-num">${cell(sc.eps)}</td><td class="tp-num">${mos(sc.eps)}</td></tr>`;
+  }).join('');
+  const gap = view.gap.gap === null ? '' : view.gap.flagged
+    ? `<p class="scr-flag tp-gap" id="tp-dcf-gap">${escapeHtml(t('dcf.gap', { gap: view.gap.gap.toFixed(1) }))}</p>`
+    : `<p class="scr-muted" id="tp-dcf-gap">${escapeHtml(t('dcf.noGap', { threshold: DCF_GAP_PCT }))}</p>`;
+  return `<section class="tp-section" data-tp-section="dcf">
+    <div class="tp-row"><h3>${escapeHtml(t('dcf.title'))}</h3><button type="button" class="dd-act" data-tp-act="dcf-reset">${escapeHtml(t('dcf.reset'))}</button></div>
+    <p class="scr-muted">${escapeHtml(t('dcf.basis', { basis: feed.basis }))}${feed.foreign ? ` · ${escapeHtml(t('dcf.foreign'))}` : ''}</p>
+    <div class="tp-fields">
+      ${dcfNumberInput('g1', fields.g1, t('dcf.g1'), 1, 'any')}${dcfNumberInput('g2', fields.g2, t('dcf.g2'), 1, 'any')}
+      ${dcfNumberInput('wacc', fields.wacc, t('dcf.wacc'), 1, 'any')}${dcfNumberInput('terminalGrowth', fields.terminalGrowth, t('dcf.tg'), 1, 'any')}
+      ${dcfNumberInput('fcf', fields.fcf, t('dcf.fcfBase'), 1e9, 'any')}${dcfNumberInput('netDebt', fields.netDebt, t('dcf.netDebt'), 1e9, 'any')}
+      ${dcfNumberInput('shares', fields.shares, t('dcf.shares'), 1e6, 'any')}${dcfNumberInput('eps', fields.eps, t('dcf.epsBase'), 1, 'any')}
+    </div>
+    <p class="scr-muted" id="tp-capex">${escapeHtml(t('dcf.capex', { revenue: pct(feed.capexToRevenue), cfo: pct(feed.capexToCfo) }))}</p>
+    <div class="tp-dcf">${dcfResultHtml(view.fcf, price, 'fcf')}${dcfResultHtml(view.eps, price, 'eps')}</div>
+    ${gap}
+    <h4 title="${escapeHtml(t('dcf.scenario.tip'))}">${escapeHtml(t('dcf.scenarios'))}</h4>
+    <table class="scr-conds tp-table" id="tp-scenarios"><thead><tr><th></th><th class="tp-num">${escapeHtml(t('dcf.flow.fcf'))}</th><th class="tp-num">MoS</th><th class="tp-num">${escapeHtml(t('dcf.flow.eps'))}</th><th class="tp-num">MoS</th></tr></thead><tbody>${scenarioRows}</tbody></table>
+  </section>`;
+}
+
+function onDcfInput(target: any): void {
+  const ticker = tickerPage.ticker;
+  const s = store;
+  const id = ticker && s ? s.keyIndex.get(ticker) : undefined;
+  if (!ticker || id === undefined) return;
+  const meta = metaCache.get(ticker);
+  const fields = { ...dcfFields(ticker, id, meta === undefined ? null : meta).fields };
+  const field = String(target.dataset.dcf);
+  const n = numberInput(String(target.value || ''));
+  const scaled = n === null ? null : n * Number(target.dataset.scale || 1);
+  if (field === 'g1' || field === 'g2' || field === 'wacc' || field === 'terminalGrowth') { if (scaled !== null) fields[field] = scaled; }
+  else if (field === 'fcf' || field === 'eps' || field === 'netDebt' || field === 'shares') fields[field] = scaled;
+  dcfSaved[ticker] = fields;
+  lsSet(DCF_KEY, JSON.stringify(dcfSaved));
+  renderTickerPage();
+}
+
+// ---- TAM ----
+
+function tamTabHtml(ticker: string, meta: any): string {
+  const doc = tamDoc(ticker);
+  const revenueNow = (() => { const table = statementTable(meta, { years: 1, usd: true }); return table.values.revenue ? table.values.revenue[0] : null; })();
+  const result = tamScenarios(doc, revenueNow);
+  const input = (field: string, value: unknown, label: string, type = 'number', scale = 1) => `<label class="tp-field"><span>${escapeHtml(label)}</span><input type="${type}" ${type === 'number' ? 'step="any"' : ''} class="scr-input${type === 'number' ? ' scr-num' : ''}" data-tam="${field}" data-scale="${scale}" value="${escapeHtml(value === null || value === undefined ? '' : type === 'number' ? String(Number((Number(value) / scale).toPrecision(10))) : String(value))}" /></label>`;
+  const rows = TAM_SCENARIOS.map(name => `<tr data-tam-row="${name}"><td>${escapeHtml(t(`tam.${name}`))}</td><td class="tp-num">${doc.share[name] === null ? DASH : `${doc.share[name]}%`}</td><td class="tp-num">${formatMoney(result[name].revenue)}</td><td class="tp-num">${result[name].cagr === null ? DASH : `${result[name].cagr.toFixed(1)}%`}</td></tr>`).join('');
+  return `<section class="tp-section" data-tp-section="tam">
+    <div class="tp-row"><h3>${escapeHtml(t('tam.title'))}</h3>${researchToolsHtml('tam', ticker)}</div>
+    <div class="tp-fields">
+      ${input('market', doc.market, t('tam.market'), 'text')}${input('asOf', doc.asOf, t('tam.asOf'), 'date')}
+      ${input('size', doc.size, t('tam.size'), 'number', 1e9)}${input('growth', doc.growth, t('tam.growth'))}${input('years', doc.years, t('tam.years'))}
+      ${input('low', doc.share.low, t('tam.share.low'))}${input('mid', doc.share.mid, t('tam.share.mid'))}${input('high', doc.share.high, t('tam.share.high'))}
+      ${input('source', doc.source, t('tam.source'), 'text')}
+    </div>
+    <p class="scr-muted">${escapeHtml(t('tam.atHorizon', { years: doc.years }))}: <strong>${formatMoney(result.tamAtHorizon)}</strong></p>
+    <table class="scr-conds tp-table" id="tp-tam-table"><thead><tr><th>${escapeHtml(t('tam.scenario'))}</th><th class="tp-num">%</th><th class="tp-num">${escapeHtml(t('tam.revenue'))}</th><th class="tp-num">${escapeHtml(t('tam.cagr', { revenue: formatMoney(revenueNow) }))}</th></tr></thead><tbody>${rows}</tbody></table>
+  </section>`;
+}
+
+function onTamInput(target: any): void {
+  const ticker = tickerPage.ticker;
+  if (!ticker) return;
+  const doc = tamDoc(ticker);
+  const field = String(target.dataset.tam);
+  const raw = String(target.value || '');
+  const n = numberInput(raw);
+  const scaled = n === null ? null : n * Number(target.dataset.scale || 1);
+  if (field === 'market' || field === 'source') doc[field] = raw.trim();
+  else if (field === 'asOf') doc.asOf = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : doc.asOf;
+  else if (field === 'size' || field === 'growth') doc[field] = scaled;
+  else if (field === 'years') { if (n !== null && n >= 1 && n <= 30) doc.years = Math.round(n); }
+  else if (field === 'low' || field === 'mid' || field === 'high') doc.share[field] = scaled;
+  saveResearch('tam', ticker, tamFileText(doc));
+  renderTickerPage();
+}
+
+// ---- research notes and promises ----
+
+function notesTabHtml(ticker: string, meta: any): string {
+  const doc = notesDoc(ticker);
+  const locale = getLocale();
+  const area = (field: string, value: string, label: string, rows: number) => `<label class="tp-note"><span>${escapeHtml(label)}</span><textarea class="scr-input" rows="${rows}" data-notes="${field}">${escapeHtml(value)}</textarea></label>`;
+  const questions = RESEARCH_QUESTIONS.map((q, i) => area(`q${i}`, doc.answers[i] || '', `${i + 1}. ${pick(q, locale)}`, 2)).join('');
+  return `<section class="tp-section" data-tp-section="notes">
+    <div class="tp-row"><h3>${escapeHtml(t('notes.title'))}</h3>${researchToolsHtml('notes', ticker)}</div>
+    <div class="tp-row"><label class="tp-field"><span>${escapeHtml(t('notes.date'))}</span><input type="date" class="scr-input" data-notes="date" value="${escapeHtml(doc.thesisDate)}" /></label></div>
+    ${area('thesis', doc.thesis, t('notes.thesis'), 4)}
+    <h4 id="tp-checklist">${escapeHtml(t('notes.checklist', { filled: notesFilled(doc) }))}</h4>
+    ${questions}
+    ${area('notes', doc.notes, t('notes.notes'), 3)}
+  </section>
+  ${promisesHtml(ticker, meta)}`;
+}
+
+function onNotesInput(target: any, rerender: boolean): void {
+  const ticker = tickerPage.ticker;
+  if (!ticker) return;
+  const doc = notesDoc(ticker);
+  const field = String(target.dataset.notes);
+  const value = String(target.value || '');
+  if (field === 'date') doc.thesisDate = value;
+  else if (field === 'thesis') { doc.thesis = value; if (value.trim() && !doc.thesisDate) doc.thesisDate = today(); }
+  else if (field === 'notes') doc.notes = value;
+  else if (/^q\d$/.test(field)) doc.answers[Number(field.slice(1))] = value;
+  saveResearch('notes', ticker, notesFileText(doc));
+  if (rerender) renderTickerPage();
+}
+
+function promiseCheckText(item: PromiseItem, meta: any): string {
+  if (item.kind !== 'buyback' && item.kind !== 'capex') return t('promises.noCheck');
+  const sec = meta && meta.fundamentals && meta.fundamentals.sec ? meta.fundamentals.sec : null;
+  const quarters = sec && sec.currency === 'USD' ? sec.quarters : null;
+  const p = promiseProgress(item, quarters);
+  if (!p.quarters) return t('promises.noQuarters');
+  const done = p.done === null ? '' : `, ${p.done.toFixed(0)}%`;
+  const millions = (v: number | null) => (v === null ? DASH : `${(v / 1e6).toLocaleString('en-US', { maximumFractionDigits: 1 })}M`);
+  const retired = p.sharesRetired === null ? '' : t('promises.retired', { before: millions(p.sharesBefore), after: millions(p.sharesAfter), retired: millions(p.sharesRetired) });
+  return t('promises.spent', { spent: formatMoney(p.spent), quarters: p.quarters, from: p.from || '', to: p.to || '', done }) + retired;
+}
+
+function promisesHtml(ticker: string, meta: any): string {
+  const doc = promisesDoc(ticker);
+  const rows = doc.items.map((item, i) => `<tr data-promise="${i}">
+      <td><select class="scr-input" data-promise-field="kind" data-pi="${i}">${PROMISE_KINDS.map(k => optionHtml(k, t(`promises.kind.${k}`), item.kind === k)).join('')}</select></td>
+      <td><input type="text" class="scr-input tp-promise-text" data-promise-field="text" data-pi="${i}" value="${escapeHtml(item.text)}" /></td>
+      <td><input type="date" class="scr-input" data-promise-field="announced" data-pi="${i}" value="${escapeHtml(item.announced)}" /></td>
+      <td><input type="date" class="scr-input" data-promise-field="deadline" data-pi="${i}" value="${escapeHtml(item.deadline)}" /></td>
+      <td><input type="number" step="any" class="scr-input scr-num" data-promise-field="amount" data-pi="${i}" value="${item.amount === null ? '' : escapeHtml(String(Number((item.amount / 1e9).toPrecision(10))))}" /></td>
+      <td><select class="scr-input" data-promise-field="status" data-pi="${i}">${PROMISE_STATUSES.map(st => optionHtml(st, t(`promises.status.${st}`), item.status === st)).join('')}</select></td>
+      <td class="tp-diff" data-promise-check="${i}">${escapeHtml(promiseCheckText(item, meta))}</td>
+      <td><button type="button" class="scr-x" data-tp-act="promise-remove" data-pi="${i}" title="${escapeHtml(t('promises.remove'))}" aria-label="${escapeHtml(t('promises.remove'))}">✕</button></td>
+    </tr>`).join('');
+  return `<section class="tp-section" data-tp-section="promises">
+    <div class="tp-row"><h3>${escapeHtml(t('promises.title'))}</h3>${researchToolsHtml('promises', ticker)}</div>
+    ${doc.items.length ? `<div class="scr-table-wrap themed-scroll tp-table-wrap"><table class="scr-conds tp-table" id="tp-promises"><thead><tr><th>${escapeHtml(t('promises.kind'))}</th><th>${escapeHtml(t('promises.text'))}</th><th>${escapeHtml(t('promises.announced'))}</th><th>${escapeHtml(t('promises.deadline'))}</th><th>${escapeHtml(t('promises.amount'))}</th><th>${escapeHtml(t('promises.status'))}</th><th>${escapeHtml(t('promises.check'))}</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : `<p class="scr-hint">${escapeHtml(t('promises.empty'))}</p>`}
+    <div class="scr-ed-foot"><button type="button" class="dd-act" data-tp-act="promise-add">${escapeHtml(t('promises.add'))}</button></div>
+  </section>`;
+}
+
+function editPromises(edit: (doc: PromisesDoc) => void): void {
+  const ticker = tickerPage.ticker;
+  if (!ticker) return;
+  const doc = promisesDoc(ticker);
+  edit(doc);
+  saveResearch('promises', ticker, promisesFileText(doc));
+  renderTickerPage();
+}
+
+function onPromiseInput(target: any): void {
+  const i = Number(target.dataset.pi);
+  const field = String(target.dataset.promiseField);
+  const value = String(target.value || '');
+  editPromises(doc => {
+    const item = doc.items[i];
+    if (!item) return;
+    if (field === 'kind') { const kind = PROMISE_KINDS.filter(k => k === value)[0]; if (kind) item.kind = kind; }
+    else if (field === 'status') { const status = PROMISE_STATUSES.filter(st => st === value)[0]; if (status) item.status = status; }
+    else if (field === 'text') item.text = value.trim();
+    else if (field === 'announced') { if (/^\d{4}-\d{2}-\d{2}$/.test(value)) item.announced = value; }
+    else if (field === 'deadline') item.deadline = /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : '';
+    else if (field === 'amount') { const n = numberInput(value); item.amount = n === null ? null : n * 1e9; }
+  });
+}
+
+/** Loads what the open tab needs (meta.json, the committed research files), then renders again */
+function ensureTickerPageData(ticker: string): boolean {
+  const needsMeta = ['statements', 'charts', 'dcf', 'tam', 'notes'].indexOf(tickerPage.tab) >= 0;
+  const kinds: ResearchKind[] = tickerPage.tab === 'tam' ? ['tam'] : tickerPage.tab === 'notes' ? ['notes', 'promises'] : [];
+  const missingRepo = kinds.filter(kind => !Object.prototype.hasOwnProperty.call(research.repo[kind], ticker));
+  const missingMeta = needsMeta && !metaCache.has(ticker) && !metaTried.has(ticker);
+  if (!missingRepo.length && !missingMeta) return true;
+  const waits: Array<Promise<unknown>> = missingRepo.map(kind => loadRepoResearch(kind, ticker));
+  if (missingMeta) { metaTried.add(ticker); waits.push(loadMeta(ticker)); }
+  void Promise.all(waits).then(() => { if (tickerPage.ticker === ticker) renderTickerPage(); });
+  return false;
 }
 
 // ---- language switch and guide ----
@@ -5615,6 +6180,7 @@ function init(): void {
   restoreScreener();
   restorePeers();
   restoreSimilar();
+  restoreResearch();
   applySortForTab(state.activeTab);
   applyTheme(lsGet(THEME_KEY) === 'dark');
   bindEvents();
@@ -5756,6 +6322,7 @@ Object.assign(window, { state, render, catalogIds, catalogFilterColumns, detecte
 Object.assign(window, { scr, exportPreset, importPresetText, presetShareUrl, presetResults, effectivePreset, switchLanguage, applyClear });
 // peers and ticker page hooks (plan stages 6 and 7, stocks-ticker-uitest.ts)
 Object.assign(window, { tickerPage, openTickerPage, closeTickerPage, exportPeers, importPeersText, addSimilarToPeers, makeFilterFromTicker, screenerUniverse });
+Object.assign(window, { renderTickerPage, dcfView, exportResearch, importResearchText, research, metaCache });
 Object.defineProperty(window, 'lastSimilar', { get: () => lastSimilar });
 Object.defineProperty(window, 'store', { get: () => store });
 // scoring hooks (plan stage 5)
