@@ -1,13 +1,11 @@
 name: GitHub Pages
 
+# Code changes: push to main and manual runs. The data workflow ("Update Stocks data") deploys the
+# site with the fresh feed itself, so there is no workflow_run trigger (it would deploy twice).
 on:
   push:
     branches: [main]
   workflow_dispatch:
-  workflow_run:
-    workflows: ["Update Stocks data"]
-    types: [completed]
-    branches: [main]
 
 permissions:
   contents: read
@@ -20,9 +18,6 @@ concurrency:
 
 jobs:
   deploy:
-    # A push/manual run deploys normally. A workflow_run deployment happens only when the data
-    # workflow succeeded, not after a failed refresh.
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -31,14 +26,31 @@ jobs:
       - name: Checkout latest default branch
         uses: actions/checkout@v7
         with:
-          # Important for workflow_run: the data workflow starts on an older SHA, then commits
-          # refreshed data during the run. Checking out the branch makes Pages build the newly
-          # pushed data commit, not the upstream run's original SHA.
           ref: main
           fetch-depth: 2
       - uses: oven-sh/setup-bun@v2
       - run: bun install -E
+      # api/stocks is not in git: take the feed the data workflow saved last, else the published one,
+      # so a code deploy never replaces the site with one that has no data
+      - name: Restore api/stocks from the Actions cache
+        id: feed-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: api/stocks
+          key: feed-stocks-pages-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: feed-stocks-
+      - name: Download the published api/stocks when the cache is empty
+        if: steps.feed-cache.outputs.cache-matched-key == ''
+        run: bun ./scripts/update-data.ts --restore-from https://daggerok.github.io/Stocks/api/stocks/
       - run: time bun run build-github-pages
+      - name: Refuse a deploy without data
+        run: |
+          bun --eval '
+            const file = "dist/api/stocks/index.json";
+            const rows = (await Bun.file(file).json().catch(() => ({})))?.companies;
+            if (!Array.isArray(rows) || rows.length === 0) { console.error(file + " is missing or lists no companies: not deploying"); process.exit(1); }
+            console.log(file + ": " + rows.length + " companies");
+          '
       - name: Setup Pages
         uses: actions/configure-pages@v6
       - name: Upload artifact

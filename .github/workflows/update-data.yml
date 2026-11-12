@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       max_fetches:
-        description: "Batch size: 0 = all selected stocks, a positive value continues after the committed cursor; blank inherits scripts/update-data.config.json"
+        description: "Batch size: 0 = all selected stocks, a positive value continues after the saved cursor; blank inherits scripts/update-data.config.json"
         required: false
         default: ""
         type: string
@@ -122,7 +122,7 @@ on:
         type: string
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: update-data
@@ -167,27 +167,56 @@ jobs:
             await appendFile(process.env.GITHUB_ENV,
               Object.entries(controls).map(([key, value]) => `${key}=${value}\n`).join(""));
           '
+      # api/stocks is not in git: the updater needs the previous published state (never-shrinking index, rotation cursor)
+      - name: Restore api/stocks from the Actions cache
+        id: feed-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: api/stocks
+          key: feed-stocks-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: feed-stocks-
+      - name: Download the published api/stocks when the cache is empty
+        if: steps.feed-cache.outputs.cache-matched-key == ''
+        run: bun ./scripts/update-data.ts --restore-from https://daggerok.github.io/Stocks/api/stocks/
       - name: Generate api/stocks static data
         run: bun ./scripts/update-data.ts
-      - name: Commit updated data
-        if: ${{ !cancelled() }}
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
+      - name: Save api/stocks to the Actions cache
+        # also after a failed update: every company is either fully updated or kept as before
+        if: ${{ !cancelled() && hashFiles('api/stocks/index.json') != '' }}
+        uses: actions/cache/save@v6
+        with:
+          path: api/stocks
+          key: feed-stocks-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Build the site with the feed
+        run: bun run build-github-pages
+      - name: Refuse a deploy without data
         run: |
-          git add api/stocks
-          if git diff --cached --quiet -- api/stocks; then
-            echo "api/stocks is already up to date"
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "chore(data): update Stocks data"
-          # Runtime-only auth; no token/header stored in URL, file or Git config.
-          push() { git -c credential.helper= -c credential.helper='!f() { if test "$1" = get; then printf "username=x-access-token\npassword=%s\n" "$GITHUB_TOKEN"; fi; }; f' push; }
-          # main may have moved while the updater ran (merges, other pushes): rebase the data commit and retry
-          for attempt in 1 2 3 4; do
-            push && exit 0
-            echo "push rejected: rebasing onto origin/${GITHUB_REF_NAME} (attempt ${attempt})"
-            git pull --rebase origin "${GITHUB_REF_NAME}" || exit 1
-          done
-          exit 1
+          bun --eval '
+            const file = "dist/api/stocks/index.json";
+            const rows = (await Bun.file(file).json().catch(() => ({})))?.companies;
+            if (!Array.isArray(rows) || rows.length === 0) { console.error(file + " is missing or lists no companies: not deploying"); process.exit(1); }
+            console.log(file + ": " + rows.length + " companies");
+          '
+      # no actions/configure-pages here: it needs pages permissions this job does not have, and the artifact does not need it
+      - name: Upload the site as a Pages artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: './dist'
+
+  deploy:
+    needs: update-data
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    # one Pages deployment at a time, shared with github-pages.yml
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

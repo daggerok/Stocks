@@ -7,9 +7,12 @@ One of the app's features lets you rank every stock of Nasdaq, NYSE and Cboe on 
 ```bash
 bunx degit daggerok/Stocks#main ./12345 && cd $_
 bun install
+./scripts/update-data.ts --restore-from
 bun run serve
 open http://0:1234
 ```
+
+`api/stocks` is not in git: `./scripts/update-data.ts --restore-from` downloads the published feed from <https://daggerok.github.io/Stocks/api/stocks/> into an empty `api/stocks` once (see [Publishing](#publishing)). Without it the app builds and shows an empty catalog
 
 `bun run serve` is the Parcel dev server (it copies `api/`, the base presets `src/core/screener/presets`, `user-data/` and the scoring config `src/core/scoring/config.json` as `scoring.json` into `dist` first); `bun run build` writes the production site to `dist` and `bun run build-github-pages` does the same for the `/Stocks/` public URL
 
@@ -56,7 +59,19 @@ bun test
 
 Run `./scripts/update-data.ts -h` (or `--help`) to print every configuration variable with its default and usage examples
 
-Defaults live in `scripts/update-data.config.json` (every control as a string). An explicitly set environment variable overrides the file, even when it is empty. The **Update Stocks data** GitHub Actions workflow uses the same resolver (`resolveControls` in `scripts/update-data.ts`): individual `workflow_dispatch` inputs are blank by default and inherit the file, and the `advanced` input accepts a JSON object with any control (for example `{"VERBOSE":"true"}`). Precedence: file defaults < advanced JSON < nonblank inputs < protected Actions variable or environment. `SEC_UA` and `USE_SYSTEM_CA` are set through `advanced`, and `SEC_UA` is also taken from the protected `SEC_UA` repository Actions variable when it is nonblank. The workflow always writes to `api/stocks` only. All supplied filters use **AND** logic
+### Publishing
+
+The feed is not committed: `api/stocks/` is in `.gitignore` and lives in two places, the published site and the Actions cache. The **Update Stocks data** workflow (weekly and manual)
+
+1. restores the previous `api/stocks` from the Actions cache (`feed-stocks-*`), and when there is none downloads the published one with `./scripts/update-data.ts --restore-from`, so the never-shrinking index and the rotation cursor (`update-state.json`) keep working
+2. runs the updater as before, then saves `api/stocks` to the cache (also after a partly failed run: every stock is either fully updated or kept)
+3. builds the site (`bun run build-github-pages` copies `api` into `dist`), refuses to deploy when `dist/api/stocks/index.json` is missing or lists no companies, and deploys `dist` as a GitHub Pages artifact
+
+A code change pushed to `main` (the **GitHub Pages** workflow) restores the feed the same way before it builds, with the same guard, so it never replaces the site with one that has no data. The cache is evicted after 7 days without use; the site is the fallback, so a lost cache costs one download
+
+Locally the updater still writes to `api/stocks`. `./scripts/update-data.ts --restore-from [url]` fills an empty `api/stocks` from the published feed (or another `.../api/stocks/` URL) and refuses to overwrite a local `index.json`: to start over, delete `api/stocks` first. A local run is not published; run the workflow for that
+
+Defaults live in `scripts/update-data.config.json` (every control as a string). An explicitly set environment variable overrides the file, even when it is empty. The **Update Stocks data** GitHub Actions workflow uses the same resolver (`resolveControls` in `scripts/update-data.ts`): individual `workflow_dispatch` inputs are blank by default and inherit the file, and the `advanced` input accepts a JSON object with any control (for example `{"VERBOSE":"true"}`). Precedence: file defaults < advanced JSON < nonblank inputs < protected Actions variable or environment. `SEC_UA` and `USE_SYSTEM_CA` are set through `advanced`, and `SEC_UA` is also taken from the protected `SEC_UA` repository Actions variable when it is nonblank. The workflow always writes to `api/stocks` only and publishes it as a Pages artifact (see [Publishing](#publishing)). All supplied filters use **AND** logic
 
 ### Watchlist
 
@@ -116,7 +131,7 @@ Caveats:
 - NYSE Arca has no stock rows in the SEC company table; Arca-listed stocks are not covered
 - A stock whose Yahoo quote type is not `EQUITY` (ETFs, funds) is skipped; so is a security without a market cap (SPAC units and warrants, baby bonds, preferred shares) and a CIK that has no SEC company facts and no Yahoo statements (closed-end funds, trusts)
 - SPAC shells and other new listings without a full fiscal year stay in the catalog with unavailable fundamentals; filter them by sector or industry
-- The feed holds about 6,000 stocks, roughly 45 KB each (the SEC quarters and TTM made it about 2.7 times larger) plus a 16 MB `index.json` (one company per line); it stays under the 1 GB GitHub Pages size limit, and a weekly run rewrites most files, so the Git history grows by tens of MB per run
+- The feed holds about 6,000 stocks, roughly 45 KB each (the SEC quarters and TTM made it about 2.7 times larger) plus a 16 MB `index.json` (one company per line); it stays under the 1 GB GitHub Pages size limit; since the feed is published as a Pages artifact and not committed, the Git history no longer grows with every run
 
 ### Update controls
 
@@ -124,7 +139,7 @@ Keep this table, `scripts/update-data.config.json`, `CONTROL_NAMES` and `--help`
 
 | Control | Default | Meaning |
 | --- | --: | --- |
-| `MAX_FETCHES` | `0` (all) | Batch size: with a positive value the updater stops after that many stocks and the next full-universe run continues after the committed cursor in `api/stocks/update-state.json`; empty or `0` is a full pass (a run that hits the 25-minute soft deadline also saves the cursor) |
+| `MAX_FETCHES` | `0` (all) | Batch size: with a positive value the updater stops after that many stocks and the next full-universe run continues after the cursor saved in `api/stocks/update-state.json` (restored with the feed, see [Publishing](#publishing)); empty or `0` is a full pass (a run that hits the 25-minute soft deadline also saves the cursor) |
 | `REQUEST_SLEEP` | `1` | Minimum delay in seconds between request starts of one worker lane, including retries |
 | `CONCURRENCY` | `24` | Number of parallel workers; each worker owns a request lane paced by `REQUEST_SLEEP`; 24 lanes refresh about 6 stocks per second, so the whole universe fits one 25-minute run |
 | `MAX_RETRIES` | `2` | Integer >= 1; retries after the initial request; only network errors and HTTP 403/408/425/429/5xx are retried with exponential backoff |
