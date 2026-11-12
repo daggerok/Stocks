@@ -9,7 +9,7 @@ import {
   changedGroups, cleanTickers, deleteGroup, groupName, groupsOf, importGroups, mergePeers, parsePeersText, PEERS_FILE_NAME, peersExported, peersFileText,
   peersKey, PeersOverlay, setGroup,
 } from './core/screener';
-import { createSimilarContext, filterFromX, SIMILAR_CONFIG, SimilarContext, SimilarResult, similarTo } from './core/similar';
+import { createSimilarContext, filterFromX, SIMILAR_CONFIG_URL, SimilarConfig, SimilarContext, SimilarResult, similarTo, validateSimilarConfig } from './core/similar';
 import {
   cents, dcf, DCF_DEFAULTS, DCF_GAP_PCT, DcfFeedInputs, DcfInput, dcfInputsFromMeta, DcfResult, defaultGrowth, marginOfSafety, SCENARIO_NAMES, scenarioInput, valueGap,
 } from './core/dcf';
@@ -4373,6 +4373,7 @@ let etfBrands: EtfBrand[] = []; // the hub's brands.json (owner answer N5), load
 let etfListError = ''; // why brands.json could not be read; the stocks stay usable
 let screenUniverse: { version: number; universe: Universe } | null = null;
 let scoringConfig: ScoringConfig | null = null; // src/core/scoring/config.json as dist/scoring.json, null until loaded or when invalid
+let similarConfig: SimilarConfig | null = null; // src/core/similar/config.json as dist/similar.json (owner answer N33), null until loaded or when invalid
 let scoringResult: ScoringResult | null = null; // one entry per store row, rebuilt with the universe
 let scoringRows: any[] = []; // the engine rows the result was computed on (the Why and Flags texts read their metrics)
 let scoringTextCache: { sig: string; texts: Record<string, string[]>; tips: Record<string, string[]>; sorts: Record<string, Float64Array> } | null = null;
@@ -4697,8 +4698,21 @@ async function loadScoringConfig(): Promise<void> {
   if (store) rebuildStore(); // new store version: the score columns are filled and their types detected again
 }
 
+/** The Similar to X config next to the page; an invalid or missing one leaves the Similar section with a notice */
+async function loadSimilarConfig(): Promise<void> {
+  try {
+    const config = await fetchJson(SIMILAR_CONFIG_URL);
+    const problems = validateSimilarConfig(config);
+    if (problems.length) throw new Error(problems.slice(0, 5).join('; '));
+    similarConfig = config;
+  } catch (error) {
+    console.warn(`Similar config unavailable: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (tickerPage.ticker) renderTickerPage();
+}
+
 async function loadScreenerData(): Promise<void> {
-  await loadScoringConfig();
+  await Promise.all([loadScoringConfig(), loadSimilarConfig()]);
   try {
     scr.base = await fetchPresetFolder('./presets/');
     scr.status = 'ready';
@@ -5349,7 +5363,7 @@ function peersPanelHtml(): string {
 type TickerPageState = {
   ticker: string | null;
   tab: string;
-  group: string; // a SIMILAR_CONFIG group id or 'custom'
+  group: string; // a similar.json group id or 'custom'
   custom: string[];
   picked: Record<string, boolean>; // hits ticked for "Add to peer group"
   message: string;
@@ -5365,7 +5379,7 @@ let lastSimilar: { ticker: string; metrics: string[]; result: SimilarResult } | 
 function restoreSimilar(): void {
   const saved = lsGetJson(SIMILAR_KEY, null);
   if (!saved || typeof saved !== 'object') return;
-  if (saved.group === 'custom' || SIMILAR_CONFIG.groups.some(g => g.id === saved.group)) tickerPage.group = saved.group;
+  if (typeof saved.group === 'string' && /^[a-z][a-z0-9-]*$/.test(saved.group)) tickerPage.group = saved.group; // checked against similar.json when it is used
   if (Array.isArray(saved.custom)) tickerPage.custom = saved.custom.filter((m: unknown) => typeof m === 'string' && !!REGISTRY.byId[m]);
 }
 
@@ -5382,12 +5396,13 @@ function similarContext(): { universe: Universe; ctx: SimilarContext } | null {
 
 function similarMetrics(): string[] {
   if (tickerPage.group === 'custom') return tickerPage.custom;
-  const group = SIMILAR_CONFIG.groups.filter(g => g.id === tickerPage.group)[0] || SIMILAR_CONFIG.groups[0];
+  if (!similarConfig) return [];
+  const group = similarConfig.groups.filter(g => g.id === tickerPage.group)[0] || similarConfig.groups[0];
   return group.metrics;
 }
 
 function similarGroupTitle(): { en: string; ru: string } {
-  const group = SIMILAR_CONFIG.groups.filter(g => g.id === tickerPage.group)[0];
+  const group = similarConfig ? similarConfig.groups.filter(g => g.id === tickerPage.group)[0] : undefined;
   return group ? group.title : { en: 'Own set', ru: 'Свой набор' };
 }
 
@@ -5424,20 +5439,26 @@ function closeTickerPage(): void {
 function similarTabHtml(ticker: string, index: number): string {
   const ctx = similarContext();
   if (!ctx) return '';
+  const config = similarConfig;
+  if (!config) return `<section class="tp-section" data-tp-section="similar"><h3>${escapeHtml(t('similar.title', { ticker }))}</h3><p class="scr-muted">${escapeHtml(t('similar.noConfig'))}</p></section>`;
+  if (tickerPage.group !== 'custom' && !config.groups.some(g => g.id === tickerPage.group)) tickerPage.group = config.groups[0].id;
   const metrics = similarMetrics();
-  const result = similarTo(ctx.ctx, index, metrics);
+  const result = similarTo(ctx.ctx, index, metrics, config);
   lastSimilar = { ticker, metrics, result };
   const pickedKnown = Object.keys(tickerPage.picked).some(key => result.hits.some(hit => hit.ticker === key));
   if (!pickedKnown) result.hits.slice(0, 3).forEach(hit => { tickerPage.picked[hit.ticker] = true; }); // the three closest are picked to start with
-  const seg = SIMILAR_CONFIG.groups.map(g => ({ id: g.id, label: pick(g.title) })).concat([{ id: 'custom', label: t('similar.custom') }])
+  const seg = config.groups.map(g => ({ id: g.id, label: pick(g.title) })).concat([{ id: 'custom', label: t('similar.custom') }])
     .map(item => `<button type="button" data-tp-act="group" data-value="${item.id}" aria-pressed="${tickerPage.group === item.id}">${escapeHtml(item.label)}</button>`).join('');
   const custom = tickerPage.group === 'custom'
     ? `<input type="text" id="tp-custom" class="scr-input tp-custom" list="tp-metric-list" value="${escapeHtml(tickerPage.custom.join(', '))}" placeholder="${escapeHtml(t('similar.custom.placeholder'))}" title="${escapeHtml(t('similar.custom.tip'))}" aria-label="${escapeHtml(t('similar.custom'))}" />
        <datalist id="tp-metric-list">${REGISTRY.metrics.filter(isNumericMetric).map(m => `<option value="${escapeHtml(m.id)}">${escapeHtml(pick(m.name))}</option>`).join('')}</datalist>`
     : '';
+  const scopeText = result.scope === 'sector'
+    ? t('similar.scope.sector', { sector: result.sector || '', count: result.groupRows })
+    : t('similar.scope.market', { count: result.groupRows, min: config.minSectorRows });
   const info = result.usable.length
-    ? `${t('similar.using', { count: result.usable.length, metrics: result.usable.map(metricLabel).join(', ') })}; ${t('similar.needed', { count: result.needed })}${result.skipped.length ? `; ${t('similar.skipped', { ticker, metrics: result.skipped.map(metricLabel).join(', ') })}` : ''}`
-    : '';
+    ? `${scopeText}; ${t('similar.using', { count: result.usable.length, metrics: result.usable.map(metricLabel).join(', ') })}; ${t('similar.needed', { count: result.needed })}${result.skipped.length ? `; ${t('similar.skipped', { ticker, metrics: result.skipped.map(metricLabel).join(', ') })}` : ''}`
+    : scopeText;
   const s = store;
   const rows = result.hits.map((hit, k) => `<tr data-hit="${escapeHtml(hit.ticker)}">
       <td><input type="checkbox" data-tp-pick="${escapeHtml(hit.ticker)}" ${tickerPage.picked[hit.ticker] ? 'checked' : ''} aria-label="${escapeHtml(`${t('similar.col.pick')} ${hit.ticker}`)}" /></td>
@@ -5452,7 +5473,7 @@ function similarTabHtml(ticker: string, index: number): string {
   const inGroups = groupsOf(scr.peers, ticker);
   const groupSelect = `<select id="tp-peer-group" class="scr-input" aria-label="${escapeHtml(t('similar.addTo'))}">${names.map(name => optionHtml(name, name, inGroups.indexOf(name) >= 0 && inGroups[0] === name)).join('')}${optionHtml('', t('similar.groupNew'), !names.length)}</select>
     <input type="text" id="tp-peer-name" class="scr-input" placeholder="${escapeHtml(t('similar.groupName'))}" aria-label="${escapeHtml(t('similar.groupName'))}" value="${escapeHtml(names.length ? '' : `${ticker} peers`)}" />`;
-  const pct = Math.round(SIMILAR_CONFIG.tolerance * 100);
+  const pct = Math.round(config.tolerance * 100);
   return `<section class="tp-section" data-tp-section="similar">
     <div class="tp-row"><h3>${escapeHtml(t('similar.title', { ticker }))}</h3>
       <span class="scr-label">${escapeHtml(t('similar.group'))}</span><div class="scr-seg" role="group">${seg}</div>${custom}</div>
@@ -5527,7 +5548,8 @@ function makeFilterFromTicker(): string {
   const universe = screenerUniverse();
   const index = ticker && s ? s.keyIndex.get(ticker) : undefined;
   if (!ticker || !universe || index === undefined) return '';
-  const preset = filterFromX(universe.rows[index], similarMetrics(), { group: tickerPage.group, groupTitle: similarGroupTitle(), taken: takenIds() });
+  if (!similarConfig) return '';
+  const preset = filterFromX(universe.rows[index], similarMetrics(), { group: tickerPage.group, tolerance: similarConfig.tolerance, groupTitle: similarGroupTitle(), taken: takenIds() });
   if (!preset) return '';
   scr.browserOwn = scr.browserOwn.concat([preset]);
   persistOwn();

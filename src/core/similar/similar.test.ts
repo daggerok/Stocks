@@ -2,7 +2,10 @@
 import { describe, expect, test } from 'bun:test';
 import { createRegistry } from '../metrics';
 import { ScreenerRow, validatePreset } from '../screener';
-import { createSimilarContext, filterFromX, SIMILAR_CONFIG, similarTo, typePercentiles } from '.';
+import { createSimilarContext, filterFromX, type SimilarConfig, similarTo, typePercentiles, validateSimilarConfig } from '.';
+import { loadSimilarConfig } from './load-config';
+
+const SIMILAR_CONFIG = loadSimilarConfig();
 
 const row = (ticker: string, metrics: Record<string, unknown>, type: ScreenerRow['type'] = 'stock'): ScreenerRow => ({ ticker, type, sector: null, industry: null, isMine: false, size: null, metrics });
 const BUSINESS = SIMILAR_CONFIG.groups.filter((g) => g.id === 'business')[0].metrics;
@@ -32,7 +35,7 @@ describe('similar', () => {
 
   test('distance by hand: root mean square of the percentile gaps, similarity = 100 - distance', () => {
     const rows = [row('X', { pe: 10, pb: 1 }), row('A', { pe: 20, pb: 2 }), row('B', { pe: 30, pb: 3 }), row('C', { pe: 40, pb: null }), row('D', { pe: 50, pb: 5 }), row('E', { pe: 60, pb: 4 })];
-    const r = similarTo(createSimilarContext(rows), 0, ['pe', 'pb']);
+    const r = similarTo(createSimilarContext(rows), 0, ['pe', 'pb'], SIMILAR_CONFIG);
     // pe has 6 values: X 0, A 16.67, B 33.33, C 50, D 66.67, E 83.33; pb has 5 (C is empty): X 0, A 20, B 40, E 60, D 80
     const byTicker: Record<string, number> = {};
     r.hits.forEach((h) => { byTicker[h.ticker] = h.distance; });
@@ -48,7 +51,7 @@ describe('similar', () => {
   });
 
   test('V in the business group: MA is the closest, the distance excludes empty metrics pair by pair, ETFs never match', () => {
-    const r = similarTo(createSimilarContext(UNIVERSE), 0, BUSINESS);
+    const r = similarTo(createSimilarContext(UNIVERSE), 0, BUSINESS, SIMILAR_CONFIG);
     expect(r.usable).toEqual(BUSINESS);
     expect(r.needed).toBe(5); // 9 usable metrics x 0.5, rounded up
     expect(r.hits[0].ticker).toBe('MA');
@@ -61,7 +64,7 @@ describe('similar', () => {
   });
 
   test('top-10 order, three main differences with X and Y values, the half rule', () => {
-    const r = similarTo(createSimilarContext(UNIVERSE), 0, BUSINESS);
+    const r = similarTo(createSimilarContext(UNIVERSE), 0, BUSINESS, SIMILAR_CONFIG);
     expect(r.hits.length).toBeLessThanOrEqual(SIMILAR_CONFIG.top);
     expect(r.hits.map((h) => h.distance)).toEqual(r.hits.map((h) => h.distance).slice().sort((a, b) => a - b));
     const f = r.hits.filter((h) => h.ticker === 'F')[0];
@@ -69,20 +72,20 @@ describe('similar', () => {
     expect(f.differences.map((d) => Math.abs(d.gap))).toEqual(f.differences.map((d) => Math.abs(d.gap)).slice().sort((a, b) => b - a));
     expect(f.differences[0]).toMatchObject({ x: expect.any(Number), y: expect.any(Number) });
     // a two-metric pair: X has 2 usable metrics, a candidate with 1 in common passes (ceil(2 x 0.5) = 1)
-    const small = similarTo(createSimilarContext([row('X', { pe: 10, pb: 1 }), row('A', { pe: 11, pb: null }), row('B', { pe: 30, pb: 5 }), row('C', { pe: 20, pb: 2 }), row('D', { pe: 40, pb: 3 }), row('E', { pe: 50, pb: 4 })]), 0, ['pe', 'pb']);
+    const small = similarTo(createSimilarContext([row('X', { pe: 10, pb: 1 }), row('A', { pe: 11, pb: null }), row('B', { pe: 30, pb: 5 }), row('C', { pe: 20, pb: 2 }), row('D', { pe: 40, pb: 3 }), row('E', { pe: 50, pb: 4 })]), 0, ['pe', 'pb'], SIMILAR_CONFIG);
     expect(small.needed).toBe(1);
     expect(small.hits[0].ticker).toBe('A');
   });
 
   test('unknown, non-numeric and empty metrics are skipped; X without any usable metric has no hits', () => {
-    const r = similarTo(createSimilarContext(UNIVERSE), 2, ['netMargin', 'grossMargin', 'sector', 'nope']);
+    const r = similarTo(createSimilarContext(UNIVERSE), 2, ['netMargin', 'grossMargin', 'sector', 'nope'], SIMILAR_CONFIG);
     expect(r.usable).toEqual(['netMargin']);
     expect(r.skipped).toEqual(['grossMargin', 'sector', 'nope']);
-    expect(similarTo(createSimilarContext(UNIVERSE), 2, ['roic']).hits).toEqual([]);
+    expect(similarTo(createSimilarContext(UNIVERSE), 2, ['roic'], SIMILAR_CONFIG).hits).toEqual([]);
   });
 
   test('filter from X: a valid own preset of range conditions within ±20%, empty metrics left out', () => {
-    const p = filterFromX(UNIVERSE[2], ['netMargin', 'grossMargin', 'revenueGrowth3y'], { group: 'business', groupTitle: { en: 'Business', ru: 'Бизнес' }, taken: ['like-axp-business'] });
+    const p = filterFromX(UNIVERSE[2], ['netMargin', 'grossMargin', 'revenueGrowth3y'], { group: 'business', tolerance: 0.2, groupTitle: { en: 'Business', ru: 'Бизнес' }, taken: ['like-axp-business'] });
     if (!p) throw new Error('no preset');
     expect(validatePreset(p, createRegistry())).toEqual([]);
     expect(p.id).toBe('like-axp-business-2');
@@ -90,9 +93,37 @@ describe('similar', () => {
     // 26 x 0.8 = 20.8, 26 x 1.2 = 31.2; 6 x 0.8 = 4.8, 6 x 1.2 = 7.2
     expect(p.conditions.map((c) => [c.metric, c.value])).toEqual([['netMargin', [20.8, 31.2]], ['revenueGrowth3y', [4.8, 7.2]]]);
     // a negative value keeps min below max: -3 -> [-3.6, -2.4]; 0 stays [0, 0]
-    const neg = filterFromX(row('Z', { revenueGrowth3y: -3, epsGrowth3y: 0 }), ['revenueGrowth3y', 'epsGrowth3y'], { group: 'custom' });
+    const neg = filterFromX(row('Z', { revenueGrowth3y: -3, epsGrowth3y: 0 }), ['revenueGrowth3y', 'epsGrowth3y'], { group: 'custom', tolerance: 0.2 });
     expect(neg && neg.conditions.map((c) => c.value)).toEqual([[-3.6, -2.4], [0, 0]]);
-    expect(filterFromX(row('Y', {}), ['pe'], { group: 'custom' })).toBeNull();
+    expect(filterFromX(row('Y', {}), ['pe'], { group: 'custom', tolerance: 0.2 })).toBeNull();
+  });
+
+  test('a sector with at least minSectorRows rows compares inside itself, a smaller one with the whole market (owner answer N31)', () => {
+    const at = (ticker: string, sector: string, pe: number): ScreenerRow => ({ ...row(ticker, { pe }), sector });
+    // sector Big has 5 rows (= minSectorRows 5 here), Small has 2; all P/E values: Big 10, 20, 30, 40, 50; Small 22, 48
+    const rows = [at('X', 'Big', 10), at('B2', 'Big', 20), at('B3', 'Big', 30), at('B4', 'Big', 40), at('B5', 'Big', 50), at('S1', 'Small', 22), at('S2', 'Small', 48)];
+    const config: SimilarConfig = { ...SIMILAR_CONFIG, minSectorRows: 5 };
+    const ctx = createSimilarContext(rows);
+    const big = similarTo(ctx, 0, ['pe'], config);
+    expect([big.scope, big.sector, big.groupRows]).toEqual(['sector', 'Big', 5]);
+    expect(big.hits.map((h) => h.ticker)).toEqual(['B2', 'B3', 'B4', 'B5']); // S1 (22) is close to X but outside the sector
+    expect(big.hits[0].differences[0]).toMatchObject({ xPct: 0, yPct: 20 }); // percentiles inside Big: 0, 20, 40, 60, 80
+    const small = similarTo(ctx, 5, ['pe'], config);
+    expect([small.scope, small.groupRows]).toEqual(['market', 7]);
+    expect(small.hits[0].ticker).toBe('B2'); // market percentiles: S1 22 -> 28.6, B2 20 -> 14.3, B3 30 -> 42.9
+    expect(similarTo(ctx, 0, ['pe'], { ...config, minSectorRows: 6 }).scope).toBe('market');
+    expect(Array.from(typePercentiles(ctx, 'pe', 'stock', 'Small')).filter((v) => !isNaN(v))).toEqual([]); // 2 values < minGroup 5
+  });
+
+  test('config.json is valid and the validator finds broken entries (owner answer N33)', () => {
+    expect(validateSimilarConfig(SIMILAR_CONFIG)).toEqual([]);
+    const broken = JSON.parse(JSON.stringify(SIMILAR_CONFIG)) as SimilarConfig;
+    broken.minSectorRows = 0;
+    broken.minShare = 2;
+    broken.groups.push({ id: 'custom', title: { en: 'x', ru: '' }, metrics: ['sector', 'nope'] });
+    const errors = validateSimilarConfig(broken).join('\n');
+    ['minSectorRows must be a whole number >= 1', 'minShare must be above 0', 'id must be lowercase letters, digits and hyphens, not custom', 'title needs en and ru', 'sector is not a numeric registry metric', 'nope is not a numeric registry metric']
+      .forEach((e) => expect(errors).toContain(e));
   });
 
   test('the config lists numeric registry metrics only', () => {
