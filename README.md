@@ -143,6 +143,16 @@ git diff --check
 
 `bun test` also covers the README controls table, the config file, `--help` and the workflow
 
+### Screener core and user data
+
+`src/core/` is the screener core, independent of the UI and free of DOM imports, so the browser app and Bun scripts share it; each module keeps its `*.test.ts` next to the code and `bun test` runs them too:
+
+- `src/core/i18n/`: `t(key, params)` over the `en` and `ru` dictionaries, English fallback, the chosen language remembered in the browser
+- `src/core/metrics/`: the metric registry, one entry for every key of `metrics` in this feed and in the 29 ETF brand feeds, with formula, unit, basis, source, direction and a name, short text and guide article in English and Russian; `bun src/core/metrics/check-feeds.ts api/stocks ../<Brand>/api` lists live feed keys without an entry
+- `src/core/screener/`: the engine (operators `>`, `>=`, `<`, `<=`, `=`, `range`, `in`; absolute, market, sector, industry, peers and history scopes with percentiles; missing as fail or skip; soft "N of M" mode; and, or, not expressions; funnel and intersections), the row adapter for stocks and ETFs, and the base presets in `presets/*.json`; `bun src/core/screener/bench.ts` measures it on a synthetic universe of 10,000 rows
+
+`user-data/` holds the owner's public presets, peer groups, notes, TAM scenarios and promises, committed from browser exports (see `user-data/README.md`)
+
 ## Exchanges table
 
 | Exchange | Where to get the data |

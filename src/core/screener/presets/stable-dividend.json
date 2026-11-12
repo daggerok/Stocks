@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "id": "stable-dividend",
+  "title": {
+    "en": "Stable dividend",
+    "ru": "Стабильные дивидендные"
+  },
+  "description": {
+    "en": "Reliable payers: yield of 2% or more, dividend growing at least 5% a year over 5 years, at most 70% of free cash flow paid out, net debt at most 2.5 years of EBITDA, ROIC of 10% or more and a beta of 1 or less. An empty FCF payout (FCF not positive) fails",
+    "ru": "Надёжные плательщики: доходность от 2%, дивиденд растёт не меньше чем на 5% в год за 5 лет, на дивиденды уходит не больше 70% свободного денежного потока, чистый долг не больше 2,5 годовых EBITDA, ROIC от 10% и бета не выше 1. Пустой FCF payout (FCF не положителен) не проходит"
+  },
+  "appliesTo": [
+    "stock"
+  ],
+  "match": "all",
+  "conditions": [
+    {
+      "metric": "dividendYield",
+      "op": ">=",
+      "value": 2,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "dividendGrowth5y",
+      "op": ">=",
+      "value": 5,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "fcfPayout",
+      "op": "<=",
+      "value": 70,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "netDebtToEbitda",
+      "op": "<=",
+      "value": 2.5,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "roic",
+      "op": ">=",
+      "value": 10,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "beta",
+      "op": "<=",
+      "value": 1,
+      "scope": "absolute",
+      "missing": "fail"
+    }
+  ]
+}

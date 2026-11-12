@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "id": "volatile-swings",
+  "title": {
+    "en": "Volatile swings",
+    "ru": "Волатильные свинги"
+  },
+  "description": {
+    "en": "Swing candidates near the bottom of their range: volatility of 45% a year or more, size of $2B or more, quick ratio of 1 or more (skipped for ETFs), at least 30% below the all-time high and in the lower quarter of the 52-week range. Volatility and the all-time high arrive with the price metrics of stage 1",
+    "ru": "Кандидаты для свинга у низа диапазона: волатильность от 45% в год, размер от $2 млрд, быстрая ликвидность от 1 (у ETF пропускается), цена минимум на 30% ниже исторического максимума и в нижней четверти годового диапазона. Волатильность и исторический максимум появятся с ценовыми метриками этапа 1"
+  },
+  "appliesTo": [
+    "stock",
+    "etf"
+  ],
+  "match": "all",
+  "conditions": [
+    {
+      "metric": "volatility1y",
+      "op": ">=",
+      "value": 45,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "size",
+      "op": ">=",
+      "value": 2000000000,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "quickRatio",
+      "op": ">=",
+      "value": 1,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "pctFromAth",
+      "op": "<=",
+      "value": -30,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "range52w",
+      "op": "<=",
+      "value": 25,
+      "scope": "absolute",
+      "missing": "fail"
+    }
+  ]
+}
