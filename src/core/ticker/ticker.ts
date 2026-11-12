@@ -182,16 +182,19 @@ export type PeerRow = {
 };
 
 /**
- * One row of the peers table from an index row: market cap and the multiples as published (USD for every issuer), revenue =
- * market cap / P/S, net income and free cash flow = that revenue × the net and FCF margins (so a loss stays visible)
+ * One row of the peers table from an index row: market cap and the multiples as published (USD for every issuer); revenue, net
+ * income and free cash flow are the published TTM amounts in USD (revenueTtm, netIncomeTtm, fcfTtm; owner answer N38). A row
+ * published before them, or without an SEC layer, falls back to revenue = market cap / P/S and net income and FCF = that revenue
+ * × the net and FCF margins (so a loss stays visible)
  */
 export function peerRow(row: Json): PeerRow {
   const m: Json = row && row.metrics ? row.metrics : {};
   const cap = num(m.marketCap);
   const ps = num(m.ps);
-  const revenue = cap !== null && ps !== null && ps > 0 ? cap / ps : null;
-  const part = (margin: unknown) => { const x = num(margin); return revenue !== null && x !== null ? (revenue * x) / 100 : null; };
-  return { ticker: String(row.ticker), marketCap: cap, revenue, netIncome: part(m.netMargin), fcf: part(m.fcfMargin), pe: num(m.pe), peg: num(m.peg), pegHist: num(m.pegHist), pb: num(m.pb), ps };
+  const derived = cap !== null && ps !== null && ps > 0 ? cap / ps : null;
+  const part = (margin: unknown) => { const x = num(margin); return derived !== null && x !== null ? (derived * x) / 100 : null; };
+  const revenue = num(m.revenueTtm) ?? derived;
+  return { ticker: String(row.ticker), marketCap: cap, revenue, netIncome: num(m.netIncomeTtm) ?? part(m.netMargin), fcf: num(m.fcfTtm) ?? part(m.fcfMargin), pe: num(m.pe), peg: num(m.peg), pegHist: num(m.pegHist), pb: num(m.pb), ps };
 }
 
 /**

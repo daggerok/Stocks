@@ -50,8 +50,10 @@ describe('ticker', () => {
     expect(chartScale([{ key: 'x', label: { en: 'x', ru: 'x' }, points: [{ period: '2025', value: null }] }])).toEqual({ min: 0, max: 1 });
   });
 
-  test('peers table rows: revenue = cap / P/S, NI and FCF from the margins; group members first, else the industry by cap', () => {
-    expect(peerRow({ ticker: 'V', metrics: { marketCap: 600, ps: 20, netMargin: 50, fcfMargin: -10, pe: 30, peg: 2, pegHist: null, pb: 12 } }))
+  test('peers table rows: the published TTM amounts (N38), else revenue = cap / P/S and NI and FCF from the margins; group members first, else the industry by cap', () => {
+    expect(peerRow({ ticker: 'GOOGL', metrics: { marketCap: 3500, ps: 8, netMargin: 30, fcfMargin: 20, revenueTtm: 430, netIncomeTtm: 235.7, fcfTtm: -5, pe: 15 } }))
+      .toMatchObject({ revenue: 430, netIncome: 235.7, fcf: -5 }); // not 437.5, 131.25 and 87.5 from the margins
+    expect(peerRow({ ticker: 'V', metrics: { marketCap: 600, ps: 20, netMargin: 50, fcfMargin: -10, pe: 30, peg: 2, pegHist: null, pb: 12, revenueTtm: null } }))
       .toEqual({ ticker: 'V', marketCap: 600, revenue: 30, netIncome: 15, fcf: -3, pe: 30, peg: 2, pegHist: null, pb: 12, ps: 20 });
     expect(peerRow({ ticker: 'X', metrics: { marketCap: 600, ps: null, netMargin: 5 } }).netIncome).toBeNull();
     const rows = [

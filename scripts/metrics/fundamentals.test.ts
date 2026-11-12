@@ -1,7 +1,7 @@
 /// <reference types="bun" />
 import { describe, expect, test } from 'bun:test';
 import type { SecFundamentals } from '../sec/companyfacts';
-import { altman, capMultiples, FUNDAMENTAL_METRIC_KEYS, fundamentalMetrics, ownEbitdaMetrics, piotroski, slope, staleAnnualTtm, stdev, withSectorExceptions } from './fundamentals';
+import { altman, capMultiples, FUNDAMENTAL_METRIC_KEYS, fundamentalMetrics, ownEbitdaMetrics, piotroski, slope, staleAnnualTtm, stdev, ttmAmounts, withSectorExceptions } from './fundamentals';
 
 type Row = Record<string, number | null>;
 /** Fiscal years newest first, one per calendar year ending 2025-12-31, plus TTM values */
@@ -118,6 +118,13 @@ describe('sec layer defaults', () => {
     expect(ownEbitdaMetrics(sec([GOOD], { operatingIncome: 80, da: 20, debt: null, cash: 150 }), 1000).evEbitda).toBeNull();
     // a REIT without operating income: no EBITDA, so nothing even with debt 0
     expect(ownEbitdaMetrics(sec([GOOD], { operatingIncome: null, da: 20, debt: 0, cash: 10 }), 1000)).toEqual({ evEbitda: null, fcfToEbitda: null, netDebtToEbitda: null });
+  });
+
+  test('absolute TTM amounts in USD (N38): revenue, net income, FCF = CFO - capex; a loss stays negative, no layer gives null', () => {
+    expect(ttmAmounts(sec([GOOD], { revenue: 430.4, netIncome: -12.6, cfo: 90, capex: 100 }))).toEqual({ revenueTtm: 430, netIncomeTtm: -13, fcfTtm: -10 });
+    expect(ttmAmounts(sec([GOOD], { revenue: 1, cfo: 5 }))).toEqual({ revenueTtm: 1, netIncomeTtm: null, fcfTtm: null });
+    expect(ttmAmounts(null)).toEqual({ revenueTtm: null, netIncomeTtm: null, fcfTtm: null });
+    expect(withSectorExceptions({ fcfTtm: 5, revenueTtm: 9 }, 'Banks - Regional')).toEqual({ fcfTtm: null, revenueTtm: 9 });
   });
 
   test('stale annual TTM (N29): an annual-only TTM ending more than 12 months before the last close; a quarterly TTM never', () => {

@@ -4,7 +4,7 @@
 import { appendFile, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { epsCagr3y, ESTIMATE_METRIC_KEYS, estimateMetrics, parseEstimates, type Estimates } from './metrics/estimates';
-import { capMultiples, FUNDAMENTAL_METRIC_KEYS, fundamentalMetrics, isFinancial, ownEbitdaMetrics, STALE_TTM_MULTIPLE_KEYS, staleAnnualTtm, withSectorExceptions } from './metrics/fundamentals';
+import { capMultiples, FUNDAMENTAL_METRIC_KEYS, fundamentalMetrics, isFinancial, ownEbitdaMetrics, STALE_TTM_MULTIPLE_KEYS, staleAnnualTtm, TTM_AMOUNT_KEYS, ttmAmounts, withSectorExceptions } from './metrics/fundamentals';
 import { HISTORY_METRIC_KEYS, historyMetrics } from './metrics/history';
 import { DIVIDEND_HISTORY_KEYS, dividendHistory } from './metrics/dividends';
 import { pctFrom52wHigh, swingMetrics } from './metrics/swing';
@@ -849,8 +849,8 @@ const METRIC_KEYS = [
   'perfYtd', 'perf1y', 'perf3y', 'perf5y', 'perf10y', 'ytd', 'tr1y', 'tr3y', 'tr5y', 'tr10y', 'cagr3y', 'cagr5y', 'cagr10y', 'siAnn',
   // price and swing metrics (scripts/metrics/swing.ts): split-adjusted, not dividend-adjusted daily closes of the Yahoo chart
   'pctFrom52wHigh', 'athPrice', 'athDate', 'athBasis', 'pctFromAth', 'volatility1y', 'sigmaFromMean60d', 'high60d', 'low60d',
-  // SEC quarters and TTM (scripts/metrics/fundamentals.ts, plan 1.5 and 1.7)
-  ...FUNDAMENTAL_METRIC_KEYS,
+  // SEC quarters and TTM (scripts/metrics/fundamentals.ts, plan 1.5 and 1.7), absolute TTM amounts in USD (owner answer N38)
+  ...FUNDAMENTAL_METRIC_KEYS, ...TTM_AMOUNT_KEYS,
   // Yahoo earningsTrend and the two PEGs (scripts/metrics/estimates.ts), own 5-year history (scripts/metrics/history.ts)
   ...ESTIMATE_METRIC_KEYS, ...HISTORY_METRIC_KEYS,
   // foreign issuers (plan 1.1 and 1.3): Yahoo country, the ADR flag and an annual-only TTM
@@ -1209,7 +1209,7 @@ export async function processCompany(listing: Listing, config: UpdaterConfig, pr
     country,
     ttmIsAnnual: secLayer && typeof secLayer.ttmIsAnnual === 'boolean' ? secLayer.ttmIsAnnual : null,
   };
-  const parts: JsonRecord = { ...fundamentals, ...(market.valuation ?? {}), ...(market.returns ?? {}), ...(market.dividends ?? {}), ...(market.swing ?? {}), ...derived, ...multiples, ...ownEbitdaMetrics(foreignLayer ? marketLayer : secLayer, marketCap), ...estimates, ...history5y, ...issuer, price: market.price, week52High: market.week52High, week52Low: market.week52Low, range52w: range52wPosition(market.price, market.week52Low, market.week52High), pctFrom52wHigh: pctFrom52wHigh(market.price, market.week52High) };
+  const parts: JsonRecord = { ...fundamentals, ...(market.valuation ?? {}), ...(market.returns ?? {}), ...(market.dividends ?? {}), ...(market.swing ?? {}), ...derived, ...multiples, ...ownEbitdaMetrics(foreignLayer ? marketLayer : secLayer, marketCap), ...ttmAmounts(marketLayer), ...estimates, ...history5y, ...issuer, price: market.price, week52High: market.week52High, week52Low: market.week52Low, range52w: range52wPosition(market.price, market.week52Low, market.week52High), pctFrom52wHigh: pctFrom52wHigh(market.price, market.week52High) };
   if (staleTtm) STALE_TTM_MULTIPLE_KEYS.forEach((k) => { parts[k] = null; });
   if (parts.marketCap === undefined || parts.marketCap === null) parts.marketCap = null;
   const metrics = withSectorExceptions(completeMetrics(parts, market.asOfDate ?? null), industry) as JsonRecord;
