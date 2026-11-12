@@ -155,6 +155,14 @@ function buildColumns(): Col[] {
   add('range52w', '52W Range', 'Market', 'pct', '52W Range - where the price sits between the 52-week low (0%) and high (100%); sorts by that position. The range is the intraday 52-week low and high (Yahoo), the price the last close.');
   add('week52High', '52W High', 'Market', 'price', '52-week high price.');
   add('week52Low', '52W Low', 'Market', 'price', '52-week low price.');
+  // price and swing metrics (scripts/metrics/swing.ts): split-adjusted, not dividend-adjusted daily closes
+  add('pctFrom52wHigh', 'From 52W High', 'Swings', 'pct', 'From 52W High - (price / 52-week high - 1) x 100: 0 at the high, -20 means 20% below it.');
+  add('pctFromAth', 'From ATH', 'Swings', 'pct', 'From ATH - (price / all-time high close - 1) x 100. The all-time high is the highest daily close of the whole history, split adjusted, not dividend adjusted.');
+  add('athPrice', 'ATH', 'Swings', 'price', 'ATH - the highest daily close of the whole price history (split adjusted, not dividend adjusted); athDate and athBasis in the feed say when and over which history.');
+  add('volatility1y', 'Volatility 1Y', 'Swings', 'pct', 'Volatility 1Y - sample standard deviation of the last 252 daily log returns x sqrt(252) x 100. Blank with less than a year of closes.');
+  add('sigmaFromMean60d', 'Sigma 60D', 'Swings', 'x', 'Sigma from 60-day mean - (price - mean of the last 60 closes) / their standard deviation. Around -2 stretched down (buy zone), around +2 stretched up (sell zone).');
+  add('high60d', '60D High', 'Swings', 'price', '60D High - the highest of the last 60 daily closes: top of the latest swing.');
+  add('low60d', '60D Low', 'Swings', 'price', '60D Low - the lowest of the last 60 daily closes: bottom of the latest swing.');
   add('sharesOutstanding', 'Shares', 'Market', 'int', 'Shares outstanding.');
   add('basisCls', 'Source', 'Data', 'basis', 'Source of the fundamentals: SEC = EDGAR XBRL annual filings; SEC+Y = SEC with gaps filled from Yahoo; Yahoo = Yahoo annual statements only. Hover a badge for the full text.');
   add('fyTs', 'FY As Of', 'Data', 'date', 'fundamentalsAsOf - the end of the latest fiscal year the fundamentals describe.');
@@ -4287,7 +4295,7 @@ const ETF_CONCURRENCY = 6;
 const TYPE_FILTERS: TypeFilter[] = ['stock', 'etf', 'all'];
 const SCREENER_OPS: Op[] = ['>', '>=', '<', '<=', '=', 'range', 'in'];
 const MISSING_MODES: Missing[] = ['fail', 'skip'];
-const GUIDE_SECTIONS = ['presets', 'scopes', 'missing', 'own'];
+const GUIDE_SECTIONS = ['presets', 'scopes', 'missing', 'swings', 'own'];
 
 const scr: ScreenerState = {
   type: 'stock', any: false, chips: {}, drafts: {}, expanded: null, base: [], repoOwn: [], browserOwn: [], lastExported: {}, peers: {},

@@ -9,7 +9,7 @@ import { pathToFileURL } from 'node:url';
 import {
   annualSeries, buildAnnualRows, compactIndexText, completeMetrics, CONTROL_NAMES, dividendMetrics, fundamentalsMetrics, installSystemCa, isCertError, mergeAnnual,
   isOperatingTicker, minusMonths, normalizeTicker, parseChart, periodEve, parseRange, parseRanges, parseRetryAfter, parseSecTickers, parseSummary, parseYahooAnnual, priceReturns, readConfig, resolveControls,
-  indexDocument, parseWatchlist, range52wPosition, pruneCompanies, resolveWatchlist, run, runtimeControls, sampleHistory, useApiRoot, useWatchlistDir, valuationMetrics, type ChartDay, type Snapshot,
+  indexDocument, parseWatchlist, range52wPosition, pruneCompanies, resolveWatchlist, run, runtimeControls, sampleHistory, useApiRoot, useWatchlistDir, valuationMetrics, withMetricKeys, type ChartDay, type Snapshot,
 } from './update-data.ts';
 
 // ---------------------------------------------------------------------------
@@ -286,6 +286,13 @@ describe('metrics', () => {
     expect(Object.keys(b)).toContain('range52w');
     expect([range52wPosition(150, 100, 200), range52wPosition(100, 100, 200), range52wPosition(201, 100, 200), range52wPosition(99, 100, 200)]).toEqual([50, 0, 100, 0]);
     expect([range52wPosition(150, null, 200), range52wPosition(150, 200, 200), range52wPosition(null, 100, 200)]).toEqual([null, null, null]);
+    // a kept row published before the swing metrics existed gets them as null, in the same key order as a fresh row
+    const old: Record<string, unknown> = { ...a };
+    delete old.athPrice;
+    delete old.volatility1y;
+    const kept = withMetricKeys({ ticker: 'OLD', metrics: old });
+    expect(Object.keys(kept.metrics)).toEqual(Object.keys(a));
+    expect([kept.metrics.athPrice, kept.metrics.volatility1y, kept.metrics.pe]).toEqual([null, null, 2]);
   });
 
   test('published history: monthly rows with daily rows for the last 31 days, volume summed, nothing lost', () => {
@@ -374,6 +381,10 @@ describe('pipeline', () => {
     const metrics = index.companies[0].metrics;
     for (const key of ['marketCap', 'pe', 'forwardPe', 'ps', 'forwardPs', 'pFcf', 'evEbitda', 'fcfToEbitda', 'dividendYield', 'roic', 'revenueGrowth', 'tr1y', 'perf1y']) expect(metrics).toHaveProperty(key);
     expect(metrics.forwardPs).toBe(2);
+    // swing metrics from the full daily series: closes 50 + 0.05 i (i = 0..399), price 70; the last 60 closes are 67..69.95
+    expect([metrics.athPrice, metrics.athDate, metrics.athBasis, metrics.pctFromAth]).toEqual([69.95, '2023-04-13', 'daily closes since 2020-01-02', 0.07]);
+    expect([metrics.high60d, metrics.low60d, metrics.sigmaFromMean60d]).toEqual([69.95, 67, 1.75]);
+    expect(metrics.volatility1y).toBeGreaterThan(0);
     expect(metrics.performanceAsOf).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect([...(await readdir(join(dir, 'companies', 'AAA', 'history')))].sort()).toEqual(['001.json']);
     expect((await readdir(join(dir, 'companies'))).sort()).toEqual(['AAA', 'BBB']); // skipped stocks (EEE no market cap, FFF no SEC facts) leave no history behind
@@ -510,6 +521,12 @@ describe('pipeline', () => {
     const bbb = JSON.parse(await readText('companies/BBB/meta.json'));
     expect(bbb.fundamentalsBasis).toMatch(/^SEC EDGAR/); // the stock whose sources answered is not touched
     expect([bbb.metrics.week52Low, bbb.metrics.week52High]).toEqual([null, null]); // an honest null from a working quoteSummary stays null
+    expect([bbb.metrics.pctFrom52wHigh, after.metrics.pctFrom52wHigh]).toEqual([null, 0.07]); // 70 / 69.95 (the closes) - 1
+    // SKIP_YAHOO: the swing metrics travel with the published market data, nothing is recomputed or lost
+    const swingKeys = ['athPrice', 'athDate', 'athBasis', 'pctFromAth', 'volatility1y', 'sigmaFromMean60d', 'high60d', 'low60d', 'pctFrom52wHigh'];
+    const pick = (m: any) => swingKeys.map((k) => m[k]);
+    expect(await run(controls({ SKIP_YAHOO: 'true' }))).toMatchObject({ updated: 2 }); // the unpublished candidates have no market data to keep and fail
+    expect(pick(JSON.parse(await readText('companies/AAA/meta.json')).metrics)).toEqual(pick(after.metrics));
   });
 });
 
