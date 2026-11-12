@@ -120,9 +120,12 @@ describe('dcf', () => {
     expect(defaultGrowth(null)).toEqual({ g1: 5, g2: 2.5 });
     const meta = { fundamentals: { sec: { currency: 'USD', ttm: { end: '2026-09-30', cfo: 1000, capex: 400, revenue: 4000, epsDiluted: 2.5, sharesDiluted: 100, debt: 300, cash: 50, shortTermInvestments: null, netIncome: 250 } } } };
     expect(dcfInputsFromMeta(meta, { metrics: { sharesOutstanding: 90 } })).toEqual({ fcf: 600, eps: 2.5, netDebt: 250, shares: 100, capexToRevenue: 10, capexToCfo: 40, basis: 'SEC TTM to 2026-09-30', foreign: false });
-    // no EPS tag (V): EPS = net income / shares, said in the basis
-    const noEps = { fundamentals: { sec: { currency: 'USD', fy: { end: ['2026-09-30'], epsDiluted: [null], sharesDiluted: [null] }, ttm: { end: '2026-09-30', cfo: 10, capex: 1, revenue: 40, netIncome: 20, epsDiluted: null, sharesDiluted: null, debt: 2, cash: 1 } } } };
-    expect(dcfInputsFromMeta(noEps, { metrics: { sharesOutstanding: 4 } })).toMatchObject({ fcf: 9, eps: 5, shares: 4, basis: 'SEC TTM to 2026-09-30; EPS = net income / shares' });
+    // no EPS tag (V, owner answer N36): EPS = net income / the SEC diluted shares of all classes, said in the basis; never over
+    // Yahoo's count (one class only), which stays only for the per-share value of the FCF flow
+    const noEps = { fundamentals: { sec: { currency: 'USD', fy: { end: ['2026-09-30'], epsDiluted: [null], sharesDiluted: [5] as Array<number | null> }, ttm: { end: '2026-09-30', cfo: 10, capex: 1, revenue: 40, netIncome: 20, epsDiluted: null, sharesDiluted: null, debt: 2, cash: 1 } } } };
+    expect(dcfInputsFromMeta(noEps, { metrics: { sharesOutstanding: 4 } })).toMatchObject({ fcf: 9, eps: 4, shares: 5, basis: 'SEC TTM to 2026-09-30; EPS = net income / shares' });
+    noEps.fundamentals.sec.fy.sharesDiluted = [null];
+    expect(dcfInputsFromMeta(noEps, { metrics: { sharesOutstanding: 4 } })).toMatchObject({ fcf: 9, eps: null, shares: 4, basis: 'SEC TTM to 2026-09-30' });
     // a foreign issuer reads the USD view; EPS = USD net income / diluted shares
     const foreign = { fundamentals: { sec: { currency: 'DKK', ttm: { end: '2025-12-31', sharesDiluted: 4000 } }, usd: { ttm: { cfo: 1500, capex: 500, revenue: 5000, netIncome: 1000, debt: 0, cash: 100 } } } };
     expect(dcfInputsFromMeta(foreign, null)).toMatchObject({ fcf: 1000, eps: 0.25, netDebt: -100, shares: 4000, foreign: true, basis: 'SEC TTM to 2025-12-31 in USD (DKK); EPS = net income / shares' });

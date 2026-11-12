@@ -22,6 +22,12 @@ const FOREIGN_NULL: Text = {
   en: 'the multiple is not positive or Yahoo has no value; a foreign issuer (20-F or 40-F, or amounts in another currency) instead takes market cap over its SEC amount converted to USD, empty without a fresh SEC layer',
   ru: 'мультипликатор не положителен или у Yahoo нет значения; у иностранного эмитента (20-F или 40-F либо суммы в другой валюте) вместо этого берётся капитализация к сумме из SEC в USD, без свежего слоя SEC пусто',
 };
+/** pe, ps, pFcf, pb and evEbitda (owner answer N29): no multiple over an annual-only TTM older than 12 months */
+const STALE_TTM_NULL: Text = {
+  en: 'the TTM is the last fiscal year of an issuer without quarterly XBRL (ttmIsAnnual) and ended more than 12 months before the last close',
+  ru: 'TTM - последний финансовый год эмитента без квартального XBRL (ttmIsAnnual), и он закончился больше 12 месяцев назад',
+};
+const MULTIPLE_NULL: Text = { en: `${FOREIGN_NULL.en}; also empty when ${STALE_TTM_NULL.en}`, ru: `${FOREIGN_NULL.ru}; также пусто, когда ${STALE_TTM_NULL.ru}` };
 const FIN_NOTE: Text = {
   en: 'Banks and insurers have no meaningful EBITDA, current ratio or free cash flow; compare them on P/B and ROE-type measures instead',
   ru: 'У банков и страховых EBITDA, текущая ликвидность и свободный денежный поток не имеют смысла: их сравнивают по P/B и доходности капитала',
@@ -115,7 +121,7 @@ const MARKET: MetricDef[] = [
 const VALUATION: MetricDef[] = [
   def({
     id: 'pe', name: { en: 'P/E (TTM)', ru: 'P/E (TTM)' }, formula: 'price / diluted EPS of the trailing twelve months (Yahoo trailingPE); foreign issuers: market cap / TTM net income of the SEC layer in USD',
-    unit: 'ratio', basis: 'ttm', source: 'yahoo-summary', direction: 'lower-is-better', thresholds: { good: 15, bad: 30 }, nullWhen: { en: 'the company has a loss (EPS not positive) or ' + FOREIGN_NULL.en, ru: 'у компании убыток (EPS не положителен) или ' + FOREIGN_NULL.ru },
+    unit: 'ratio', basis: 'ttm', source: 'yahoo-summary', direction: 'lower-is-better', thresholds: { good: 15, bad: 30 }, nullWhen: { en: 'the company has a loss (EPS not positive) or ' + MULTIPLE_NULL.en, ru: 'у компании убыток (EPS не положителен) или ' + MULTIPLE_NULL.ru },
     sectorNotes: { en: 'Cyclicals look cheapest at the peak of profits; fast growers carry high P/E for years', ru: 'Циклические компании выглядят дешевле всего на пике прибыли, у быстрорастущих P/E годами высокий' },
     short: { en: 'Years of current earnings the price pays for', ru: 'Сколько лет текущей прибыли стоит цена' },
     guide: {
@@ -134,7 +140,7 @@ const VALUATION: MetricDef[] = [
   }),
   def({
     id: 'ps', name: { en: 'P/S (TTM)', ru: 'P/S (TTM)' }, formula: 'market cap / revenue of the trailing twelve months (Yahoo priceToSalesTrailing12Months); foreign issuers: over the SEC TTM revenue in USD',
-    unit: 'ratio', basis: 'ttm', source: 'yahoo-summary', direction: 'lower-is-better', thresholds: { good: 2, bad: 10 }, nullWhen: FOREIGN_NULL,
+    unit: 'ratio', basis: 'ttm', source: 'yahoo-summary', direction: 'lower-is-better', thresholds: { good: 2, bad: 10 }, nullWhen: MULTIPLE_NULL,
     short: { en: 'Price over a year of sales', ru: 'Цена к годовой выручке' },
     guide: {
       en: 'P/S divides the market cap by the revenue of the last twelve months. It works for companies without profits, where P/E is empty, which makes it the main yardstick for growth stocks. Low-margin businesses (retail, distributors) trade below 1, high-margin software at 10 and more, so compare within a sector',
@@ -152,7 +158,7 @@ const VALUATION: MetricDef[] = [
   }),
   def({
     id: 'pFcf', name: { en: 'P/FCF', ru: 'P/FCF' }, formula: 'market cap / free cash flow of the trailing twelve months (Yahoo financialData.freeCashflow); foreign issuers: over SEC TTM CFO - capex in USD',
-    unit: 'ratio', basis: 'ttm', source: 'computed', direction: 'lower-is-better', thresholds: { good: 15, bad: 30 }, nullWhen: { en: 'free cash flow is not positive or ' + FOREIGN_NULL.en, ru: 'свободный денежный поток не положителен или ' + FOREIGN_NULL.ru }, sectorNotes: FIN_NOTE,
+    unit: 'ratio', basis: 'ttm', source: 'computed', direction: 'lower-is-better', thresholds: { good: 15, bad: 30 }, nullWhen: { en: 'free cash flow is not positive or ' + MULTIPLE_NULL.en, ru: 'свободный денежный поток не положителен или ' + MULTIPLE_NULL.ru }, sectorNotes: FIN_NOTE,
     short: { en: 'Price over a year of free cash flow', ru: 'Цена к годовому свободному денежному потоку' },
     guide: {
       en: 'P/FCF divides the market cap by the free cash flow of the last twelve months (Yahoo). Cash is harder to dress up than earnings, so a low P/FCF next to a high P/E often means accounting charges, and the reverse means heavy investment. Below 15 is cheap, above 30 expensive for a mature company. Empty when FCF is zero or negative',
@@ -161,11 +167,11 @@ const VALUATION: MetricDef[] = [
   }),
   def({
     id: 'evEbitda', name: { en: 'EV/EBITDA', ru: 'EV/EBITDA' }, formula: 'EV / EBITDA TTM; EV = market cap + debt + minority interest + preferred stock - cash - short-term investments (balance of the last quarter), EBITDA = operating income + D&A, TTM (SEC 10-K and 10-Q)',
-    unit: 'ratio', basis: 'ttm', source: 'computed', direction: 'lower-is-better', thresholds: { good: 10, bad: 20 }, nullWhen: { en: 'EBITDA or EV is zero or negative, or debt, cash, operating income or D&A is not tagged', ru: 'EBITDA или EV нулевые или отрицательные либо долг, кэш, операционная прибыль или амортизация не размечены' }, sectorNotes: { en: `${FIN_NOTE.en}. Empty for banks and insurers`, ru: `${FIN_NOTE.ru}. У банков и страховых пусто` },
+    unit: 'ratio', basis: 'ttm', source: 'computed', direction: 'lower-is-better', thresholds: { good: 10, bad: 20 }, nullWhen: { en: `EBITDA or EV is zero or negative, or cash, operating income or D&A is not tagged, or debt is not tagged at the last quarter of an issuer that reported debt in the last 3 years (one without any debt line counts 0), or ${STALE_TTM_NULL.en}`, ru: `EBITDA или EV нулевые или отрицательные, либо не размечены кэш, операционная прибыль или амортизация, либо долг не размечен на последний квартал у эмитента, отражавшего долг в последние 3 года (у эмитента без строк долга он равен 0), либо ${STALE_TTM_NULL.ru}` }, sectorNotes: { en: `${FIN_NOTE.en}. Empty for banks and insurers`, ru: `${FIN_NOTE.ru}. У банков и страховых пусто` },
     short: { en: 'Business price over operating cash earnings', ru: 'Цена бизнеса к операционной прибыли до амортизации' },
     guide: {
-      en: 'EV/EBITDA compares the price of the whole business, debt included, with its earnings before interest, taxes, depreciation and amortization. It is neutral to capital structure, so it compares companies with different debt better than P/E. Below 10 is usually cheap, above 20 expensive. Since the quarterly SEC layer (plan 1.5) both parts are the updater\'s own: EBITDA is operating income plus depreciation and amortization of the trailing twelve months, EV is the market cap plus debt, minority interest and preferred stock minus cash and short-term investments of the last quarter (before, the value was Yahoo\'s enterpriseToEbitda)',
-      ru: 'EV/EBITDA сравнивает цену всего бизнеса вместе с долгом с прибылью до процентов, налогов и амортизации. Метрика не зависит от структуры капитала и поэтому лучше P/E сравнивает компании с разным долгом. Ниже 10 обычно дёшево, выше 20 - дорого. С квартальным слоем SEC (план 1.5) обе части считает сам апдейтер: EBITDA - операционная прибыль плюс амортизация за последние двенадцать месяцев, EV - капитализация плюс долг, доля меньшинства и привилегированные акции минус кэш и краткосрочные вложения последнего квартала (раньше бралось enterpriseToEbitda из Yahoo)',
+      en: 'EV/EBITDA compares the price of the whole business, debt included, with its earnings before interest, taxes, depreciation and amortization. It is neutral to capital structure, so it compares companies with different debt better than P/E. Below 10 is usually cheap, above 20 expensive. Since the quarterly SEC layer (plan 1.5) both parts are the updater\'s own: EBITDA is operating income plus depreciation and amortization of the trailing twelve months, EV is the market cap plus debt, minority interest and preferred stock minus cash and short-term investments of the last quarter (before, the value was Yahoo\'s enterpriseToEbitda). A company that has tagged no debt line for 3 years (Arista, Monolithic Power) counts debt 0, so a debt-free company has a value; a REIT without operating income still has none',
+      ru: 'EV/EBITDA сравнивает цену всего бизнеса вместе с долгом с прибылью до процентов, налогов и амортизации. Метрика не зависит от структуры капитала и поэтому лучше P/E сравнивает компании с разным долгом. Ниже 10 обычно дёшево, выше 20 - дорого. С квартальным слоем SEC (план 1.5) обе части считает сам апдейтер: EBITDA - операционная прибыль плюс амортизация за последние двенадцать месяцев, EV - капитализация плюс долг, доля меньшинства и привилегированные акции минус кэш и краткосрочные вложения последнего квартала (раньше бралось enterpriseToEbitda из Yahoo). Компания, которая 3 года не размечает ни одной строки долга (Arista, Monolithic Power), считается без долга (долг 0), поэтому у неё есть значение; у REIT без операционной прибыли его по-прежнему нет',
     },
   }),
   def({
@@ -179,7 +185,7 @@ const VALUATION: MetricDef[] = [
   }),
   def({
     id: 'pb', name: { en: 'P/B', ru: 'P/B' }, formula: 'price / book value per share (Yahoo priceToBook); foreign issuers: market cap / SEC equity in USD',
-    unit: 'ratio', basis: 'snapshot', source: 'yahoo-summary', direction: 'lower-is-better', thresholds: { good: 1.5, bad: 5 }, nullWhen: { en: 'book value is not positive or ' + FOREIGN_NULL.en, ru: 'балансовый капитал не положителен или ' + FOREIGN_NULL.ru },
+    unit: 'ratio', basis: 'snapshot', source: 'yahoo-summary', direction: 'lower-is-better', thresholds: { good: 1.5, bad: 5 }, nullWhen: { en: 'book value is not positive or ' + MULTIPLE_NULL.en, ru: 'балансовый капитал не положителен или ' + MULTIPLE_NULL.ru },
     sectorNotes: { en: 'Central for banks and insurers; weak for asset-light companies whose value is in brands and software', ru: 'Главный мультипликатор для банков и страховых; слабый для компаний, чья ценность в брендах и софте, а не в активах' },
     short: { en: 'Price over book equity', ru: 'Цена к балансовому капиталу' },
     guide: {
@@ -282,11 +288,11 @@ const BALANCE: MetricDef[] = [
   def({
     id: 'netDebtToEbitda', name: { en: 'Net debt / EBITDA', ru: 'Чистый долг / EBITDA' }, formula: '(debt - cash - short-term investments - long-term investments) / (operating income + D&A); balance of the last quarter, EBITDA TTM',
     unit: 'ratio', basis: 'ttm', source: 'sec', direction: 'lower-is-better', thresholds: { good: 2.5, bad: 3 },
-    nullWhen: { en: 'EBITDA is zero or negative or a value is missing', ru: 'EBITDA нулевая или отрицательная либо нет значения' }, sectorNotes: FIN_NOTE,
+    nullWhen: { en: 'EBITDA is zero or negative or a value is missing; a company without any debt line in the last 3 years counts debt 0', ru: 'EBITDA нулевая или отрицательная либо нет значения; у компании без строк долга за последние 3 года долг считается равным 0' }, sectorNotes: FIN_NOTE,
     short: { en: 'Years of EBITDA needed to repay net debt', ru: 'За сколько лет EBITDA погасит чистый долг' },
     guide: {
-      en: 'Debt minus cash and investments of the last quarter, divided by the EBITDA of the trailing twelve months (operating income plus depreciation and amortization from the 10-K and 10-Q; it used the latest fiscal year before the quarterly layer). Empty for banks and insurers. A negative value means more cash than debt. Below 2.5 is safe, above 3 is high for most industries. It reads better than debt to equity when buybacks have wiped out equity',
-      ru: 'Долг минус кэш и вложения на последний квартал, делённый на EBITDA за последние двенадцать месяцев (операционная прибыль плюс амортизация из 10-K и 10-Q; до квартального слоя бралась EBITDA последнего финансового года). У банков и страховых пусто. Отрицательное значение - денег больше, чем долга. Ниже 2,5 - безопасно, выше 3 - много для большинства отраслей. Метрика понятнее долга к капиталу, когда выкупы обнулили капитал',
+      en: 'Debt minus cash and investments of the last quarter, divided by the EBITDA of the trailing twelve months (operating income plus depreciation and amortization from the 10-K and 10-Q; it used the latest fiscal year before the quarterly layer). Empty for banks and insurers. A company that has tagged no debt line for 3 years counts debt 0. A negative value means more cash than debt. Below 2.5 is safe, above 3 is high for most industries. It reads better than debt to equity when buybacks have wiped out equity',
+      ru: 'Долг минус кэш и вложения на последний квартал, делённый на EBITDA за последние двенадцать месяцев (операционная прибыль плюс амортизация из 10-K и 10-Q; до квартального слоя бралась EBITDA последнего финансового года). У банков и страховых пусто. Компания, 3 года не размечающая строк долга, считается без долга (0). Отрицательное значение - денег больше, чем долга. Ниже 2,5 - безопасно, выше 3 - много для большинства отраслей. Метрика понятнее долга к капиталу, когда выкупы обнулили капитал',
     },
   }),
   def({
@@ -1041,8 +1047,8 @@ const FOREIGN: MetricDef[] = [
     nullWhen: { en: 'no SEC layer (the Yahoo fallback or a stale 20-F)', ru: 'нет слоя SEC (запасной вариант Yahoo или устаревший 20-F)' },
     short: { en: 'TTM values are the last annual report', ru: 'Значения TTM - последний годовой отчёт' },
     guide: {
-      en: 'Most foreign issuers publish interim results in 6-K reports without XBRL, so the SEC has only their annual 20-F or 40-F facts. Their TTM is then the last fiscal year and can be up to 15 months old; ttmAsOf shows the year end. Compare such rows with US companies with care: a fast grower looks more expensive on a year-old TTM. A foreign layer older than 15 months is not used at all, the row keeps the Yahoo fallback',
-      ru: 'Большинство иностранных эмитентов публикуют промежуточные результаты в отчётах 6-K без XBRL, поэтому в SEC есть только факты их годовых 20-F или 40-F. Тогда TTM - последний финансовый год, ему может быть до 15 месяцев, дату конца года показывает ttmAsOf. Такие строки сравнивают с американскими осторожно: быстрорастущая компания на годовом TTM выглядит дороже. Иностранный слой старше 15 месяцев не используется, строка остаётся на данных Yahoo',
+      en: 'Most foreign issuers publish interim results in 6-K reports without XBRL, so the SEC has only their annual 20-F or 40-F facts. Their TTM is then the last fiscal year and can be up to 15 months old; ttmAsOf shows the year end. Compare such rows with US companies with care: a fast grower looks more expensive on a year-old TTM. Once that fiscal year ended more than 12 months before the last close, P/E, P/S, P/FCF, P/B and EV/EBITDA stay empty; a foreign layer older than 15 months is not used at all, the row keeps the Yahoo fallback',
+      ru: 'Большинство иностранных эмитентов публикуют промежуточные результаты в отчётах 6-K без XBRL, поэтому в SEC есть только факты их годовых 20-F или 40-F. Тогда TTM - последний финансовый год, ему может быть до 15 месяцев, дату конца года показывает ttmAsOf. Такие строки сравнивают с американскими осторожно: быстрорастущая компания на годовом TTM выглядит дороже. Когда этот финансовый год закончился больше 12 месяцев назад, P/E, P/S, P/FCF, P/B и EV/EBITDA пусты; иностранный слой старше 15 месяцев не используется, строка остаётся на данных Yahoo',
     },
   }),
 ];

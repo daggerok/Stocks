@@ -4,7 +4,9 @@
  * Pure functions: no IO, no Bun or Node APIs.
  *
  * - forms 10-K, 10-K/A, 10-KT, 10-Q, 10-Q/A and for foreign private issuers 20-F, 40-F and 6-K (with their /A); taxonomies
- *   `us-gaap`, then `ifrs-full` (plan 1.3): per period a us-gaap tag wins over an ifrs-full synonym
+ *   `us-gaap`, then `ifrs-full` (plan 1.3): inside one taxonomy the first tag of a field with a value wins; a period present in
+ *   both taxonomies takes the value of the latest `filed` (owner answer N27: Toyota's IFRS restatement of FY2020, filed with the
+ *   first IFRS 20-F, wins over the earlier US GAAP value), a tie keeps us-gaap
  * - the reporting currency is the majority monetary unit of the revenue, net income and assets facts of the latest annual filing
  *   (TSM tags TWD and a USD convenience translation of one year: TWD wins); every amount is read in that unit only, per-share
  *   values in <currency>/shares. Conversion to USD is scripts/sec/fx.ts, growth and margins stay in the reporting currency
@@ -21,8 +23,10 @@
  * - the fiscal year label is the year of the end date (a 52/53-week year ending in the first days of January belongs to the
  *   year before); share counts and per-share values filed before a stock split are restated with the split ratio
  * - values are stored in the SEC unit of the field with scale 1 (currency, currency/shares, shares)
+ * - an issuer that tags no nonzero debt line for the last 3 years is debt-free: debt 0 at every period (owner answer N13, see
+ *   DEBT_PRESENCE_TAGS)
  */
-import { HELPER_IFRS, HELPER_TAGS, kindUnit, SEC_FIELDS, type FieldKind } from './tags';
+import { DEBT_EVIDENCE_YEARS, DEBT_HELPER_KEYS, DEBT_PRESENCE_TAGS, HELPER_IFRS, HELPER_TAGS, kindUnit, SEC_FIELDS, type FieldKind } from './tags';
 
 type Json = Record<string, any>;
 export type Split = { date: string; ratio: number };
@@ -100,9 +104,29 @@ export function tagSources(us: string[], ifrs: string[] | undefined, taxonomies:
   return out;
 }
 
-/** Durations: `start|end` -> value, instants: `end` -> value; per key the latest filed wins inside a tag, the first tag wins across tags */
+/**
+ * Durations: `start|end` -> value, instants: `end` -> value; per key the latest filed wins inside a tag, the first tag wins across
+ * the tags of one taxonomy, and across taxonomies the latest filed wins (a tie keeps the taxonomy listed first, us-gaap)
+ */
 type Series = { dur: Map<string, Value>; inst: Map<string, Value>; any: boolean };
 function series(facts: Json, sources: TagSource[], unit: string, splits: Split[], abs = false): Series {
+  const dur = new Map<string, Value>();
+  const inst = new Map<string, Value>();
+  let any = false;
+  const taxonomies: string[] = [];
+  sources.forEach((s) => { if (taxonomies.indexOf(s.taxonomy) < 0) taxonomies.push(s.taxonomy); });
+  taxonomies.forEach((taxonomy) => {
+    const own = taxonomySeries(facts, sources.filter((s) => s.taxonomy === taxonomy), unit, splits, abs);
+    if (own.any) any = true;
+    const merge = (from: Map<string, Value>, to: Map<string, Value>) => from.forEach((v, k) => { const seen = to.get(k); if (!seen || v.filed > seen.filed) to.set(k, v); });
+    merge(own.dur, dur);
+    merge(own.inst, inst);
+  });
+  return { dur, inst, any };
+}
+
+/** The series of the tags of one taxonomy: per key the latest filed inside a tag, the first tag with a value across tags */
+function taxonomySeries(facts: Json, sources: TagSource[], unit: string, splits: Split[], abs: boolean): Series {
   const dur = new Map<string, Value>();
   const inst = new Map<string, Value>();
   let any = false;
@@ -314,6 +338,8 @@ export function parseCompanyFacts(facts: Json, options: ParseOptions = {}): SecF
   });
   const years = fiscalYears(keys.map((k) => data[k]).filter((d) => d.kind === 'flow'));
   if (!years.length) return null;
+  const lastEnd = years.map((y) => y.end ?? '').sort().pop() ?? '';
+  const debtFree = !!lastEnd && !reportsDebt(facts, taxonomies, `${Number(lastEnd.slice(0, 4)) - DEBT_EVIDENCE_YEARS}${lastEnd.slice(4)}`);
 
   const readers: Record<string, FieldReader> = {};
   keys.forEach((k) => { readers[k] = new FieldReader(data[k]); });
@@ -352,6 +378,7 @@ export function parseCompanyFacts(facts: Json, options: ParseOptions = {}): SecF
       if (parts.length) values.debt = parts.reduce((s, v) => s + v, 0);
     }
     if (values.debt === null) values.debt = ifrsDebt(h);
+    if (values.debt === null && debtFree) values.debt = 0;
     for (const k of keys) if (values[k] !== null) values[k] = round(values[k] as number, SEC_FIELDS[k].kind);
     return { values, filed, reported };
   };
@@ -447,6 +474,21 @@ export function parseCompanyFacts(facts: Json, options: ParseOptions = {}): SecF
   const units: Record<string, string> = {};
   keys.forEach((k) => { units[k] = kindUnit(SEC_FIELDS[k].kind, currency); });
   return { currency, taxonomy: basis.taxonomy, annualForm: basis.annualForm, ttmIsAnnual, units, fy, quarters, ttm, checks: { balance, grossProfit: gross, quarterSum } };
+}
+
+/**
+ * true when a debt tag of the read taxonomies (longTermDebt, the debt helper lines and DEBT_PRESENCE_TAGS) has a nonzero fact of
+ * a read form, in any unit, for a period ending on or after `since`: the issuer has debt, even at dates where none is tagged
+ */
+export function reportsDebt(facts: Json, taxonomies: string[] = TAXONOMIES, since = ''): boolean {
+  const helperTags: Record<string, string[]> = HELPER_TAGS;
+  const tagsOf = (taxonomy: string): string[] => taxonomy === 'us-gaap'
+    ? [...SEC_FIELDS.longTermDebt.tags, ...DEBT_HELPER_KEYS.flatMap((k) => helperTags[k] ?? []), ...(DEBT_PRESENCE_TAGS[taxonomy] ?? [])]
+    : [...(SEC_FIELDS.longTermDebt.ifrs ?? []), ...DEBT_HELPER_KEYS.flatMap((k) => HELPER_IFRS[k] ?? []), ...(DEBT_PRESENCE_TAGS[taxonomy] ?? [])];
+  return taxonomies.some((taxonomy) => tagsOf(taxonomy).some((tag) => {
+    const units = facts?.facts?.[taxonomy]?.[tag]?.units ?? {};
+    return Object.keys(units).some((u) => Array.isArray(units[u]) && units[u].some((row: Json) => SEC_FORMS.indexOf(String(row?.form)) >= 0 && typeof row?.val === 'number' && row.val !== 0 && String(row?.end ?? '') >= since));
+  }));
 }
 
 /** IFRS debt of one period from the helper lines (see HELPER_IFRS); null when none of them is tagged */

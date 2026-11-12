@@ -109,6 +109,25 @@ export const HELPER_TAGS = {
   lineOfCredit: ['LineOfCredit'],
 };
 
+/** Helper keys whose facts are debt lines: a filer with no nonzero fact of them (nor of longTermDebt) is debt-free, see DEBT_PRESENCE_TAGS */
+export const DEBT_HELPER_KEYS = ['debtCombined', 'debtNoncurrent', 'debtCurrent', 'debtTotalFallback', 'commercialPaper', 'notesPayable', 'securedDebt', 'lineOfCredit', 'borrowings', 'borrowingsNoncurrent', 'borrowingsCurrentCombined', 'borrowingsCurrentPortion', 'borrowingsShortTerm', 'bondsNoncurrent', 'bondsCurrent'];
+
+/**
+ * Debt tags read only as evidence that an issuer has debt (owner answer N13): a filer with no nonzero fact of these, of
+ * DEBT_HELPER_KEYS and of longTermDebt in any filing and any unit is debt-free and gets debt 0 at every period (EV, EV/EBITDA and
+ * net debt to EBITDA then have a value). A fact of 0 is no evidence, nor is one whose period ended more than DEBT_EVIDENCE_YEARS
+ * before the latest fiscal year end (Arista repaid its pre-IPO notes in 2014 and has tagged no debt since). A filer that tags
+ * debt at recent dates keeps debt null at a date without a debt fact
+ */
+export const DEBT_EVIDENCE_YEARS = 3;
+/**
+ * The us-gaap and ifrs-full evidence tags of DEBT_PRESENCE_TAGS
+ */
+export const DEBT_PRESENCE_TAGS: Record<string, string[]> = {
+  'us-gaap': ['ConvertibleNotesPayable', 'ConvertibleNotesPayableCurrent', 'ConvertibleDebtNoncurrent', 'ConvertibleDebtCurrent', 'LongTermNotesPayable', 'NotesPayableCurrent', 'OtherLongTermDebtNoncurrent', 'OtherLongTermDebt', 'SeniorLongTermNotes', 'LongTermLineOfCredit', 'LinesOfCreditCurrent', 'ShortTermBankLoansAndNotesPayable', 'DebtInstrumentCarryingAmount', 'DebtInstrumentFaceAmount', 'InterestExpenseDebt'],
+  'ifrs-full': ['NoncurrentPortionOfNoncurrentBondsIssued', 'CurrentPortionOfNoncurrentBondsIssued', 'NoncurrentPortionOfNoncurrentLoansReceived', 'CurrentPortionOfNoncurrentLoansReceived', 'BankBorrowingsUndiscountedCashFlows'],
+};
+
 /**
  * ifrs-full helpers: the same keys where IFRS has a synonym, plus the IFRS borrowings lines. IFRS debt = Borrowings (total), else
  * non-current borrowings + current borrowings (the combined current line, else the current portion + short-term borrowings) +
