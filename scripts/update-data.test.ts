@@ -9,7 +9,7 @@ import { pathToFileURL } from 'node:url';
 import {
   annualSeries, buildAnnualRows, compactIndexText, completeMetrics, CONTROL_NAMES, dividendMetrics, fundamentalsMetrics, installSystemCa, isCertError, mergeAnnual,
   isOperatingTicker, minusMonths, normalizeTicker, parseChart, periodEve, parseRange, parseRanges, parseRetryAfter, parseSecTickers, parseSummary, parseYahooAnnual, priceReturns, readConfig, resolveControls,
-  indexDocument, parseWatchlist, range52wPosition, pruneCompanies, resolveWatchlist, restoreFeed, run, runtimeControls, sampleHistory, useApiRoot, useWatchlistDir, valuationMetrics, withMetricKeys, type ChartDay, type Snapshot,
+  indexDocument, parseWatchlist, range52wPosition, pruneCompanies, resolveWatchlist, restoreFeed, run, writeSignalsIssue, runtimeControls, sampleHistory, useApiRoot, useWatchlistDir, valuationMetrics, withMetricKeys, type ChartDay, type Snapshot,
   coverageMarkdown, metaText, scaleCheck, FEED_SCHEMA_VERSION, adrCoverage, adrFlag, annualRowsFromSec, FUNDAMENTALS_BASIS, SCALE_TOLERANCE_ANNUAL_PCT, staleForeignLayer,
 } from './update-data.ts';
 import { parseCompanyFacts } from './sec/companyfacts';
@@ -542,6 +542,10 @@ describe('pipeline', () => {
     const text = await readText('signals.json');
     expect(await run(controls(), { signals: true, now })).toMatchObject({ signals: 0 });
     expect(await readText('signals.json')).toBe(text);
+    // the weekly issue text: the signals of the last 7 days with links to the ticker pages
+    expect(await writeSignalsIssue(join(dir, 'issue'), 'https://site.test/Stocks/', now)).toBe(1);
+    expect(await readText('issue/title.txt')).toBe('Signals for 2026-11-06 - 2026-11-12\n');
+    expect(await readText('issue/body.md')).toContain('- 2026-11-12 [AAA](https://site.test/Stocks/#ticker=AAA) flag removed: Debt to equity above 2 (restated past periods)');
     const again = await readIndex();
     again.companies[0].metrics.debtToEquity = 3;
     await writeFile(join(dir, 'index.json'), compactIndexText(again));
@@ -865,6 +869,7 @@ describe('network 2', () => {
     site = {
       [`${SITE}index.json`]: '{\n"companies": [\n{"ticker":"AAA"},\n{"ticker":"BRK-B"}\n]\n}\n',
       [`${SITE}update-state.json`]: '{"cursor": "AAA"}\n',
+      [`${SITE}signals.json`]: '{"schemaVersion": 1, "signals": []}\n',
       [`${SITE}companies/AAA/meta.json`]: meta('AAA', ['history/001.json', 'history/002.json']),
       [`${SITE}companies/AAA/history/001.json`]: '{"page": 1}\n',
       [`${SITE}companies/AAA/history/002.json`]: '{"page": 2}\n',
@@ -879,7 +884,7 @@ describe('network 2', () => {
   });
 
   test('--restore-from copies the published feed byte for byte and never overwrites a local index', async () => {
-    expect(await restoreFeed(SITE, 2)).toEqual({ companies: 2, files: 7 });
+    expect(await restoreFeed(SITE, 2)).toEqual({ companies: 2, files: 8 });
     for (const [url, text] of Object.entries(site)) expect(await readFile(join(dir, url.slice(SITE.length)), 'utf8')).toBe(text);
     await expect(restoreFeed(SITE)).rejects.toThrow('exists');
   });
