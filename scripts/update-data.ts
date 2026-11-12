@@ -1418,7 +1418,7 @@ export function resolveWatchlist(list: Iterable<string>, known: Iterable<string>
   return out;
 }
 
-/** scripts/All.txt, else scripts/All.csv: the first one that lists tickers limits the feed to them; no file or an empty one means the full universe. */
+/** scripts/All.txt, else scripts/All.csv: the first one that lists tickers is the owner's list (isMine); no file or an empty one means no list. */
 export async function readWatchlist(): Promise<{ file: string; tickers: Set<string> } | null> {
   for (const file of ['All.txt', 'All.csv']) {
     let text: string;
@@ -1498,36 +1498,38 @@ export async function run(controls: Record<string, string | undefined>, options:
   const table = parseSecTickers(await fetchJson(SEC_TICKERS_URL, '[ universe  ] SEC ticker table', config));
   const previous = await readPreviousRows(table);
   const previousIndex = options.signals ? await readJson(indexFile()) : null; // the snapshot the signals compare with
-  // scripts/All.txt or All.csv with tickers: the feed holds only those stocks, every other row and folder is removed
+  // scripts/All.txt or All.csv (plan 1.1): the owner's list only sets isMine and mineTickers, it no longer narrows the feed
   const watchlist = await readWatchlist();
   const allowed = watchlist ? resolveWatchlist(watchlist.tickers, Array.from(table.keys()).concat(Array.from(previous.keys()))) : null;
-  if (watchlist && allowed) console.log(`[ universe  ] watchlist scripts/${watchlist.file}: ${allowed.size} tickers`);
-  let wanted = Array.from(config.tickers ?? allowed ?? table.keys());
-  if (config.tickers && allowed && watchlist) {
-    const outside = wanted.filter((t) => !allowed.has(t));
-    if (outside.length) console.warn(`[ universe  ] not in scripts/${watchlist.file}, skipped: ${listNames(outside)}`);
-    wanted = wanted.filter((t) => allowed.has(t));
-  }
+  if (watchlist && allowed) console.log(`[ universe  ] watchlist scripts/${watchlist.file}: ${allowed.size} tickers (isMine)`);
+  const wanted = Array.from(config.tickers ?? table.keys());
   const universe: Listing[] = [];
-  const unlisted: string[] = [];
   let failed = 0;
   for (const ticker of wanted.sort()) {
     const listing = table.get(ticker);
-    if (!listing) { if (config.tickers) { failed += 1; console.warn(`[ universe  ] ${ticker}: not found in the SEC exchange table`); } else if (allowed) unlisted.push(ticker); continue; }
-    if (!config.exchanges.has(listing.exchange.toUpperCase())) { if (config.tickers || allowed) console.warn(`[ universe  ] ${ticker}: skipped, listed on ${listing.exchange}`); continue; }
-    if (!config.tickers && !allowed && !isOperatingTicker(ticker)) continue; // an explicit list always wins
+    if (!listing) { if (config.tickers) { failed += 1; console.warn(`[ universe  ] ${ticker}: not found in the SEC exchange table`); } continue; }
+    if (!config.exchanges.has(listing.exchange.toUpperCase())) { if (config.tickers) console.warn(`[ universe  ] ${ticker}: skipped, listed on ${listing.exchange}`); continue; }
+    // an explicit TICKERS list and the owner's watchlist always win over the preferred, warrant, right and unit filter
+    if (!config.tickers && !(allowed && allowed.has(ticker)) && !isOperatingTicker(ticker)) continue;
     universe.push(listing);
   }
-  if (unlisted.length) console.log(`[ universe  ] ${unlisted.length} watchlist tickers are not in the SEC exchange table (ETFs, funds): ${listNames(unlisted)}`);
+  if (allowed) {
+    const unlisted = Array.from(allowed).filter((t) => !table.has(t)).sort();
+    if (unlisted.length) console.log(`[ universe  ] ${unlisted.length} watchlist tickers are not in the SEC exchange table (ETFs, funds): ${listNames(unlisted)}`);
+  }
   console.log(`[ universe  ] ${universe.length} stocks on ${Array.from(config.exchanges).join(', ')}`);
 
   // Rotation: full-universe runs continue after the committed cursor (a run that stops at MAX_FETCHES or the soft deadline resumes there);
-  // runs with an explicit TICKERS list never read or move it
+  // runs with an explicit TICKERS list never read or move it. The watchlist stocks go first in every full-universe run, so the
+  // owner's stocks stay weekly fresh while the rotation fills and refreshes the rest of the universe over several runs
   const rotate = !config.tickers;
   const state = (await readJson(stateFile())) ?? {};
   const cursor = rotate ? String(state.cursor ?? '') : '';
-  const at = cursor ? universe.findIndex((l) => l.ticker > cursor) : -1;
-  const queue = at > 0 ? universe.slice(at).concat(universe.slice(0, at)) : universe.slice();
+  const mine = rotate && allowed ? universe.filter((l) => allowed.has(l.ticker)) : [];
+  const rest = mine.length ? universe.filter((l) => !(allowed as Set<string>).has(l.ticker)) : universe;
+  const at = cursor ? rest.findIndex((l) => l.ticker > cursor) : -1;
+  const queue = mine.concat(at > 0 ? rest.slice(at).concat(rest.slice(0, at)) : rest);
+  const mineSet = new Set(mine.map((l) => l.ticker));
   const total = config.maxFetches > 0 ? Math.min(config.maxFetches, queue.length) : queue.length;
   const results: JsonRecord[] = [];
   const clean = new Set<string>(); // refreshed in this run with every source answering
@@ -1544,7 +1546,7 @@ export async function run(controls: Record<string, string | undefined>, options:
       if (Date.now() - started > deadlineMs) return;
       const listing = queue.shift();
       if (!listing) return;
-      lastTicker = listing.ticker;
+      if (!mineSet.has(listing.ticker)) lastTicker = listing.ticker; // the cursor follows the rotation only
       const n = ++processed;
       try {
         const out = await processCompany(listing, config, previous.get(listing.ticker) ?? null);
@@ -1574,21 +1576,10 @@ export async function run(controls: Record<string, string | undefined>, options:
       if (!table.has(ticker) && String(row.asOfDate ?? '') < staleBefore) { byTicker.delete(ticker); delisted.push(ticker); }
     }
   }
-  const outsideWatchlist: string[] = [];
-  if (allowed) for (const ticker of Array.from(byTicker.keys())) if (!allowed.has(ticker)) { byTicker.delete(ticker); outsideWatchlist.push(ticker); }
   // every row gets range52w from its own price and 52-week low and high, also the rows this run did not refresh
   const companies = Array.from(byTicker.values()).sort((a, b) => String(a.ticker).localeCompare(String(b.ticker))).map(withMetricKeys).map(withRange52w).map((row) => withIsMine(row, allowed));
   const indexDoc = indexDocument(companies, allowed ? Array.from(allowed).sort() : undefined);
   await writeIfChanged(indexFile(), indexDoc, compactIndexText);
-  if (allowed && watchlist) {
-    // folders go only after the index stops listing them; a folder of a listed stock is never touched
-    let folders: string[] = [];
-    try { folders = (await readdir(new URL('companies/', API_ROOT))).sort(); } catch { /* first run */ }
-    const removed = folders.filter((ticker) => !allowed.has(ticker));
-    for (const ticker of removed) await rm(companyDir(ticker), { recursive: true, force: true });
-    const gone = Array.from(new Set([...outsideWatchlist, ...removed])).sort();
-    if (gone.length) console.log(`[ watchlist ] removed ${gone.length} stocks not in scripts/${watchlist.file}: ${listNames(gone)}`);
-  }
   if (rotate) await writeIfChanged(stateFile(), { cursor: queue.length ? lastTicker : null, savedAt: stamp() });
   console.log(`[ done      ] ${results.length} updated, ${skipped} skipped, ${failed} failed; index lists ${companies.length} companies`);
   if (delisted.length) console.log(`DELISTED (${delisted.length}): ${listNames(delisted)}`);
@@ -1682,10 +1673,10 @@ AND logic):
   VERBOSE=false
   USE_SYSTEM_CA=auto  TLS trust store: auto restarts once with --use-system-ca on an untrusted-certificate error | true | false
 
-Watchlist: when scripts/All.txt (else scripts/All.csv) lists tickers, only those
-stocks are updated and published; rows and folders of every other stock are
-removed. ETFs and funds in the list are not in the SEC table and are skipped.
-No file or an empty one means a full update of every stock on EXCHANGES.
+Watchlist: scripts/All.txt (else scripts/All.csv) marks the owner's stocks
+(isMine, mineTickers in index.json) and puts them first in every full-universe
+run; it never narrows the feed. A run without TICKERS covers every stock on
+EXCHANGES, resuming after the saved rotation cursor.
 
 A full-universe run (no TICKERS) drops a delisted stock from the index: gone from
 the SEC exchange table and no price for 60 days. Its folder stays until

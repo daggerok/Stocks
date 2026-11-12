@@ -75,12 +75,12 @@ Defaults live in `scripts/update-data.config.json` (every control as a string). 
 
 ### Watchlist
 
-When `scripts/All.txt` (or, if it is missing or lists nothing, `scripts/All.csv`) lists tickers, the updater updates and publishes only those stocks and removes the rows and `companies/*` folders of every other stock from `api/stocks`. No file, an empty file or a blank one means the full update of every stock on `EXCHANGES`
+`scripts/All.txt` (or, if it is missing or lists nothing, `scripts/All.csv`) is the owner's list. It does not narrow the feed (plan 1.1): a run without `TICKERS` covers every stock on `EXCHANGES`. The list marks the owner's stocks and puts them first in every full-universe run, so they are refreshed every week while the rotation cursor works through the rest of the universe; a stock that is not in the list is never removed because of it
 
 - `All.txt`: tickers separated by new lines, spaces, commas or semicolons; `All.csv`: the first cell of each row, a `Symbol` or `Ticker` header is ignored
 - Spellings are matched to the SEC table: an exchange prefix is dropped (`NYSE:TTE` -> `TTE`) and `BRK.B`, `BRK/B` and `BRK-B` are the same ticker. Then the `TICKER_ALIASES` table at the top of `scripts/update-data.ts` maps known spellings (`BRKB` -> `BRK-B`); grow it when a new spelling shows up. Without an entry, a ticker that is not in the table as written matches the one listed ticker with the same letters, an ambiguous one is reported as not found
-- ETFs and funds in the list are not in the SEC table or are reported by Yahoo as funds, so they are skipped
-- `TICKERS` narrows a run inside the watchlist; tickers outside it are skipped
+- ETFs and funds in the list are not in the SEC table or are reported by Yahoo as funds, so they are not stock rows (they still count for `mineTickers`); a preferred share, warrant or unit in the list is updated, unlike the rest of the universe
+- `TICKERS` runs exactly the given tickers, inside or outside the list, and never moves the rotation cursor
 - Every published row carries `isMine` (true for the tickers of the list, false for all rows without a list) and `index.json` lists every ticker of the file, ETFs included, in `mineTickers`: the screener's "Mine" preset reads them
 
 ### Data sources
@@ -134,7 +134,7 @@ Caveats:
 - NYSE Arca has no stock rows in the SEC company table; Arca-listed stocks are not covered
 - A stock whose Yahoo quote type is not `EQUITY` (ETFs, funds) is skipped; so is a security without a market cap (SPAC units and warrants, baby bonds, preferred shares) and a CIK that has no SEC company facts and no Yahoo statements (closed-end funds, trusts)
 - SPAC shells and other new listings without a full fiscal year stay in the catalog with unavailable fundamentals; filter them by sector or industry
-- The feed holds about 6,000 stocks, roughly 45 KB each (the SEC quarters and TTM made it about 2.7 times larger) plus a 16 MB `index.json` (one company per line); it stays under the 1 GB GitHub Pages size limit; since the feed is published as a Pages artifact and not committed, the Git history no longer grows with every run
+- The full feed holds about 6,500 stocks of the 7,157 SEC listings on Nasdaq, NYSE and Cboe (the rest are funds or have no market cap), about 80 KB each with the history pages (about 530 MB) plus a 25 MB `index.json` (3.8 KB per row, one company per line); it stays under the 1 GB GitHub Pages size limit. A local run of 250 stocks (`MAX_FETCHES=250`, `CONCURRENCY=24`) took 40 s, 6.25 stocks per second, so one 25-minute run reaches about 9,000 stocks and the first full fill takes one or two weekly runs (the GitHub runner can be slower; a run that hits the soft deadline saves the cursor and the next weekly run continues, the published index grows with every run). The update job of the workflow has a 45-minute timeout for the 25-minute updater plus the cache, build and the upload of the large artifact; since the feed is published as a Pages artifact and not committed, the Git history no longer grows with every run
 
 ### Update controls
 
@@ -144,7 +144,7 @@ Keep this table, `scripts/update-data.config.json`, `CONTROL_NAMES` and `--help`
 | --- | --: | --- |
 | `MAX_FETCHES` | `0` (all) | Batch size: with a positive value the updater stops after that many stocks and the next full-universe run continues after the cursor saved in `api/stocks/update-state.json` (restored with the feed, see [Publishing](#publishing)); empty or `0` is a full pass (a run that hits the 25-minute soft deadline also saves the cursor) |
 | `REQUEST_SLEEP` | `1` | Minimum delay in seconds between request starts of one worker lane, including retries |
-| `CONCURRENCY` | `24` | Number of parallel workers; each worker owns a request lane paced by `REQUEST_SLEEP`; 24 lanes refresh about 6 stocks per second, so the whole universe fits one 25-minute run |
+| `CONCURRENCY` | `24` | Number of parallel workers; each worker owns a request lane paced by `REQUEST_SLEEP`; 24 lanes refresh about 6 stocks per second (measured 6.25 locally), so the whole universe fits one or two 25-minute runs |
 | `MAX_RETRIES` | `2` | Integer >= 1; retries after the initial request; only network errors and HTTP 403/408/425/429/5xx are retried with exponential backoff |
 | `EXCHANGES` | `Nasdaq,NYSE,CBOE` | Listing exchanges to include, as named in the SEC company table |
 | `TICKERS` | empty (all) | Space-, comma- or semicolon-separated ticker allowlist (`BRK.B` and `BRK-B` both work); blank means every stock listed on `EXCHANGES`; a run with `TICKERS` never reads or moves the rotation cursor |
