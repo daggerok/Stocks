@@ -903,17 +903,25 @@ export function withMetricKeys(row: JsonRecord): JsonRecord {
   return { ...row, metrics };
 }
 
-/** SEC TTM revenue against the Yahoo snapshot revenue (plan 1.8): more than 20% apart is a scale or tagging error */
+/** SEC TTM revenue against the Yahoo snapshot revenue (plan 1.8): more than 20% apart is reported in the log and the step summary */
 export const SCALE_TOLERANCE_PCT = 20;
+/**
+ * Only a ratio beyond this factor (SEC / Yahoo above 5 or below 1/5) is a unit or scale error (×1000, ×1e6, a value in thousands)
+ * and withholds the new SEC values. Revenue definitions alone move the two apart by far more than 20% (2026-11-12 full run: 324
+ * stocks, COF 78%, URI 77%, IBKR 60%, AXP 40%), and withholding them left a new stock without any SEC fundamentals
+ */
+export const SCALE_ERROR_RATIO = 5;
 /**
  * An annual-only TTM (20-F filers) is the last fiscal year, Yahoo's revenue is a real TTM: growth alone moves them apart, so the
  * tolerance is wider; a scale error (×1000) still fails
  */
 export const SCALE_TOLERANCE_ANNUAL_PCT = 50;
-export function scaleCheck(secRevenue: unknown, yahooRevenue: unknown, tolerancePct = SCALE_TOLERANCE_PCT): { ok: boolean; diffPct: number } | null {
+/** ok: within the reporting tolerance; scaleError: the ratio looks like a unit or scale error, the only case that withholds SEC values */
+export function scaleCheck(secRevenue: unknown, yahooRevenue: unknown, tolerancePct = SCALE_TOLERANCE_PCT): { ok: boolean; diffPct: number; scaleError: boolean } | null {
   if (typeof secRevenue !== 'number' || typeof yahooRevenue !== 'number' || !(secRevenue > 0) || !(yahooRevenue > 0)) return null;
   const diffPct = round((Math.abs(secRevenue - yahooRevenue) / yahooRevenue) * 100);
-  return { ok: diffPct <= tolerancePct, diffPct };
+  const ratio = secRevenue / yahooRevenue;
+  return { ok: diffPct <= tolerancePct, diffPct, scaleError: ratio > SCALE_ERROR_RATIO || ratio < 1 / SCALE_ERROR_RATIO };
 }
 
 export function completeMetrics(parts: JsonRecord, performanceAsOf: string | null): JsonRecord {
@@ -1147,16 +1155,17 @@ export async function processCompany(listing: Listing, config: UpdaterConfig, pr
       sec = prevMeta?.fundamentals?.sec ?? null;
     }
   }
-  // scale check (plan 1.8): SEC TTM revenue vs the Yahoo snapshot; a miss withholds this run's SEC values and keeps the published
-  // ones. Banks and insurers define revenue differently (net of interest expense or not), so for them it is only reported
+  // scale check (plan 1.8): SEC TTM revenue vs the Yahoo snapshot; a difference above the tolerance is only reported (revenue
+  // definitions differ, banks and insurers most of all), a ratio beyond SCALE_ERROR_RATIO is a unit or scale error and withholds
+  // this run's SEC values, keeping the published ones
   const industry: string | null = snapshot?.industry ?? prevMeta?.industry ?? null;
   // compared in one currency: Yahoo's revenue is in its financialCurrency, the SEC layer in its reporting currency
   const sameCurrency = !sec || !snapshot?.financialCurrency || snapshot.financialCurrency === sec.currency;
   const scale = secFailed || !sameCurrency ? null : scaleCheck(sec?.ttm?.revenue, snapshot?.totalRevenue, sec?.ttmIsAnnual ? SCALE_TOLERANCE_ANNUAL_PCT : SCALE_TOLERANCE_PCT);
   let withheld = false;
-  if (scale && !scale.ok && !isFinancial(industry)) {
+  if (scale && scale.scaleError) {
     withheld = true;
-    console.warn(`[ check     ] ${ticker}: SEC TTM revenue is ${scale.diffPct}% away from Yahoo's - new SEC values withheld, published ones kept`);
+    console.warn(`[ check     ] ${ticker}: SEC TTM revenue is ${scale.diffPct}% away from Yahoo's, a scale error - new SEC values withheld, published ones kept`);
     rows = prevMeta?.fundamentals?.annual ?? [];
     sec = prevMeta?.fundamentals?.sec ?? null;
   }
@@ -1553,7 +1562,7 @@ export async function run(controls: Record<string, string | undefined>, options:
         if ('skipped' in out) { skipped += 1; console.log(`[ ${`${String(n).padStart(String(total).length)}/${total}`.padEnd(9)} ] ${listing.ticker.padEnd(6)} skipped: ${out.skipped}`); continue; }
         results.push(out.row);
         if (!out.degraded) clean.add(listing.ticker);
-        for (const name of Object.keys(checkFails)) if (out.checks?.[name] && out.checks[name].ok === false) checkFails[name].push(`${listing.ticker} ${out.checks[name].diffPct}%`);
+        for (const name of Object.keys(checkFails)) if (out.checks?.[name] && out.checks[name].ok === false) checkFails[name].push(`${listing.ticker} ${out.checks[name].diffPct}%${out.checks[name].scaleError ? ' withheld' : ''}`);
         const m = out.row.metrics;
         console.log(`[ ${`${String(n).padStart(String(total).length)}/${total}`.padEnd(9)} ] ${listing.ticker.padEnd(6)} updated  cap ${m.marketCap === null ? '-' : `$${round(m.marketCap / 1e9, 1)}B`}  P/E ${m.pe ?? '-'}  FY ${out.row.fundamentalsAsOf ?? '-'}`);
       } catch (error) {
