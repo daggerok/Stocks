@@ -9,7 +9,7 @@ import { pathToFileURL } from 'node:url';
 import {
   annualSeries, buildAnnualRows, compactIndexText, completeMetrics, CONTROL_NAMES, dividendMetrics, fundamentalsMetrics, installSystemCa, isCertError, mergeAnnual,
   isOperatingTicker, minusMonths, normalizeTicker, parseChart, periodEve, parseRange, parseRanges, parseRetryAfter, parseSecTickers, parseSummary, parseYahooAnnual, priceReturns, readConfig, resolveControls,
-  indexDocument, parseWatchlist, range52wPosition, pruneCompanies, resolveWatchlist, run, runtimeControls, sampleHistory, useApiRoot, useWatchlistDir, valuationMetrics, withMetricKeys, type ChartDay, type Snapshot,
+  indexDocument, parseWatchlist, range52wPosition, pruneCompanies, resolveWatchlist, restoreFeed, run, runtimeControls, sampleHistory, useApiRoot, useWatchlistDir, valuationMetrics, withMetricKeys, type ChartDay, type Snapshot,
   coverageMarkdown, metaText, scaleCheck, FEED_SCHEMA_VERSION, adrCoverage, adrFlag, annualRowsFromSec, FUNDAMENTALS_BASIS, SCALE_TOLERANCE_ANNUAL_PCT, staleForeignLayer,
 } from './update-data.ts';
 import { parseCompanyFacts } from './sec/companyfacts';
@@ -843,5 +843,56 @@ describe('network', () => {
     expect(globalThis.fetch).not.toBe(failing);
     await globalThis.fetch('https://example.invalid/');
     expect(calls).toBe(1);
+  });
+});
+
+describe('network 2', () => {
+  const realFetch = globalThis.fetch;
+  const SITE = 'https://feed.test/api/stocks/';
+  let dir = '';
+  let restore: URL;
+  let site: Record<string, string> = {};
+  const serve = (async (input: URL | RequestInfo) => {
+    const url = String(input instanceof Request ? input.url : input);
+    return url in site ? new Response(site[url], { status: 200 }) : new Response('not found', { status: 404 });
+  }) as unknown as typeof fetch;
+
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'stocks-restore-'));
+    restore = useApiRoot(new URL(`${pathToFileURL(dir).href}/`));
+    globalThis.fetch = serve;
+    const meta = (ticker: string, pages: string[]) => `{\n  "ticker": "${ticker}",\n  "history": {"pages": ${JSON.stringify(pages)}}\n}\n`;
+    site = {
+      [`${SITE}index.json`]: '{\n"companies": [\n{"ticker":"AAA"},\n{"ticker":"BRK-B"}\n]\n}\n',
+      [`${SITE}update-state.json`]: '{"cursor": "AAA"}\n',
+      [`${SITE}companies/AAA/meta.json`]: meta('AAA', ['history/001.json', 'history/002.json']),
+      [`${SITE}companies/AAA/history/001.json`]: '{"page": 1}\n',
+      [`${SITE}companies/AAA/history/002.json`]: '{"page": 2}\n',
+      [`${SITE}companies/BRK-B/meta.json`]: meta('BRK-B', ['history/001.json']),
+      [`${SITE}companies/BRK-B/history/001.json`]: '{"page": 1}\n',
+    };
+  });
+  afterEach(async () => {
+    globalThis.fetch = realFetch;
+    useApiRoot(restore);
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  test('--restore-from copies the published feed byte for byte and never overwrites a local index', async () => {
+    expect(await restoreFeed(SITE, 2)).toEqual({ companies: 2, files: 7 });
+    for (const [url, text] of Object.entries(site)) expect(await readFile(join(dir, url.slice(SITE.length)), 'utf8')).toBe(text);
+    await expect(restoreFeed(SITE)).rejects.toThrow('exists');
+  });
+
+  test('--restore-from: no published feed is an empty start, a broken feed fails before index.json is written', async () => {
+    const full = site;
+    site = {};
+    expect(await restoreFeed(SITE)).toBeNull();
+    site = { ...full };
+    delete site[`${SITE}companies/AAA/history/002.json`];
+    await expect(restoreFeed(SITE)).rejects.toThrow('history/002.json');
+    expect((await readdir(dir)).sort()).not.toContain('index.json');
+    site = { ...full, [`${SITE}companies/AAA/meta.json`]: '{"ticker": "AAA", "history": {"pages": ["../../x.json"]}}' };
+    await expect(restoreFeed(SITE)).rejects.toThrow('unexpected history pages');
   });
 });

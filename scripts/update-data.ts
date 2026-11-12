@@ -1263,6 +1263,81 @@ export async function pruneCompanies(): Promise<string[]> {
   return removed;
 }
 
+/** The published feed: the update workflow and a fresh local clone restore the previous state from here (api/stocks is not in git). */
+export const PUBLISHED_FEED_URL = 'https://daggerok.github.io/Stocks/api/stocks/';
+const RESTORE_TICKER = /^[A-Z0-9][A-Z0-9.-]{0,15}$/;
+const RESTORE_PAGE = /^history\/\d{3}\.json$/;
+
+/** One feed file as text (byte-exact, so a rerun stays zero-diff), null on 404; 3 attempts with backoff on transient errors. */
+async function fetchFeedFile(url: string): Promise<string | null> {
+  let lastError: unknown = new Error('no request attempted');
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const response = await fetch(url, { headers: { Accept: 'application/json' }, redirect: 'follow', signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+      if (response.status === 404) return null;
+      if (!response.ok) throw new HttpError(response.status, `${response.status} ${response.statusText}`);
+      const text = await response.text();
+      JSON.parse(text); // a feed file is always JSON: an HTML error page must not be restored
+      return text;
+    } catch (error) {
+      lastError = error;
+      if (error instanceof SyntaxError || !retryable(error)) break;
+      await sleep(800 * 2 ** attempt);
+    }
+  }
+  throw new Error(`${url}: ${lastError instanceof Error ? lastError.message : String(lastError)}`);
+}
+
+async function writeFeedFile(file: URL, text: string): Promise<void> {
+  await mkdir(new URL('.', file), { recursive: true });
+  await writeFile(file, text, 'utf8');
+}
+
+/**
+ * --restore-from [url]: downloads a published feed (index.json, update-state.json, every company meta.json and the
+ * history pages its meta lists) into api/stocks, so the updater starts from the previous published state.
+ * Refuses to overwrite a local index.json; index.json is written last, so an interrupted restore can simply be rerun.
+ * Returns null when the site has no feed yet (404 on index.json): the next update then runs from an empty state.
+ */
+export async function restoreFeed(base: string = PUBLISHED_FEED_URL, concurrency = 8): Promise<{ companies: number; files: number } | null> {
+  const root = base.endsWith('/') ? base : `${base}/`;
+  if (await readJson(indexFile())) throw new Error(`--restore-from: ${fileURLToPath(indexFile())} exists; remove ${fileURLToPath(API_ROOT)} first to replace the local feed`);
+  const indexText = await fetchFeedFile(`${root}index.json`);
+  if (indexText === null) return null;
+  const companies = JSON.parse(indexText).companies;
+  if (!Array.isArray(companies) || !companies.length) throw new Error(`--restore-from: ${root}index.json lists no companies`);
+  const tickers = companies.map((row: JsonRecord) => String(row?.ticker ?? ''));
+  const bad = tickers.filter((t: string) => !RESTORE_TICKER.test(t));
+  if (bad.length) throw new Error(`--restore-from: unexpected tickers in the index: ${listNames(bad)}`);
+  let files = 0;
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < tickers.length) {
+      const ticker = tickers[next];
+      next += 1;
+      const metaText = await fetchFeedFile(`${root}companies/${ticker}/meta.json`);
+      if (metaText === null) throw new Error(`--restore-from: companies/${ticker}/meta.json is listed in the index but missing`);
+      const meta = JSON.parse(metaText);
+      const pages: string[] = Array.isArray(meta?.history?.pages) ? meta.history.pages.map(String) : [];
+      if (meta?.ticker !== ticker || pages.some((p) => !RESTORE_PAGE.test(p))) throw new Error(`--restore-from: companies/${ticker}/meta.json does not match its ticker or lists unexpected history pages`);
+      // same order as the updater: history pages, then meta.json
+      for (const page of pages) {
+        const pageText = await fetchFeedFile(`${root}companies/${ticker}/${page}`);
+        if (pageText === null) throw new Error(`--restore-from: companies/${ticker}/${page} is listed in meta.json but missing`);
+        await writeFeedFile(new URL(page, companyDir(ticker)), pageText);
+        files += 1;
+      }
+      await writeFeedFile(new URL('meta.json', companyDir(ticker)), metaText);
+      files += 1;
+    }
+  };
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(concurrency, tickers.length)) }, worker));
+  const stateText = await fetchFeedFile(`${root}update-state.json`);
+  if (stateText !== null) { await writeFeedFile(stateFile(), stateText); files += 1; }
+  await writeFeedFile(indexFile(), indexText);
+  return { companies: tickers.length, files: files + 1 };
+}
+
 /** Watchlist tickers: All.txt splits on whitespace, commas and semicolons, All.csv takes the first cell of each row; "NYSE:TTE" and BRK.B work, a header cell is ignored. */
 export function parseWatchlist(text: string, csv = false): string[] {
   const cells = csv ? text.split(/\r?\n/).map((line) => line.split(/[,;\t]/)[0] ?? '') : text.split(/[\s,;]+/);
@@ -1554,6 +1629,12 @@ the SEC exchange table and no price for 60 days. Its folder stays until
   ./scripts/update-data.ts --prune
 removes the folders of such stocks (run it by hand about once a quarter).
 
+api/stocks is not in git: the update workflow publishes it as a GitHub Pages
+artifact. Restore the published feed into an empty api/stocks (the workflow does
+this when its Actions cache is empty; a local clone needs it once):
+  ./scripts/update-data.ts --restore-from [url]
+(default url ${PUBLISHED_FEED_URL}; refuses to overwrite a local index.json)
+
 Signals (plan stage 8): --signals also writes api/stocks/signals.json after the
 run: preset entries and exits, new and removed flags, status, archetype and large
 score changes against the index as it was before the run (last 12 weeks kept).
@@ -1610,6 +1691,12 @@ export async function runtimeControls(env: Record<string, string | undefined> = 
 async function main(): Promise<void> {
   if (process.argv.some((arg) => ['-h', '--help', 'help'].includes(arg))) console.log(USAGE.trim());
   else if (process.argv.includes('--prune')) await pruneCompanies().then((removed) => console.log(`[ prune     ] removed ${removed.length} delisted folders${removed.length ? `: ${listNames(removed)}` : ''}`)).catch((error) => { console.error(error instanceof Error ? error.message : String(error)); process.exitCode = 1; });
+  else if (process.argv.includes('--restore-from')) {
+    const next = process.argv[process.argv.indexOf('--restore-from') + 1];
+    await restoreFeed(next && !next.startsWith('-') ? next : PUBLISHED_FEED_URL).then((done) => console.log(done
+      ? `[ restore   ] ${done.companies} companies, ${done.files} files -> ${fileURLToPath(API_ROOT)}`
+      : '[ restore   ] no published feed yet (index.json 404): the update starts from an empty state')).catch((error) => { console.error(error instanceof Error ? error.message : String(error)); process.exitCode = 1; });
+  }
   else await runtimeControls().then((controls) => { installSystemCa(controls.USE_SYSTEM_CA ?? 'auto'); return run(controls, { signals: process.argv.includes('--signals') }); }).catch((error) => { console.error(error instanceof Error ? error.stack : String(error)); process.exitCode = 1; });
 }
 
