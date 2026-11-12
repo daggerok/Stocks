@@ -18,7 +18,7 @@ export type FundamentalsContext = { marketCap: Num; sector: string | null; indus
 export const FUNDAMENTAL_METRIC_KEYS = [
   'operatingMargin', 'grossMarginSlope3y', 'operatingMarginSlope3y', 'cfoToNi', 'fcfToNi', 'interestCoverage', 'interestCoverageNote',
   'cashRunwayMonths', 'altmanZ', 'altmanVariant', 'piotroskiF', 'niVolatility5y', 'fcfVolatility5y', 'capexToCfo', 'capexToRevenue',
-  'capexToRevenueDelta3y', 'niGrowth3y', 'niGrowth5y', 'ffoApprox', 'ffoPayoutApprox',
+  'capexToRevenueDelta3y', 'niGrowth3y', 'niGrowth5y', 'ffoApprox', 'ffoPayoutApprox', 'ffoGrowth3y',
   // inputs of the stage 5 stop factors and flags (src/core/scoring)
   'fcfNegativeYears', 'cfoGrowth3y', 'epsNiGrowthGap3y', 'balanceYoyMaxChange', 'balanceYoyMaxLine',
 ] as const;
@@ -309,6 +309,13 @@ export function fundamentalMetrics(sec: SecFundamentals | null, ctx: Fundamental
     const ffoUsd = ctx.usd === undefined ? ffo : u && fin(u.ttm('netIncome')) && fin(u.ttm('da')) ? (u.ttm('netIncome') as number) + (u.ttm('da') as number) - (u.ttm('gainOnSaleOfProperty') ?? 0) : null;
     out.ffoApprox = ffoUsd === null ? null : Math.round(ffoUsd);
     out.ffoPayoutApprox = pct(v.ttm('dividendsPaid'), ffo);
+    // FFO growth of the fiscal years: the REIT archetype rule reads it instead of revenue growth (owner answer N22)
+    const ffoFy = (back: number): Num => {
+      const n = v.fy('netIncome', back), d = v.fy('da', back);
+      return fin(n) && fin(d) ? n + d - (v.fy('gainOnSaleOfProperty', back) ?? 0) : null;
+    };
+    const f0 = ffoFy(0), f3 = ffoFy(3);
+    out.ffoGrowth3y = pos(f0) && pos(f3) ? r2((Math.pow(f0 / f3, 1 / 3) - 1) * 100) : null;
   }
   return out;
 }

@@ -47,6 +47,9 @@ export type ScoreDef = {
   adjust?: ScoreAdjust[];
 };
 
+/** A further condition group of a rule: the rule also passes when this group passes (an OR of AND groups) */
+export type RuleGroup = { match: 'all' | number; conditions: Condition[] };
+
 /** A rule in preset format: archetype rules, stop factors and flags */
 export type Rule = {
   id: string;
@@ -56,6 +59,8 @@ export type Rule = {
   conditions: Condition[];
   /** false keeps the rule in the config without applying it (a flag waiting for its data) */
   enabled?: boolean;
+  /** further groups: the rule passes when its own conditions or any of these groups pass (owner answer N21: a second rule of a flag) */
+  or?: RuleGroup[];
 };
 
 export type ArchetypeRule = Rule & { archetype: string };

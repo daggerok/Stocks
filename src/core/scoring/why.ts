@@ -81,10 +81,19 @@ export function flagTexts(config: ScoringConfig, scoring: RowScoring, row: Scree
   return scoring.flags.map((id) => {
     const rule = config.flags.filter((r) => r.id === id)[0];
     if (!rule) return { id, title: id, detail: id };
-    // a soft rule (match 1 of 2) shows only the conditions that hold
-    const states = rule.conditions.filter((c) => c.enabled !== false && conditionHolds(c, row));
+    // the group that fired (the rule's own conditions, else the first `or` group that holds); a soft group (match 1 of 2) shows only the conditions that hold
+    const groups = [{ match: rule.match, conditions: rule.conditions }].concat(rule.or ?? []);
+    const fired = groups.filter((g) => groupHolds(g.match, g.conditions, row))[0] ?? groups[0];
+    const states = fired.conditions.filter((c) => c.enabled !== false && conditionHolds(c, row));
     return { id, title: ruleTitle(rule, row, locale, registry), detail: ruleText({ ...rule, conditions: states }, row, locale, registry) };
   });
+}
+
+/** true when enough enabled numeric conditions of a group hold with a value present */
+function groupHolds(match: 'all' | number, conditions: Condition[], row: ScreenerRow): boolean {
+  const enabled = conditions.filter((c) => c.enabled !== false);
+  const held = enabled.filter((c) => fieldValue(row, c.metric) != null && conditionHolds(c, row)).length;
+  return held >= (match === 'all' ? enabled.length : Math.min(match, enabled.length));
 }
 
 function conditionHolds(c: Condition, row: ScreenerRow): boolean {

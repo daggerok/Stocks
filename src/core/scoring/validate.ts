@@ -13,6 +13,11 @@ function ruleErrors(rule: Rule, where: string, registry: Registry): string[] {
   if (!rule || typeof rule !== 'object') return [`${where}: not an object`];
   const errors = validatePreset(ruleAsPreset(rule), registry).map((e) => `${where}: ${e}`);
   if (rule.enabled !== undefined && typeof rule.enabled !== 'boolean') errors.push(`${where}: enabled must be true or false`);
+  if (rule.or !== undefined && !Array.isArray(rule.or)) errors.push(`${where}: or must be a list of { match, conditions }`);
+  else (rule.or ?? []).forEach((g, k) => {
+    if (!g || typeof g !== 'object') { errors.push(`${where} or ${k + 1}: not an object`); return; }
+    errors.push(...validatePreset(ruleAsPreset({ ...rule, match: g.match, conditions: g.conditions }), registry).map((e) => `${where} or ${k + 1}: ${e}`));
+  });
   return errors;
 }
 

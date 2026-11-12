@@ -3,9 +3,9 @@
  * Scoring (plan stage 5): five scores 0-100, archetype, status score, status, stop factors, flags and Why notes for every row of
  * a screener universe. No DOM: the page, tests and the signals job (plan stage 8) call the same functions.
  *
- * - a score metric becomes its percentile in the row's group with 100 = best: the sector of a stock (the stocks of small sectors
- *   together when the sector has fewer than minGroupSize values), the fund category of an ETF (owner answer N4; all ETFs when the
- *   category has fewer than minGroupSize values); ties share the mean rank
+ * - a score metric becomes its percentile in the row's group with 100 = best: the sector of a stock (the whole stock market, every
+ *   sector included, when the sector has fewer than minGroupSize values), the fund category of an ETF (owner answer N4; all ETFs
+ *   when the category has fewer than minGroupSize values); ties share the mean rank
  * - a score is the weighted mean of the items with a value, empty below minWeightShare of the weight of the items that apply to
  *   the row type; the weights may differ per archetype
  * - the status score combines the scores with the archetype's score weights in the same way; a stop factor of the archetype
@@ -19,6 +19,18 @@ import { type Rule, type RowScoring, SCORE_IDS, SCORE_METRICS, type ScoreDef, ty
 export type ScoringResult = { config: ScoringConfig; rows: RowScoring[] };
 
 export const ruleAsPreset = (rule: Rule): Preset => ({ schemaVersion: PRESET_SCHEMA_VERSION, id: rule.id, title: rule.title, appliesTo: rule.appliesTo, match: rule.match, conditions: rule.conditions });
+
+/** The rule's own conditions and each of its `or` groups as presets, in order */
+export const ruleGroups = (rule: Rule): Preset[] => [ruleAsPreset(rule)].concat((rule.or ?? []).map((g, k) => ruleAsPreset({ ...rule, id: `${rule.id}#${k + 1}`, match: g.match, conditions: g.conditions, or: undefined })));
+
+/** 1 for a row that passes the rule's own conditions or any of its `or` groups */
+export function rulePass(universe: Universe, rule: Rule): Uint8Array {
+  const groups = ruleGroups(rule).map((p) => evaluatePreset(universe, p).pass);
+  if (groups.length === 1) return groups[0];
+  const out = new Uint8Array(universe.rows.length);
+  for (let i = 0; i < out.length; i += 1) for (let k = 0; k < groups.length && !out[i]; k += 1) out[i] = groups[k][i];
+  return out;
+}
 
 export const weightOf = (weight: Weight, archetype: string): number => (typeof weight === 'number' ? weight : weight[archetype] ?? 0);
 
@@ -63,7 +75,7 @@ export function groupPercentiles(universe: Universe, metric: string, direction: 
     const key = group && sectorCount[group] >= minGroupSize ? group : `${row.type}:`;
     rankedIn[i] = key;
     push(key, i);
-    if (row.type === 'etf' && key !== 'etf:') push('etf:', i); // every ETF also counts in the all-ETF group a small category falls back to
+    if (key !== `${row.type}:`) push(`${row.type}:`, i); // every row also counts in the market of its type a small sector or category falls back to
   }
   const sign = direction === 'lower-is-better' ? -1 : 1;
   Object.keys(groups).forEach((key) => {
@@ -93,7 +105,7 @@ export function computeScoring(universe: Universe, config: ScoringConfig): Scori
   const archetype: string[] = new Array(n).fill(config.defaultArchetype);
   const decided = new Uint8Array(n);
   config.archetypeRules.filter((r) => r.enabled !== false).forEach((rule) => {
-    const pass = evaluatePreset(universe, ruleAsPreset(rule)).pass;
+    const pass = rulePass(universe, rule);
     for (let i = 0; i < n; i += 1) if (!decided[i] && pass[i]) { archetype[i] = rule.archetype; decided[i] = 1; }
   });
 
@@ -154,8 +166,8 @@ export function computeScoring(universe: Universe, config: ScoringConfig): Scori
 
   // 3. stop factors, flags and notes
   const stopPass: Record<string, Uint8Array> = {};
-  config.stopFactors.filter((r) => r.enabled !== false).forEach((r) => { stopPass[r.id] = evaluatePreset(universe, ruleAsPreset(r)).pass; });
-  const flagPass = config.flags.filter((r) => r.enabled !== false).map((r) => ({ id: r.id, pass: evaluatePreset(universe, ruleAsPreset(r)).pass }));
+  config.stopFactors.filter((r) => r.enabled !== false).forEach((r) => { stopPass[r.id] = rulePass(universe, r); });
+  const flagPass = config.flags.filter((r) => r.enabled !== false).map((r) => ({ id: r.id, pass: rulePass(universe, r) }));
   const noteStates = config.notes.map((note) => evaluateCondition(universe, note.condition).states);
 
   // 4. status per row

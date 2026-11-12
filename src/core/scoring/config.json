@@ -38,6 +38,25 @@
       "conditions": [{ "metric": "volatility1y", "op": ">=", "value": 45, "scope": "absolute", "missing": "fail" }]
     },
     {
+      "id": "growth-reit-ffo",
+      "archetype": "growth",
+      "title": { "en": "REIT: approximate FFO grows 15% a year over 3 years", "ru": "REIT: приблизительный FFO растёт на 15% в год за 3 года" },
+      "appliesTo": ["stock"],
+      "match": "all",
+      "conditions": [
+        { "metric": "isReit", "op": "=", "value": true, "scope": "absolute", "missing": "fail" },
+        { "metric": "ffoGrowth3y", "op": ">=", "value": 15, "scope": "absolute", "missing": "fail" }
+      ]
+    },
+    {
+      "id": "stable-reit",
+      "archetype": "stable",
+      "title": { "en": "REIT without fast FFO growth (revenue growth does not count)", "ru": "REIT без быстрого роста FFO (рост выручки не считается)" },
+      "appliesTo": ["stock"],
+      "match": "all",
+      "conditions": [{ "metric": "isReit", "op": "=", "value": true, "scope": "absolute", "missing": "fail" }]
+    },
+    {
       "id": "growth-revenue-3y",
       "archetype": "growth",
       "title": { "en": "Revenue grows 15% a year over 3 years", "ru": "Выручка растёт на 15% в год за 3 года" },
@@ -180,6 +199,15 @@
       "conditions": [
         { "metric": "niGrowth3y", "op": ">=", "value": 10, "scope": "absolute", "missing": "fail" },
         { "metric": "cfoGrowth3y", "op": "<=", "value": 2, "scope": "absolute", "missing": "fail" }
+      ],
+      "or": [
+        {
+          "match": "all",
+          "conditions": [
+            { "metric": "niGrowth3y", "op": ">", "value": 0, "scope": "absolute", "missing": "fail" },
+            { "metric": "cfoToNi", "op": "<", "value": 0.5, "scope": "absolute", "missing": "fail" }
+          ]
+        }
       ]
     },
     {
