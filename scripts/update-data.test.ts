@@ -528,6 +528,27 @@ describe('pipeline', () => {
     expect(await readText('companies/AAA/meta.json')).toBe(meta);
   });
 
+  test('--signals: compares with the index before the run, a rerun writes the same file, a stock with a failed source is quiet', async () => {
+    const now = new Date(Date.UTC(2026, 10, 12));
+    expect(await run(controls())).toMatchObject({ signals: null });
+    await expect(readText('signals.json')).rejects.toThrow(); // only with --signals
+    // the published AAA had debt to equity 3 (flag high-debt); the fresh SEC facts give 0.5 with the same fiscal year ends
+    const index = await readIndex();
+    index.companies[0].metrics.debtToEquity = 3;
+    await writeFile(join(dir, 'index.json'), compactIndexText(index));
+    expect(await run(controls(), { signals: true, now })).toMatchObject({ signals: 1 });
+    const doc = JSON.parse(await readText('signals.json'));
+    expect(doc.signals).toEqual([{ date: '2026-11-12', ticker: 'AAA', type: 'flag-removed', key: 'high-debt', from: null, to: null, restated: true }]);
+    const text = await readText('signals.json');
+    expect(await run(controls(), { signals: true, now })).toMatchObject({ signals: 0 });
+    expect(await readText('signals.json')).toBe(text);
+    const again = await readIndex();
+    again.companies[0].metrics.debtToEquity = 3;
+    await writeFile(join(dir, 'index.json'), compactIndexText(again));
+    failSummaryFor = 'AAA';
+    expect(await run(controls(), { signals: true, now })).toMatchObject({ updated: 2, signals: 0 });
+  });
+
   test('rotation: a bounded run resumes after its cursor, a deadline run saves it, TICKERS runs never move it', async () => {
     const cursor = async () => JSON.parse(await readText('update-state.json')).cursor;
     await run(controls({ MAX_FETCHES: '1' }));

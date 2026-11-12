@@ -11,6 +11,8 @@ import { pctFrom52wHigh, swingMetrics } from './metrics/swing';
 import { column, parseCompanyFacts, type SecFundamentals, type Split } from './sec/companyfacts';
 import { fxPairs, fxPoints, usdLayer, usdView, type FxSeries, type UsdLayer } from './sec/fx';
 import { TAGS } from './sec/tags';
+import { computeSignals, parseSignals, SIGNALS_FILE, type SignalsResult } from '../src/core/signals';
+import { loadSignalSources } from '../src/core/signals/load';
 
 // Stocks listed on Nasdaq, NYSE and Cboe: static ./api/stocks feed.
 //   universe      SEC company_tickers_exchange.json (ticker, CIK, exchange)
@@ -43,6 +45,7 @@ let API_ROOT = new URL('../api/stocks/', SCRIPTS_DIR);
 export function useApiRoot(root: URL): URL { const previous = API_ROOT; API_ROOT = root; return previous; }
 const indexFile = () => new URL('index.json', API_ROOT);
 const stateFile = () => new URL('update-state.json', API_ROOT);
+const signalsFile = () => new URL(SIGNALS_FILE, API_ROOT);
 const companyDir = (ticker: string) => new URL(`companies/${ticker}/`, API_ROOT);
 /**
  * Watchlist spellings of a ticker (scripts/All.txt, All.csv) -> the ticker in the SEC table. Grow it as new spellings show up.
@@ -1039,7 +1042,8 @@ function closeRange52w(days: ChartDay[]): { low: number | null; high: number | n
   return { low: round(Math.min(...closes), 4), high: round(Math.max(...closes), 4) };
 }
 
-export type Outcome = { row: JsonRecord; checks?: JsonRecord } | { skipped: string };
+/** degraded: the sources that failed for this stock in this run (it gives no signals, plan stage 8) */
+export type Outcome = { row: JsonRecord; checks?: JsonRecord; degraded?: string[] } | { skipped: string };
 
 /** Preferred shares, warrants, rights and units ("BAC-PB", "XYZ-WT", "ABC-R", "SPAC-UN") are not stocks of the catalog. */
 export function isOperatingTicker(ticker: string): boolean {
@@ -1215,7 +1219,9 @@ export async function processCompany(listing: Listing, config: UpdaterConfig, pr
   await writeIfChanged(new URL('meta.json', dir), meta, metaText);
   await pruneHistoryPages(dir, Array.isArray(history.pages) ? history.pages : []);
   void previous;
-  return { row, checks };
+  // a source that failed or was withheld: the row partly keeps its published state, so its changes are not signals (plan stage 8)
+  const degraded = [secFailed ? 'sec' : '', withheld ? 'scale' : '', !config.skipYahoo && !snapshot ? 'summary' : ''].filter(Boolean);
+  return degraded.length ? { row, checks, degraded } : { row, checks };
 }
 
 // ---------------------------------------------------------------------------
@@ -1322,7 +1328,26 @@ export function indexDocument(companies: JsonRecord[], mineTickers?: string[]): 
   };
 }
 
-export async function run(controls: Record<string, string | undefined>, options: { deadlineMs?: number } = {}): Promise<{ updated: number; skipped: number; failed: number; rows: number }> {
+/**
+ * --signals (plan stage 8): the previous index (as it was before this run) and the new one give api/stocks/signals.json. The base
+ * presets, the committed own presets of user-data/presets, user-data/peers.json and the scoring config are read from the repo.
+ * Quiet stocks (a failed source, or not refreshed by this run) give no signals; no previous index is the first run, no signals
+ */
+export async function updateSignals(previous: JsonRecord | null, current: JsonRecord, quiet: string[], now: Date = new Date()): Promise<SignalsResult> {
+  const sources = loadSignalSources();
+  for (const warning of sources.warnings) console.warn(`[ signals   ] ${warning}`);
+  const state = parseSignals(await readJson(signalsFile()));
+  const result = computeSignals({ previous, current, presets: sources.presets, peers: sources.peers, scoring: sources.scoring, quiet, state, now });
+  await writeIfChanged(signalsFile(), result.doc);
+  const line = result.firstRun
+    ? 'signals: no previous index, first run: no signals'
+    : `signals: ${result.added.length} new, ${result.doc.signals.length} kept, ${result.doc.pendingExits.length} preset exits wait for a second run, ${quiet.length} quiet stocks`;
+  console.log(`[ signals   ] ${line}`);
+  if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY, `- ${line}\n\n`, 'utf8');
+  return result;
+}
+
+export async function run(controls: Record<string, string | undefined>, options: { deadlineMs?: number; signals?: boolean; now?: Date } = {}): Promise<{ updated: number; skipped: number; failed: number; rows: number; signals: number | null }> {
   const config = readConfig(controls);
   secUa = config.secUa;
   requestSleepSeconds = config.requestSleep;
@@ -1334,6 +1359,7 @@ export async function run(controls: Record<string, string | undefined>, options:
 
   const table = parseSecTickers(await fetchJson(SEC_TICKERS_URL, '[ universe  ] SEC ticker table', config));
   const previous = await readPreviousRows(table);
+  const previousIndex = options.signals ? await readJson(indexFile()) : null; // the snapshot the signals compare with
   // scripts/All.txt or All.csv with tickers: the feed holds only those stocks, every other row and folder is removed
   const watchlist = await readWatchlist();
   const allowed = watchlist ? resolveWatchlist(watchlist.tickers, Array.from(table.keys()).concat(Array.from(previous.keys()))) : null;
@@ -1366,6 +1392,7 @@ export async function run(controls: Record<string, string | undefined>, options:
   const queue = at > 0 ? universe.slice(at).concat(universe.slice(0, at)) : universe.slice();
   const total = config.maxFetches > 0 ? Math.min(config.maxFetches, queue.length) : queue.length;
   const results: JsonRecord[] = [];
+  const clean = new Set<string>(); // refreshed in this run with every source answering
   const checkFails: Record<string, string[]> = { balance: [], grossProfit: [], quarterSum: [], scale: [] };
   const started = Date.now();
   let processed = 0;
@@ -1385,6 +1412,7 @@ export async function run(controls: Record<string, string | undefined>, options:
         const out = await processCompany(listing, config, previous.get(listing.ticker) ?? null);
         if ('skipped' in out) { skipped += 1; console.log(`[ ${`${String(n).padStart(String(total).length)}/${total}`.padEnd(9)} ] ${listing.ticker.padEnd(6)} skipped: ${out.skipped}`); continue; }
         results.push(out.row);
+        if (!out.degraded) clean.add(listing.ticker);
         for (const name of Object.keys(checkFails)) if (out.checks?.[name] && out.checks[name].ok === false) checkFails[name].push(`${listing.ticker} ${out.checks[name].diffPct}%`);
         const m = out.row.metrics;
         console.log(`[ ${`${String(n).padStart(String(total).length)}/${total}`.padEnd(9)} ] ${listing.ticker.padEnd(6)} updated  cap ${m.marketCap === null ? '-' : `$${round(m.marketCap / 1e9, 1)}B`}  P/E ${m.pe ?? '-'}  FY ${out.row.fundamentalsAsOf ?? '-'}`);
@@ -1412,7 +1440,8 @@ export async function run(controls: Record<string, string | undefined>, options:
   if (allowed) for (const ticker of Array.from(byTicker.keys())) if (!allowed.has(ticker)) { byTicker.delete(ticker); outsideWatchlist.push(ticker); }
   // every row gets range52w from its own price and 52-week low and high, also the rows this run did not refresh
   const companies = Array.from(byTicker.values()).sort((a, b) => String(a.ticker).localeCompare(String(b.ticker))).map(withMetricKeys).map(withRange52w).map((row) => withIsMine(row, allowed));
-  await writeIfChanged(indexFile(), indexDocument(companies, allowed ? Array.from(allowed).sort() : undefined), compactIndexText);
+  const indexDoc = indexDocument(companies, allowed ? Array.from(allowed).sort() : undefined);
+  await writeIfChanged(indexFile(), indexDoc, compactIndexText);
   if (allowed && watchlist) {
     // folders go only after the index stops listing them; a folder of a listed stock is never touched
     let folders: string[] = [];
@@ -1437,7 +1466,12 @@ export async function run(controls: Record<string, string | undefined>, options:
     await appendFile(process.env.GITHUB_STEP_SUMMARY, `${adrCoverageLine(companies)}\n\n`, 'utf8');
     await appendFile(process.env.GITHUB_STEP_SUMMARY, coverageMarkdown(companies), 'utf8');
   }
-  return { updated: results.length, skipped, failed, rows: companies.length };
+  let signals: number | null = null;
+  if (options.signals) {
+    const quiet = companies.map((row) => String(row.ticker)).filter((ticker) => !clean.has(ticker));
+    signals = (await updateSignals(previousIndex, indexDoc, quiet, options.now)).added.length;
+  }
+  return { updated: results.length, skipped, failed, rows: companies.length, signals };
 }
 
 export type AdrCoverage = { adr: number; secIfrs: number; secUsGaap: number; yahoo: number; none: number };
@@ -1520,6 +1554,11 @@ the SEC exchange table and no price for 60 days. Its folder stays until
   ./scripts/update-data.ts --prune
 removes the folders of such stocks (run it by hand about once a quarter).
 
+Signals (plan stage 8): --signals also writes api/stocks/signals.json after the
+run: preset entries and exits, new and removed flags, status, archetype and large
+score changes against the index as it was before the run (last 12 weeks kept).
+  ./scripts/update-data.ts --signals
+
 Examples:
   TICKERS="AAPL MSFT JPM" ./scripts/update-data.ts
   TICKERS= MARKET_CAP="10B:" DIVIDEND_YIELD="2:" ./scripts/update-data.ts
@@ -1571,7 +1610,7 @@ export async function runtimeControls(env: Record<string, string | undefined> = 
 async function main(): Promise<void> {
   if (process.argv.some((arg) => ['-h', '--help', 'help'].includes(arg))) console.log(USAGE.trim());
   else if (process.argv.includes('--prune')) await pruneCompanies().then((removed) => console.log(`[ prune     ] removed ${removed.length} delisted folders${removed.length ? `: ${listNames(removed)}` : ''}`)).catch((error) => { console.error(error instanceof Error ? error.message : String(error)); process.exitCode = 1; });
-  else await runtimeControls().then((controls) => { installSystemCa(controls.USE_SYSTEM_CA ?? 'auto'); return run(controls); }).catch((error) => { console.error(error instanceof Error ? error.stack : String(error)); process.exitCode = 1; });
+  else await runtimeControls().then((controls) => { installSystemCa(controls.USE_SYSTEM_CA ?? 'auto'); return run(controls, { signals: process.argv.includes('--signals') }); }).catch((error) => { console.error(error instanceof Error ? error.stack : String(error)); process.exitCode = 1; });
 }
 
 if (require.main === module) main().catch((error: unknown) => { console.error(error); process.exitCode = 1; });

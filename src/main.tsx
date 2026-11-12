@@ -22,6 +22,7 @@ import {
   archetypeText, computeScoring, flagTexts, RowScoring, SCORE_IDS, SCORE_METRICS, SCORING_CONFIG_URL, ScoringConfig, ScoringResult, statusText,
   validateScoringConfig, whyText, withScoreMetrics,
 } from './core/scoring';
+import { filterSignals, parseSignals, signalDates, signalNames, SIGNAL_TYPES, SignalsDoc, signalText, signalTypeName, SIGNALS_FILE } from './core/signals';
 
 /**
  * @file Stocks Application
@@ -307,6 +308,11 @@ const el = {
   guideSearch: byId('guide-search'),
   guideClose: byId('guide-close'),
   guideBody: byId('guide-body'),
+  signalsBtn: byId('signals-btn'),
+  signalsPage: byId('signals-page'),
+  signalsTitle: byId('signals-title'),
+  signalsClose: byId('signals-close'),
+  signalsBody: byId('signals-body'),
   tickerPage: byId('ticker-page'),
   tickerPageTitle: byId('tp-title'),
   tickerPageTabs: byId('tp-tabs'),
@@ -1206,6 +1212,7 @@ function onStoreChanged(): void {
   applyRestoredTab();
   render();
   prefetchActiveMeta();
+  if (tickerPage.ticker) renderTickerPage(); // a #ticker= link opened before the feed arrived
 }
 
 async function readIndex(base: string): Promise<any> {
@@ -4712,6 +4719,7 @@ async function loadScreenerData(): Promise<void> {
   const message = applyHashPreset();
   if (scr.type !== 'stock') void ensureEtfs();
   screenerChanged(message);
+  renderSignals(); // preset and flag names of the signals
 }
 
 async function ensureEtfs(): Promise<void> {
@@ -4887,6 +4895,7 @@ function applyHashPreset(): string {
 }
 
 function onHashChange(): void {
+  if (applyHashView()) return;
   const message = applyHashPreset();
   if (!message) return;
   if (scr.type !== 'stock') void ensureEtfs();
@@ -6086,6 +6095,93 @@ function ensureTickerPageData(ticker: string): boolean {
   return false;
 }
 
+// ---- signals (plan stage 8): api/stocks/signals.json written by the updater, filtered by date and type, tickers open their page ----
+
+type SignalsView = { open: boolean; status: 'idle' | 'loading' | 'ready' | 'missing' | 'failed'; doc: SignalsDoc | null; error: string; date: string; type: string };
+const signalsView: SignalsView = { open: false, status: 'idle', doc: null, error: '', date: '', type: '' };
+
+async function loadSignals(): Promise<void> {
+  if (signalsView.status === 'loading' || signalsView.status === 'ready') return;
+  signalsView.status = 'loading';
+  renderSignals();
+  try {
+    const doc = parseSignals(await fetchJson(`${feedBase()}${SIGNALS_FILE}`, INDEX_TIMEOUT_MS));
+    signalsView.doc = doc;
+    signalsView.status = doc ? 'ready' : 'missing';
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    signalsView.status = /^404\b/.test(message) ? 'missing' : 'failed'; // no file yet: the first run with signals has not happened
+    signalsView.error = message;
+  }
+  renderSignals();
+}
+
+function signalsSelect(id: string, value: string, all: string, options: Array<{ value: string; label: string }>): string {
+  return `<select id="${id}" class="scr-input">${[{ value: '', label: all }].concat(options).map(o => `<option value="${escapeHtml(o.value)}"${o.value === value ? ' selected' : ''}>${escapeHtml(o.label)}</option>`).join('')}</select>`;
+}
+
+function renderSignals(): void {
+  el.signalsPage.hidden = !signalsView.open;
+  if (!signalsView.open) return;
+  const locale = getLocale();
+  const doc = signalsView.doc;
+  if (signalsView.status !== 'ready' || !doc) {
+    const text = signalsView.status === 'failed' ? t('signals.failed', { error: signalsView.error }) : signalsView.status === 'missing' ? t('signals.none') : t('signals.loading');
+    el.signalsBody.innerHTML = `<p class="scr-muted" id="signals-message">${escapeHtml(text)}</p>`;
+    return;
+  }
+  const dates = signalDates(doc);
+  if (signalsView.date && dates.indexOf(signalsView.date) < 0) signalsView.date = '';
+  const names = signalNames(scr.base.concat(scr.repoOwn), scoringConfig);
+  const shown = filterSignals(doc.signals, { date: signalsView.date, type: signalsView.type });
+  const filters = `<div class="sig-filters">
+    <label class="scr-label">${escapeHtml(t('signals.date'))} ${signalsSelect('signals-date', signalsView.date, t('signals.allDates'), dates.map(d => ({ value: d, label: d })))}</label>
+    <label class="scr-label">${escapeHtml(t('signals.type'))} ${signalsSelect('signals-type', signalsView.type, t('signals.allTypes'), SIGNAL_TYPES.map(type => ({ value: type, label: signalTypeName(type, locale) })))}</label>
+    <span class="scr-muted" id="signals-count">${escapeHtml(t('signals.count', { count: shown.length, total: doc.signals.length, days: doc.retentionDays }))}${doc.pendingExits.length ? ` · ${escapeHtml(t('signals.pending', { count: doc.pendingExits.length }))}` : ''}</span>
+  </div>`;
+  const rows = shown.map(sig => `<tr data-signal-type="${sig.type}"><td>${escapeHtml(sig.date)}</td><td><button type="button" class="tp-open" data-sig-ticker="${escapeHtml(sig.ticker)}">${escapeHtml(sig.ticker)}</button></td><td>${escapeHtml(signalTypeName(sig.type, locale))}</td><td>${escapeHtml(signalText(sig, names, locale))}</td></tr>`).join('');
+  el.signalsBody.innerHTML = `${filters}${shown.length
+    ? `<div class="scr-table-wrap themed-scroll tp-table-wrap"><table class="scr-conds tp-table" id="signals-table"><thead><tr><th>${escapeHtml(t('signals.date'))}</th><th>${escapeHtml(t('signals.ticker'))}</th><th>${escapeHtml(t('signals.type'))}</th><th>${escapeHtml(t('signals.signal'))}</th></tr></thead><tbody>${rows}</tbody></table></div>`
+    : `<p class="scr-muted" id="signals-message">${escapeHtml(doc.signals.length ? t('signals.empty') : t('signals.none'))}</p>`}`;
+}
+
+function setSignalsOpen(open: boolean): void {
+  signalsView.open = open;
+  el.signalsBtn.setAttribute('aria-expanded', String(open));
+  renderSignals();
+  if (open) { void loadSignals(); el.signalsClose.focus(); } else el.signalsBtn.focus();
+}
+
+/** #signals opens the Signals view, #ticker=AAPL the ticker page (links of the weekly issue); true when the hash was one of them */
+function applyHashView(): boolean {
+  const hash = String(location.hash || '').replace(/^#/, '');
+  const ticker = /^ticker=([^&]+)$/.exec(hash);
+  if (hash !== 'signals' && !ticker) return false;
+  if (ticker) openTickerPage(decodeURIComponent(ticker[1]));
+  else setSignalsOpen(true);
+  return true;
+}
+
+function bindSignalsEvents(): void {
+  el.signalsBtn.addEventListener('click', () => setSignalsOpen(!signalsView.open));
+  el.signalsClose.addEventListener('click', () => setSignalsOpen(false));
+  el.signalsPage.addEventListener('click', (event: any) => {
+    if (event.target === el.signalsPage) { setSignalsOpen(false); return; }
+    const button = event.target && typeof event.target.closest === 'function' ? event.target.closest('[data-sig-ticker]') : null;
+    if (button) openTickerPage(button.dataset.sigTicker);
+  });
+  el.signalsPage.addEventListener('change', (event: any) => {
+    const target = event.target;
+    if (!target) return;
+    if (target.id === 'signals-date') signalsView.date = target.value;
+    else if (target.id === 'signals-type') signalsView.type = target.value;
+    else return;
+    renderSignals();
+  });
+  // registered before the ticker page's handler: Esc closes the ticker page first, then the Signals view
+  document.addEventListener('keydown', (event: any) => { if (event.key === 'Escape' && signalsView.open && !tickerPage.ticker && !guideOpen) setSignalsOpen(false); });
+}
+
 // ---- language switch and guide ----
 
 function applyLanguage(): void {
@@ -6099,6 +6195,11 @@ function applyLanguage(): void {
   el.guideSearch.placeholder = t('guide.search');
   el.guideClose.title = t('guide.close');
   el.guideClose.setAttribute('aria-label', t('guide.close'));
+  el.signalsBtn.textContent = t('signals.open');
+  el.signalsBtn.title = t('signals.open.tip');
+  el.signalsTitle.textContent = t('signals.title');
+  el.signalsClose.title = t('signals.close');
+  el.signalsClose.setAttribute('aria-label', t('signals.close'));
 }
 
 function switchLanguage(locale: string): void {
@@ -6107,6 +6208,7 @@ function switchLanguage(locale: string): void {
   applyLanguage();
   renderScreener();
   renderGuide();
+  renderSignals();
   render();
   if (tickerPage.ticker) renderTickerPage();
 }
@@ -6166,6 +6268,7 @@ function bindScreenerEvents(): void {
   el.guideSearch.addEventListener('input', () => renderGuide());
   document.addEventListener('keydown', (event: any) => { if (event.key === 'Escape' && guideOpen) setGuideOpen(false); });
   window.addEventListener('hashchange', onHashChange);
+  bindSignalsEvents();
 }
 
 function init(): void {
@@ -6193,6 +6296,7 @@ function init(): void {
   renderFilters();
   renderSubtitle();
   void loadScreenerData();
+  applyHashView();
   void loadCatalog().catch(error => {
     const message = error instanceof Error ? error.message : String(error);
     state.loading = false;
@@ -6327,5 +6431,7 @@ Object.defineProperty(window, 'lastSimilar', { get: () => lastSimilar });
 Object.defineProperty(window, 'store', { get: () => store });
 // scoring hooks (plan stage 5)
 Object.assign(window, { scoringText, scoringSortArray, sortIds });
+// signals hooks (plan stage 8)
+Object.assign(window, { signalsView, setSignalsOpen, renderSignals });
 Object.defineProperty(window, 'scoringConfig', { get: () => scoringConfig });
 Object.defineProperty(window, 'scoringResult', { get: () => scoringResult });
