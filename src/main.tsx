@@ -5,7 +5,7 @@ import {
   canonicalPreset, changedConditions, Condition as ScreenerCondition, createUniverse, decodePresetHash, encodePresetHash, ETF_BRANDS_URL, EtfBrand, etfFeedUrl, etfMetrics, etfRow,
   evaluateExpression, evaluatePreset, evaluatePresets, Expression, parseEtfBrands, FunnelStep, HISTORY_METRICS, mergeOwnPresets, Missing, normalizeTicker, Op, ownCopy,
   OwnEntry, parsePresetText, PeerGroups, Preset, PRESET_SCHEMA_VERSION, presetFileName, presetFileText, presetKey, PresetResult, RELATIVE_SCOPES,
-  samePreset, Scope, SCOPES, stockRow, uniqueId, Universe, validatePreset,
+  isReitIndustry, samePreset, Scope, SCOPES, stockRow, uniqueId, Universe, validatePreset,
   changedGroups, cleanTickers, deleteGroup, groupName, groupsOf, importGroups, mergePeers, parsePeersText, PEERS_FILE_NAME, peersExported, peersFileText,
   peersKey, PeersOverlay, setGroup,
 } from './core/screener';
@@ -46,7 +46,7 @@ import { filterSignals, parseSignals, signalDates, signalNames, SIGNAL_TYPES, Si
 type ActiveTab = string;
 type SortDirection = 'asc' | 'desc';
 type TabInfo = { id: ActiveTab; label: string; count: number | string; disabled?: boolean };
-type CellFormat = 'pct' | 'x' | 'pp' | 'money' | 'price' | 'int' | 'basis' | 'date';
+type CellFormat = 'pct' | 'x' | 'pp' | 'money' | 'price' | 'int' | 'basis' | 'date' | 'text';
 type Col = { key: string; label: string; group: string; fmt: CellFormat; tip: string };
 
 const DASH = '–'; // placeholder for null / unavailable values, never 0
@@ -191,14 +191,50 @@ function buildColumns(): Col[] {
   add('high60d', '60D High', 'Swings', 'price', '60D High - the highest of the last 60 daily closes: top of the latest swing.');
   add('low60d', '60D Low', 'Swings', 'price', '60D Low - the lowest of the last 60 daily closes: bottom of the latest swing.');
   add('sharesOutstanding', 'Shares', 'Market', 'int', 'Shares outstanding.');
+  // every other registry metric of a stock is a column too (owner answers N8, N16, N23: no metric only in the screener; all visible):
+  // label and tip from the registry, texts and flags as text columns, dates as date columns
+  const reg = (key: string, group: string, fmt: CellFormat, id = key) => {
+    const def = REGISTRY.byId[id];
+    add(key, def ? def.name.en : id, group, fmt, def ? `${def.name.en} - ${def.short.en}. ${def.formula}` : id);
+  };
+  [['revenueTtm', 'money'], ['netIncomeTtm', 'money'], ['fcfTtm', 'money'], ['peg', 'x'], ['pegHist', 'x'], ['pegGrowthSource', 'text'], ['forwardToTtmPe', 'x'],
+    ['epsGrowthNextYearEst', 'pct'], ['epsGrowth5yEst', 'pct'], ['epsRevision30d', 'pct'], ['pePct5y', 'pct'], ['pFcfPct5y', 'pct']].forEach(([key, fmt]) => reg(key, 'Valuation', fmt as CellFormat));
+  [['operatingMargin', 'pct'], ['grossMarginSlope3y', 'pp'], ['operatingMarginSlope3y', 'pp'], ['cfoToNi', 'x'], ['fcfToNi', 'x'], ['niVolatility5y', 'pp'], ['fcfVolatility5y', 'pp'],
+    ['capexToCfo', 'pct'], ['capexToRevenue', 'pct'], ['capexToRevenueDelta3y', 'pp'], ['epsNiGrowthGap3y', 'pp'], ['ffoApprox', 'money']].forEach(([key, fmt]) => reg(key, 'Quality', fmt as CellFormat));
+  [['interestCoverage', 'x'], ['interestCoverageNote', 'text'], ['cashRunwayMonths', 'int'], ['altmanZ', 'x'], ['altmanVariant', 'text'], ['piotroskiF', 'int'], ['fcfNegativeYears', 'int'],
+    ['balanceYoyMaxChange', 'pct'], ['balanceYoyMaxLine', 'text']].forEach(([key, fmt]) => reg(key, 'Safety', fmt as CellFormat));
+  [['dividendRate', 'price'], ['ffoPayoutApprox', 'pct'], ['yieldVsAvg5y', 'x'], ['dividendStreak', 'int'], ['dividendCut10y', 'text']].forEach(([key, fmt]) => reg(key, 'Dividends', fmt as CellFormat));
+  [['niGrowth3y', 'pct'], ['niGrowth5y', 'pct'], ['cfoGrowth3y', 'pct'], ['ffoGrowth3y', 'pct']].forEach(([key, fmt]) => reg(key, 'Growth', fmt as CellFormat));
+  reg('athDateTs', 'Swings', 'date', 'athDate');
+  reg('athBasis', 'Swings', 'text');
+  reg('flagCount', 'Scores', 'int');
+  [['isMine', 'text'], ['isAdr', 'text'], ['country', 'text'], ['isReit', 'text'], ['ttmIsAnnual', 'text'], ['returnsBasis', 'text']].forEach(([key, fmt]) => reg(key, 'Data', fmt as CellFormat));
   add('basisCls', 'Source', 'Data', 'basis', 'Source of the fundamentals: SEC = EDGAR XBRL annual filings; SEC+Y = SEC with gaps filled from Yahoo; Yahoo = Yahoo annual statements only. Hover a badge for the full text.');
   add('fyTs', 'FY As Of', 'Data', 'date', 'fundamentalsAsOf - the end of the latest fiscal year the fundamentals describe.');
+  add('ttmTs', 'TTM As Of', 'Data', 'date', 'ttmAsOf - the end of the latest quarter of the trailing twelve months (the last fiscal year end when the issuer files no quarters).');
   add('perfTs', 'Return As Of', 'Data', 'date', 'performanceAsOf - the date of the last price the returns are calculated as of.');
   return cols;
 }
 
 const COLS: Col[] = buildColumns();
-const NUMERIC_KEYS = COLS.map(col => col.key).filter(key => key !== 'basisCls' && key !== 'fyTs' && key !== 'perfTs');
+const NUMERIC_KEYS = COLS.filter(col => col.fmt !== 'basis' && col.fmt !== 'date' && col.fmt !== 'text').map(col => col.key);
+/** Date columns: the row value each shows (sorted and filtered by its timestamp in store.num) */
+const DATE_COLUMN_VALUE: Record<string, (row: any, metrics: any) => unknown> = {
+  fyTs: row => row.fundamentalsAsOf, ttmTs: row => row.ttmAsOf, perfTs: (_row, metrics) => metrics.performanceAsOf, athDateTs: (_row, metrics) => metrics.athDate,
+};
+const DATE_KEYS = COLS.filter(col => col.fmt === 'date').map(col => col.key);
+const TEXT_KEYS = COLS.filter(col => col.fmt === 'text').map(col => col.key);
+/** The text a text column shows: booleans as Yes and No, row fields for isMine and isReit */
+function textColumnValue(key: string, row: any, metrics: any): string {
+  const value = key === 'isMine' ? row.isMine : key === 'isReit' ? (metrics.isReit ?? isReitIndustry(typeof row.industry === 'string' ? row.industry : null)) : metrics[key];
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+  return typeof value === 'string' || typeof value === 'number' ? String(value) : '';
+}
+function dateColumnText(key: string, row: any): string {
+  const get = DATE_COLUMN_VALUE[key];
+  const value = get ? get(row, row && row.metrics ? row.metrics : {}) : null;
+  return typeof value === 'string' ? value : '';
+}
 const STRING_SORT_KEYS = ['ticker', 'name', 'type', 'exchange', 'sector', 'industry'];
 const ASC_FIRST_KEYS = ['ticker', 'name', 'exchange', 'sector', 'industry', 'section', 'metric', 'kind'];
 
@@ -380,6 +416,8 @@ type Store = {
   assetType: Uint8Array; // 0 stock, 1 ETF (from the brand feeds)
   typeText: string[];
   num: Record<string, Float64Array>;
+  /** texts of the text columns (TEXT_KEYS) */
+  text: Record<string, string[]>;
   ticker: string[];
   name: string[];
   exchangeText: string[];
@@ -1132,7 +1170,9 @@ function buildStore(rows: any[]): Store {
   const n = items.length;
   const num: Record<string, Float64Array> = {};
   const newArray = (): Float64Array => new Float64Array(n).fill(NaN);
-  [...NUMERIC_KEYS, 'marketCap', 'price', 'basisCls', 'fyTs', 'perfTs'].forEach(key => { num[key] = newArray(); });
+  [...NUMERIC_KEYS, 'marketCap', 'price', 'basisCls', ...DATE_KEYS].forEach(key => { num[key] = newArray(); });
+  const text: Record<string, string[]> = {};
+  TEXT_KEYS.forEach(key => { text[key] = new Array(n).fill(''); });
   const exchangeDict = new Map<string, number>();
   const sectorDict = new Map<string, number>();
   const result: Store = {
@@ -1146,6 +1186,7 @@ function buildStore(rows: any[]): Store {
     assetType: new Uint8Array(n),
     typeText: new Array(n),
     num,
+    text,
     ticker: new Array(n),
     name: new Array(n),
     exchangeText: new Array(n),
@@ -1180,8 +1221,8 @@ function buildStore(rows: any[]): Store {
       if (value !== null) num[key][i] = value;
     });
     if (!Number.isFinite(num.price[i])) { const price = numberOrNull(row.price); if (price !== null) num.price[i] = price; }
-    num.perfTs[i] = parseDateTs(metrics.performanceAsOf);
-    num.fyTs[i] = parseDateTs(row.fundamentalsAsOf);
+    DATE_KEYS.forEach(key => { num[key][i] = parseDateTs(DATE_COLUMN_VALUE[key](row, metrics)); });
+    TEXT_KEYS.forEach(key => { text[key][i] = textColumnValue(key, row, metrics); });
     num.basisCls[i] = classifyBasis(row.fundamentalsBasis);
     const basisWords = basisSearchWords(num.basisCls[i]);
     result.fields.ticker[i] = String(row.ticker).toLowerCase();
@@ -1566,7 +1607,7 @@ function menuColumns(): Array<{ key: string; label: string; locked: boolean }> {
 
 /** Every catalog column in display order, shown or not: the filters work on all of them. */
 function allCatalogColumns(): CatalogColumn[] {
-  return BASE_FILTER_COLUMNS.concat(COLS.map(col => ({ key: col.key, label: col.label, kind: col.fmt === 'basis' ? 'basis' : col.fmt === 'date' ? 'date' : 'num', fmt: col.fmt })));
+  return BASE_FILTER_COLUMNS.concat(COLS.map(col => ({ key: col.key, label: col.label, kind: col.fmt === 'basis' ? 'basis' : col.fmt === 'date' ? 'date' : col.fmt === 'text' ? 'text' : 'num', fmt: col.fmt })));
 }
 
 /** The columns of the catalog table in display order: the fixed ones and the columns checked in the Columns menu. */
@@ -1581,9 +1622,10 @@ function catalogCellText(col: CatalogColumn, id: number): string {
   if (col.key === 'type') return s.typeText[id].toLowerCase();
   if (col.key === 'presets') return passedPresets(id).map(p => pick(p.title)).join(' ').toLowerCase();
   if (SCORING_TEXT_KEYS.includes(col.key)) return scoringText(col.key, id).toLowerCase();
+  if (s.text[col.key]) return s.text[col.key][id].toLowerCase();
   if (col.kind === 'text') return col.key === 'ticker' ? s.fields.ticker[id] : col.key === 'name' ? s.fields.name[id] : col.key === 'exchange' ? s.fields.exchange[id] : col.key === 'sector' ? s.fields.sector[id] : s.fields.industry[id];
   if (col.kind === 'basis') { const cls = s.num.basisCls[id]; return BASIS_BADGES[Number.isFinite(cls) ? String(cls) : 'none'].label.toLowerCase(); }
-  if (col.kind === 'date') return String(col.key === 'perfTs' ? (s.raw[id].metrics ? s.raw[id].metrics.performanceAsOf || '' : '') : s.raw[id].fundamentalsAsOf || '').toLowerCase();
+  if (col.kind === 'date') return dateColumnText(col.key, s.raw[id]).toLowerCase();
   const value = s.num[col.key][id];
   return Number.isFinite(value) ? formatByFmt(col.fmt, value).toLowerCase() : '';
 }
@@ -1693,10 +1735,10 @@ function sortArrayFor(key: string): Float64Array | null {
   if (s.num[key]) return s.num[key];
   if (key === 'presets') return presetCountArray(); // number of presets passed, moves with every screener edit (never in rankCache)
   if (SCORING_TEXT_KEYS.includes(key)) return scoringSortArray(key);
-  if (!STRING_SORT_KEYS.includes(key)) return null;
+  if (!STRING_SORT_KEYS.includes(key) && !s.text[key]) return null;
   const cached = s.rankCache[key];
   if (cached) return cached;
-  const texts = key === 'ticker' ? s.ticker : key === 'name' ? s.name : key === 'type' ? s.typeText : key === 'exchange' ? s.exchangeText : key === 'sector' ? s.sectorText : s.industryText;
+  const texts = s.text[key] ? s.text[key] : key === 'ticker' ? s.ticker : key === 'name' ? s.name : key === 'type' ? s.typeText : key === 'exchange' ? s.exchangeText : key === 'sector' ? s.sectorText : s.industryText;
   const order = Array.from({ length: s.n }, (_, i) => i).sort((a, b) => collator.compare(texts[a], texts[b]) || a - b);
   const ranks = new Float64Array(s.n).fill(NaN);
   let rank = -1;
@@ -2827,8 +2869,9 @@ function cellHtml(col: Col, id: number): string {
   if (!s) return '';
   const numCls = 'py-2.5 px-4 text-right font-mono text-slate-700 dark:text-slate-300';
   if (col.fmt === 'basis') return `<td class="py-2.5 px-4">${sourceBadge(id)}</td>`;
+  if (col.fmt === 'text') return `<td class="py-2.5 px-4 text-slate-600 dark:text-slate-400 whitespace-nowrap">${escapeHtml(s.text[col.key][id] || DASH)}</td>`;
   if (col.fmt === 'date') {
-    const text = col.key === 'perfTs' ? (s.raw[id].metrics ? s.raw[id].metrics.performanceAsOf : '') : s.raw[id].fundamentalsAsOf;
+    const text = dateColumnText(col.key, s.raw[id]);
     const stale = col.key === 'perfTs' && isStaleId(id);
     const tip = stale ? ` title="${text ? 'The last price is older than ' + state.staleDays + ' days' : 'Return as-of date is unknown'}"` : '';
     return `<td class="py-2.5 px-4 font-mono ${stale ? 'text-amber-600 dark:text-amber-400' : 'text-slate-600 dark:text-slate-400'}"${tip}>${escapeHtml(text || DASH)}</td>`;
@@ -3458,10 +3501,11 @@ function overviewRows(stock: StockRef): Array<{ section: string; metric: string;
   ];
   COLS.forEach(col => {
     const id = stock.id;
-    const value = store ? store.num[col.key][id] : NaN;
+    const value = store && store.num[col.key] ? store.num[col.key][id] : NaN;
     let shown: string;
     if (col.fmt === 'basis') shown = String(raw.fundamentalsBasis || DASH);
-    else if (col.fmt === 'date') shown = String(col.key === 'perfTs' ? (metrics.performanceAsOf || DASH) : (raw.fundamentalsAsOf || DASH));
+    else if (col.fmt === 'date') shown = dateColumnText(col.key, raw) || DASH;
+    else if (col.fmt === 'text') shown = (store ? store.text[col.key][id] : '') || DASH;
     else shown = col.fmt === 'pct' ? formatPercent(value) : col.fmt === 'x' ? formatRatio(value) : col.fmt === 'pp' ? formatPoints(value)
       : col.fmt === 'money' ? formatMoney(value) : col.fmt === 'price' ? formatPrice(value) : formatInteger(value);
     rows.push({ section: col.group, metric: col.label, value: shown });
@@ -3887,7 +3931,8 @@ function exportCell(col: Col, id: number): string {
   const s = store;
   if (!s) return '';
   if (col.fmt === 'basis') return String(s.raw[id].fundamentalsBasis || '');
-  if (col.fmt === 'date') return String(col.key === 'perfTs' ? (s.raw[id].metrics ? s.raw[id].metrics.performanceAsOf || '' : '') : (s.raw[id].fundamentalsAsOf || ''));
+  if (col.fmt === 'date') return dateColumnText(col.key, s.raw[id]);
+  if (col.fmt === 'text') return s.text[col.key][id];
   return numberCell(nanToNull(s.num[col.key][id]));
 }
 
@@ -6488,7 +6533,12 @@ init();
 
 // ---- browser test hooks: the module scope hides these from the page, the UI tests in ../ETFs/.claude/tools/ui-std reach them through window ----
 
-Object.assign(window, { state, render, catalogIds, catalogFilterColumns, detectedCatalogType, filterExpressionFor, gridTypeCache, menuColumns });
+/** Registry metrics of a stock without a table column (owner answers N8, N16, N23: must stay empty; the columns browser test reads it) */
+function metricsWithoutColumn(): string[] {
+  const shown = new Set(COLS.map(col => col.key).concat(BASE_FILTER_COLUMNS.map(col => col.key), ['marketCap', 'price', 'size', 'performanceAsOf', 'athDate']));
+  return REGISTRY.metrics.filter(m => m.appliesTo.indexOf('stock') >= 0 && m.source !== 'planned' && !shown.has(m.id)).map(m => m.id);
+}
+Object.assign(window, { state, render, catalogIds, catalogFilterColumns, detectedCatalogType, filterExpressionFor, gridTypeCache, menuColumns, metricsWithoutColumn });
 // screener hooks of stocks-screener-uitest.ts
 Object.assign(window, { scr, exportPreset, importPresetText, presetShareUrl, presetResults, effectivePreset, switchLanguage, applyClear });
 // peers and ticker page hooks (plan stages 6 and 7, stocks-ticker-uitest.ts)
