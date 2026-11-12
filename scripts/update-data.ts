@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { epsCagr3y, ESTIMATE_METRIC_KEYS, estimateMetrics, parseEstimates, type Estimates } from './metrics/estimates';
 import { FUNDAMENTAL_METRIC_KEYS, fundamentalMetrics, isFinancial, ownEbitdaMetrics, withSectorExceptions } from './metrics/fundamentals';
 import { HISTORY_METRIC_KEYS, historyMetrics } from './metrics/history';
+import { DIVIDEND_HISTORY_KEYS, dividendHistory } from './metrics/dividends';
 import { pctFrom52wHigh, swingMetrics } from './metrics/swing';
 import { parseCompanyFacts, type SecFundamentals, type Split } from './sec/companyfacts';
 import { TAGS } from './sec/tags';
@@ -622,6 +623,7 @@ export function dividendMetrics(dividends: ParsedChart['dividends'], price: numb
       dividendYield: price ? (ttm > 0 ? rounded((ttm / price) * 100) : 0) : null, // no payments in the last year is an honest 0
       dividendRate: ttm > 0 ? rounded(ttm, 4) : null,
       dividendGrowth: growth(1), dividendGrowth3y: growth(3), dividendGrowth5y: growth(5),
+      ...dividendHistory(annual, lastDate), // streak of yearly increases and the 10-year cut flag (scripts/metrics/dividends.ts)
     },
     annual,
   };
@@ -800,7 +802,7 @@ export const rowFromMeta = (meta: JsonRecord): JsonRecord => Object.fromEntries(
 const METRIC_KEYS = [
   'marketCap', 'enterpriseValue', 'price', 'week52High', 'week52Low', 'range52w', 'beta', 'sharesOutstanding',
   'pe', 'forwardPe', 'ps', 'forwardPs', 'pFcf', 'evEbitda', 'fcfToEbitda', 'pb',
-  'dividendYield', 'dividendRate', 'dividendGrowth', 'dividendGrowth3y', 'dividendGrowth5y', 'payoutRatio', 'fcfPayout',
+  'dividendYield', 'dividendRate', 'dividendGrowth', 'dividendGrowth3y', 'dividendGrowth5y', ...DIVIDEND_HISTORY_KEYS, 'payoutRatio', 'fcfPayout',
   'currentRatio', 'quickRatio', 'debtToEquity', 'netDebtToEbitda', 'roic',
   ...['revenue', 'eps', 'fcf', 'ebitda', 'capex', 'assets', 'debt'].flatMap((n) => [`${n}Growth`, `${n}Growth3y`, `${n}Growth5y`]),
   'netMargin', 'grossMargin', 'ebitdaMargin', 'fcfMargin',

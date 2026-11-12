@@ -1063,7 +1063,193 @@ const FIELDS: MetricDef[] = [
   }),
 ];
 
-const BASE: MetricDef[] = [...MARKET, ...VALUATION, ...DIVIDENDS, ...BALANCE, ...GROWTH, ...MARGINS, ...PERFORMANCE, ...TOTAL_RETURN, ...META, ...SWINGS, ...SEC_DERIVED, ...PLANNED, ...FIELDS];
+// ---------------------------------------------------------------------------
+// stage 5 inputs computed by the updater (scripts/metrics/dividends.ts, scripts/metrics/fundamentals.ts) and the outputs of the
+// scoring core (src/core/scoring): scores, archetype, status, Why and flags are computed in the page from the feed and
+// src/core/scoring/config.json, they are not feed keys; presets can still filter on them
+
+const SCORING_NOTE: Text = {
+  en: 'Computed in the page by src/core/scoring from the feed and the thresholds of src/core/scoring/config.json (see the guide sections Five scores, Archetypes and statuses, Thresholds); not stored in the feed',
+  ru: 'Считается на странице модулем src/core/scoring по фиду и порогам из src/core/scoring/config.json (см. разделы руководства «Пять оценок», «Архетипы и статусы», «Пороги»); в фиде не хранится',
+};
+const scoring = (spec: Spec): MetricDef => def({ ...spec, guide: { en: `${spec.guide.en}. ${SCORING_NOTE.en}`, ru: `${spec.guide.ru}. ${SCORING_NOTE.ru}` } });
+const SCORE_SPECS: Array<[string, string, string, AssetType[], string, string, string, string]> = [
+  ['scoreCheap', 'Cheap', 'Дёшево', STOCK, 'peg, pegHist, forwardToTtmPe, pePct5y, pFcfPct5y, forwardPe (sector and peers)',
+    'how cheap the stock is against its sector, its peers and its own history: both PEGs, forward P/E against TTM, the 5-year P/E and P/FCF percentiles and the forward P/E itself',
+    'Насколько бумага дешева относительно сектора, пиров и своей истории: оба PEG, форвардный P/E к TTM, перцентили P/E и P/FCF за 5 лет и сам форвардный P/E',
+    'Valuation against sector, peers and own history'],
+  ['scoreQuality', 'Quality', 'Качественно', STOCK, 'roic, grossMarginSlope3y, operatingMarginSlope3y, cfoToNi, fcfToNi',
+    'how good the business is: return on invested capital, the 3-year trends of the gross and operating margins and how much of the profit turns into cash',
+    'Насколько хорош бизнес: доходность вложенного капитала, тренды валовой и операционной маржи за 3 года и какая доля прибыли превращается в деньги',
+    'Returns on capital, margin trends, cash conversion'],
+  ['scoreSafety', 'Safety', 'Безопасно', STOCK, 'debtToEquity, netDebtToEbitda, interestCoverage, altmanZ, piotroskiF, niVolatility5y, fcfVolatility5y',
+    'how safe the balance sheet and the earnings are: debt to equity, net debt to EBITDA, interest coverage, Altman Z, Piotroski F and the stability of net income and free cash flow',
+    'Насколько надёжны баланс и прибыль: долг к капиталу, чистый долг к EBITDA, покрытие процентов, Altman Z, Piotroski F и стабильность чистой прибыли и свободного потока',
+    'Debt, coverage, distress scores, stable earnings'],
+  ['scoreDividend', 'Dividend', 'Дивиденд', ['stock', 'etf'], 'dividendStreak, dividendCut10y, dividendGrowth5y, dividendYield, fcfPayout (REIT: ffoPayoutApprox)',
+    'how reliable the dividend is, for payers only (dividend yield above 0): the streak of yearly increases, no cut in 10 years, 5-year growth, the yield and the share of free cash flow paid out (approximate FFO for REITs). ETFs: the yield only, their feeds publish no dividend growth yet',
+    'Насколько надёжен дивиденд, только для плательщиков (доходность больше 0): стрик лет с повышением, отсутствие сокращений за 10 лет, рост за 5 лет, доходность и доля свободного потока на выплаты (у REIT - приблизительного FFO). У ETF - только доходность: роста дивиденда в их фидах пока нет',
+    'Streak, no cuts, growth and payout of payers'],
+  ['scoreEntry', 'Entry point', 'Точка входа', ['stock', 'etf'], 'pctFrom52wHigh, pctFromAth, range52w, sigmaFromMean60d (lower is better here); × 0.75 when epsRevision30d < 0',
+    'how good the moment to buy is: the drop from the 52-week high and from the all-time high, the position in the 52-week range and the distance from the 60-day mean in sigma, all read as lower is better. A stock whose current-year EPS estimate fell in 30 days gets the score multiplied by the factor of the config. ETFs: the same without the EPS adjustment',
+    'Насколько удачен момент покупки: просадка от 52-недельного и исторического максимума, положение в годовом диапазоне и отклонение от 60-дневной средней в σ, везде «ниже - лучше». Если прогноз EPS на текущий год за 30 дней снизился, оценка умножается на множитель из конфига. У ETF - то же без поправки на прогнозы',
+    'Drawdown, range position and sigma: is now a good entry'],
+];
+const SCORES: MetricDef[] = SCORE_SPECS.map(([id, en, ru, appliesTo, formula, guideEn, guideRu, shortEn]) => scoring({
+  id, name: { en: `${en} score`, ru: `Оценка «${ru}»` }, formula: `0-100: weighted mean of the sector percentiles of ${formula}; empty below half of the weight`,
+  unit: 'count', basis: 'snapshot', source: 'computed', direction: 'higher-is-better', appliesTo, thresholds: { good: 70, bad: 40 },
+  nullWhen: { en: 'less than half of the weight of its metrics has a value, or the score does not apply to the row (ETFs: only Dividend and Entry point; Dividend: payers only)', ru: 'значения есть меньше чем у половины веса метрик или оценка не относится к строке (у ETF только «Дивиденд» и «Точка входа»; «Дивиденд» - только у плательщиков)' },
+  short: { en: shortEn, ru: guideRu.split(':')[0] },
+  guide: {
+    en: `Score from 0 to 100, ${guideEn}. Each metric becomes its percentile inside the sector (a sector with fewer than 20 rows compares with the whole market, ETFs with all ETFs), turned so that 100 is the best, and the score is the weighted mean of the metrics that have a value. The weights depend on the archetype`,
+    ru: `Оценка от 0 до 100. ${guideRu}. Каждая метрика переводится в перцентиль внутри сектора (сектор меньше 20 бумаг сравнивается со всем рынком, ETF - со всеми ETF) так, что 100 - лучшее значение, и оценка - взвешенное среднее метрик, у которых есть значение. Веса зависят от архетипа`,
+  },
+}));
+
+const SCORE_OUTPUTS: MetricDef[] = [
+  ...SCORES,
+  scoring({
+    id: 'statusScore', name: { en: 'Status score', ru: 'Итоговая оценка' }, formula: 'weighted mean of the five scores with the score weights of the archetype; compared with the buy and reject thresholds of the archetype',
+    unit: 'count', basis: 'snapshot', source: 'computed', direction: 'higher-is-better', appliesTo: BOTH,
+    nullWhen: { en: 'less than half of the weight of the scores that apply to the row has a value', ru: 'значения есть меньше чем у половины веса оценок, относящихся к строке' },
+    short: { en: 'Weighted sum of the five scores behind the status', ru: 'Взвешенная сумма пяти оценок, по которой ставится статус' },
+    guide: {
+      en: 'The five scores combined with the score weights of the row\'s archetype: a stable stock leans on Safety and Cheap, a growing one on Quality, a volatile one on Entry point. Empty scores are left out and the weights of the rest are scaled up, as long as at least half of the weight is present. The status compares this number with the thresholds of the archetype',
+      ru: 'Пять оценок, сложенные с весами архетипа строки: у стабильной бумаги главный вес у «Безопасно» и «Дёшево», у растущей - у «Качественно», у волатильной - у «Точки входа». Пустые оценки не участвуют, веса остальных растягиваются, пока есть хотя бы половина веса. Статус сравнивает это число с порогами архетипа',
+    },
+  }),
+  scoring({
+    id: 'archetype', name: { en: 'Archetype', ru: 'Архетип' }, formula: 'first matching rule of the archetypeRules list in the config (preset conditions), else defaultArchetype: stable, growth or volatile',
+    unit: 'category', basis: 'snapshot', source: 'computed', direction: 'neutral', appliesTo: BOTH,
+    short: { en: 'Stable, growth or volatile: decides weights and stop factors', ru: 'Стабильная, растущая или волатильная: задаёт веса и стоп-факторы' },
+    guide: {
+      en: 'Every row gets one of three archetypes by an ordered list of rules in preset format, the first matching rule wins: volatile (volatility1y at least 45%), growth (revenue growing 15% a year over 3 years, or 25% in the last year while free cash flow is negative), stable (pays a dividend or volatility below 30%); without a match the default archetype. ETFs only meet the price rules. The archetype picks the metric weights, the score weights, the status thresholds and the stop factors',
+      ru: 'Каждая строка получает один из трёх архетипов по упорядоченному списку правил в формате пресета, побеждает первое совпавшее: волатильная (volatility1y от 45%), растущая (выручка растёт на 15% в год за 3 года или на 25% за последний год при отрицательном свободном потоке), стабильная (платит дивиденд или волатильность ниже 30%); без совпадения - архетип по умолчанию. ETF попадают только под ценовые правила. Архетип выбирает веса метрик, веса оценок, пороги статуса и стоп-факторы',
+    },
+  }),
+  scoring({
+    id: 'status', name: { en: 'Status', ru: 'Статус' }, formula: 'rejected when a stop factor of the archetype fires, else buy when statusScore >= buy threshold, rejected when below the reject threshold, otherwise watch',
+    unit: 'category', basis: 'snapshot', source: 'computed', direction: 'neutral', appliesTo: BOTH,
+    nullWhen: { en: 'statusScore is empty and no stop factor fired', ru: 'итоговая оценка пуста и стоп-фактор не сработал' },
+    short: { en: 'Buy zone, Watch or Rejected', ru: 'Зона покупки, Наблюдать или Отклонено' },
+    guide: {
+      en: 'Buy zone, Watch or Rejected (values buy, watch, rejected for presets). A stop factor of the archetype rejects the row whatever the scores say: Altman Z in the distress zone or negative free cash flow three years in a row for stable stocks, less than 12 months of cash for growing ones, Altman distress for volatile ones. Otherwise the status score decides against the thresholds of the archetype. The Why column says which rule decided',
+      ru: 'Зона покупки, Наблюдать или Отклонено (в пресетах - значения buy, watch, rejected). Стоп-фактор архетипа отклоняет строку при любых оценках: Altman Z в зоне дистресса или отрицательный свободный поток три года подряд у стабильных, кэша меньше чем на 12 месяцев у растущих, дистресс по Altman у волатильных. Иначе решает итоговая оценка против порогов архетипа. Колонка «Почему» говорит, какое правило сработало',
+    },
+  }),
+  scoring({
+    id: 'why', name: { en: 'Why', ru: 'Почему' }, formula: 'archetype, the stop factor or the status rule, then the notes of the config whose condition holds, in the current language',
+    unit: 'text', basis: 'snapshot', source: 'computed', direction: 'neutral', appliesTo: BOTH,
+    short: { en: 'Short reasons behind the status', ru: 'Короткие причины статуса' },
+    guide: {
+      en: 'Short reasons in the current language, for example "Stable; score 72 >= 65; streak 12 years; -28% from 52W high" or "Growth; stop: cash runway 7 months < 12". The first item is the archetype, then the stop factor or the status rule, then the notes of the config whose condition holds (FCF payout above 70, a long streak, a deep drop from the high)',
+      ru: 'Короткие причины на текущем языке, например «Стабильная; оценка 72 >= 65; стрик 12 лет; -28% от 52-нед. максимума» или «Растущая; стоп: запас кэша 7 мес. < 12». Сначала архетип, затем стоп-фактор или правило статуса, затем заметки конфига, условие которых выполнено (FCF payout выше 70, длинный стрик, глубокая просадка от максимума)',
+    },
+  }),
+  scoring({
+    id: 'flags', name: { en: 'Flags', ru: 'Флаги' }, formula: 'ids of the flags of the config whose rule holds, in config order',
+    unit: 'text', basis: 'snapshot', source: 'computed', direction: 'neutral',
+    short: { en: 'Red flags in the reports', ru: 'Красные флаги в отчётности' },
+    guide: {
+      en: 'Warnings read from the reports, each a rule in preset format with thresholds in the config: net income grows while operating cash flow does not (the main red flag), the operating margin falls while revenue grows, debt to equity above 2, EPS grows notably faster than net income (buybacks), free cash flow far below net income (a capex phase), a large year-over-year change of a balance line. A flag is a reason to read the reports, not a verdict; it does not change the status',
+      ru: 'Предупреждения из отчётности, каждое - правило в формате пресета с порогами в конфиге: чистая прибыль растёт, а операционный поток нет (главный красный флаг), операционная маржа падает при растущей выручке, долг к капиталу выше 2, EPS растёт заметно быстрее чистой прибыли (выкуп), свободный поток намного ниже прибыли (фаза capex), крупное изменение строки баланса год к году. Флаг - повод прочитать отчёт, а не приговор; на статус он не влияет',
+    },
+  }),
+  scoring({
+    id: 'flagCount', name: { en: 'Number of flags', ru: 'Число флагов' }, formula: 'number of flags that fire',
+    unit: 'count', basis: 'snapshot', source: 'computed', direction: 'lower-is-better',
+    short: { en: 'How many red flags fire', ru: 'Сколько красных флагов сработало' },
+    guide: {
+      en: 'The number of flags of the config that fire for the stock, 0 when none does. A preset condition such as flagCount = 0 keeps only clean reports; sort by it to see the stocks that need a closer look first',
+      ru: 'Число сработавших флагов конфига, 0 если нет ни одного. Условие пресета flagCount = 0 оставляет только чистую отчётность; сортировка по нему показывает бумаги, которые надо проверить первыми',
+    },
+  }),
+];
+
+const SCORE_INPUTS: MetricDef[] = [
+  def({
+    id: 'dividendStreak', name: { en: 'Dividend increase streak', ru: 'Стрик повышений дивиденда' }, formula: 'complete calendar years in a row whose dividend per share is above the base year (the year before, or the one before a special dividend), counted back from the last complete year (market.annualDps, up to 15 years)',
+    unit: 'count', basis: 'calendar-year', source: 'yahoo-chart', direction: 'higher-is-better', thresholds: { good: 10 },
+    nullWhen: { en: 'no dividend in the last complete calendar year', ru: 'нет дивиденда в последнем полном календарном году' },
+    short: { en: 'Years in a row with a higher dividend', ru: 'Лет подряд с повышением дивиденда' },
+    guide: {
+      en: 'How many complete calendar years in a row the dividend per share (split adjusted, sum of the ex-dates of the year) went up. A flat year ends the streak. A special dividend does not count: a year more than 1.2 times above both neighbours is skipped as the base. The feed keeps up to 15 years, so the streak tops out at 14 even for a company raising for 60 years. 10 and more is a dividend grower',
+      ru: 'Сколько полных календарных лет подряд дивиденд на акцию (с поправкой на сплиты, сумма экс-дат года) повышался. Год без изменений обрывает стрик. Спецдивиденд не считается: год, который больше обоих соседей в 1,2 раза, пропускается как база. Фид хранит до 15 лет, поэтому стрик не больше 14 даже у компании, повышающей выплату 60 лет. От 10 лет - устойчивый растущий плательщик',
+    },
+  }),
+  def({
+    id: 'dividendCut10y', name: { en: 'Dividend cut in 10 years', ru: 'Сокращение дивиденда за 10 лет' }, formula: 'true when a complete calendar year of the last 10 paid more than 10% less than its base year and the next year did not come back; a stopped dividend is a cut',
+    unit: 'flag', basis: 'calendar-year', source: 'yahoo-chart', direction: 'neutral',
+    nullWhen: { en: 'no dividend in the last 11 complete calendar years', ru: 'нет дивидендов за последние 11 полных календарных лет' },
+    short: { en: 'Did the company cut its dividend in 10 years', ru: 'Сокращала ли компания дивиденд за 10 лет' },
+    guide: {
+      en: 'True when the dividend per share of a calendar year fell more than 10% below its base year (the year before, or the one before a special dividend) and the next year did not return to the base, so a December payment moved into January is not a cut. A suspension is a cut. The last complete year has no next year yet and can show a shifted payment as a cut; check recentDividends then. Drops under 10% (rounding, currency of ADRs) are ignored',
+      ru: 'Истина, если дивиденд на акцию календарного года упал больше чем на 10% ниже базового года (предыдущего или года перед спецдивидендом), а следующий год не вернулся к базе, поэтому платёж, сдвинутый с декабря на январь, - не сокращение. Приостановка - сокращение. У последнего полного года следующего ещё нет, и сдвинутый платёж может выглядеть сокращением; тогда смотрите recentDividends. Падения меньше 10% (округление, валюта ADR) не учитываются',
+    },
+  }),
+  def({
+    id: 'fcfNegativeYears', name: { en: 'Negative FCF years in a row', ru: 'Лет подряд с отрицательным FCF' }, formula: 'fiscal years in a row, counted back from the latest, with operating cash flow - capex < 0 (SEC 10-K)',
+    unit: 'count', basis: 'fy', source: 'sec', direction: 'lower-is-better', thresholds: { good: 0, bad: 3 }, sectorNotes: FIN_EMPTY,
+    nullWhen: { en: 'the latest fiscal year has no operating cash flow or capex', ru: 'у последнего финансового года нет операционного потока или капзатрат' },
+    short: { en: 'Fiscal years in a row of cash burn', ru: 'Финансовых лет подряд со сжиганием денег' },
+    guide: {
+      en: 'How many fiscal years in a row, back from the latest 10-K, free cash flow (operating cash flow minus capital expenditures) was negative; 0 when the latest year is positive. Three or more is the stop factor of the stable archetype: a mature company that burns cash for three years lives on debt or new shares',
+      ru: 'Сколько финансовых лет подряд, считая от последнего 10-K, свободный поток (операционный поток минус капзатраты) был отрицательным; 0, если последний год положительный. Три и больше - стоп-фактор стабильного архетипа: зрелая компания, сжигающая деньги три года, живёт на долг или новые акции',
+    },
+  }),
+  def({
+    id: 'cfoGrowth3y', name: { en: 'Operating cash flow growth 3Y CAGR', ru: 'Рост операционного потока, CAGR 3 года' }, formula: 'CAGR of operating cash flow from the fiscal year 3 years before the latest (SEC 10-K)',
+    unit: 'percent', basis: 'fy', source: 'sec', direction: 'higher-is-better',
+    nullWhen: { en: 'an endpoint is not positive or missing', ru: 'одна из точек не положительна или отсутствует' },
+    short: { en: 'Yearly growth of operating cash flow over 3 years', ru: 'Годовой рост операционного потока за 3 года' },
+    guide: {
+      en: 'Compound yearly growth of the operating cash flow over the latest 3 fiscal years. Read next to niGrowth3y: profit that grows while the cash it brings does not is the main red flag of the reports (receivables or inventories swelling, aggressive revenue recognition)',
+      ru: 'Среднегодовой рост операционного денежного потока за последние 3 финансовых года. Читается рядом с niGrowth3y: прибыль растёт, а деньги от неё нет - главный красный флаг отчётности (растут дебиторка или запасы, агрессивное признание выручки)',
+    },
+  }),
+  def({
+    id: 'epsNiGrowthGap3y', name: { en: 'EPS over net income growth 3Y', ru: 'Опережение EPS над прибылью за 3 года' }, formula: 'CAGR of diluted EPS over 3 fiscal years - niGrowth3y, percentage points (SEC 10-K, split restated)',
+    unit: 'pp', basis: 'fy', source: 'sec', direction: 'neutral',
+    nullWhen: { en: 'one of the two CAGRs is empty (an endpoint not positive)', ru: 'один из двух CAGR пуст (точка не положительна)' },
+    short: { en: 'How much faster EPS grows than net income', ru: 'Насколько EPS растёт быстрее чистой прибыли' },
+    guide: {
+      en: 'Yearly EPS growth minus yearly net income growth over 3 fiscal years. A positive gap means the share count fell: buybacks lift EPS without the business growing as fast. A few points are normal for a buyback programme; a large gap means the EPS story is mostly buybacks, often paid with debt',
+      ru: 'Годовой рост EPS минус годовой рост чистой прибыли за 3 финансовых года. Положительный разрыв значит, что акций стало меньше: выкуп поднимает EPS без такого же роста бизнеса. Несколько пунктов - норма для программы выкупа; большой разрыв значит, что рост EPS держится на выкупе, часто в долг',
+    },
+  }),
+  def({
+    id: 'balanceYoyMaxChange', name: { en: 'Largest balance line change YoY', ru: 'Крупнейшее изменение строки баланса за год' }, formula: 'largest by absolute value of (line FY0 / line FY-1 - 1) × 100 over cash, receivables, current assets, assets, current liabilities, liabilities, debt, equity; a line counts when FY-1 is at least 10% of FY-1 assets',
+    unit: 'percent', basis: 'fy', source: 'sec', direction: 'neutral',
+    nullWhen: { en: 'fewer than two fiscal years or no material line', ru: 'меньше двух финансовых лет или нет существенной строки' },
+    short: { en: 'Biggest jump of a balance line in a year', ru: 'Самый большой скачок строки баланса за год' },
+    guide: {
+      en: 'The balance sheet line that moved the most between the last two fiscal year ends, in percent, with its name in balanceYoyMaxLine. Small lines (under 10% of the assets of the year before) are ignored, so a cash pile going from 1% to 3% of assets does not count. A large jump comes from an acquisition, a big loan, a write-off or a buyback in debt: read the 10-K before trusting the other metrics',
+      ru: 'Строка баланса, которая сильнее всего изменилась между двумя последними концами финансового года, в процентах, её имя - в balanceYoyMaxLine. Мелкие строки (меньше 10% активов предыдущего года) не учитываются, поэтому рост кэша с 1% до 3% активов не считается. Крупный скачок дают поглощение, большой кредит, списание или выкуп в долг: прочитайте 10-K, прежде чем доверять остальным метрикам',
+    },
+  }),
+  def({
+    id: 'balanceYoyMaxLine', name: { en: 'Line of the largest balance change', ru: 'Строка крупнейшего изменения баланса' }, formula: 'name of the line behind balanceYoyMaxChange: cash, receivables, currentAssets, assets, currentLiabilities, liabilities, debt or equity',
+    unit: 'category', basis: 'fy', source: 'sec', direction: 'neutral',
+    nullWhen: { en: 'balanceYoyMaxChange is empty', ru: 'balanceYoyMaxChange пуст' },
+    short: { en: 'Which balance line moved the most', ru: 'Какая строка баланса изменилась сильнее всего' },
+    guide: {
+      en: 'The SEC field name of the balance line with the largest year-over-year change: cash, receivables, currentAssets, assets, currentLiabilities, liabilities, debt or equity. The flag text of a large balance change shows it, for example "debt +100% YoY"',
+      ru: 'Имя поля SEC строки баланса с самым большим изменением за год: cash, receivables, currentAssets, assets, currentLiabilities, liabilities, debt или equity. Текст флага крупного изменения баланса показывает его, например «debt +100% за год»',
+    },
+  }),
+  def({
+    id: 'revenueGrowthVsTam', name: { en: 'Revenue growth vs market (TAM)', ru: 'Рост выручки против рынка (TAM)' }, formula: 'revenueGrowth3y - yearly growth of the total addressable market from user-data/tam/<T>.json, percentage points',
+    unit: 'pp', basis: 'fy', source: 'planned', direction: 'higher-is-better',
+    nullWhen: { en: 'no TAM file for the ticker (not computed yet)', ru: 'нет файла TAM для тикера (пока не считается)' },
+    short: { en: 'Does revenue outgrow its market', ru: 'Растёт ли выручка быстрее своего рынка' },
+    guide: {
+      en: 'Planned: revenue growth over 3 years minus the yearly growth of the market the company sells into, taken from the owner\'s TAM file user-data/tam/<T>.json. Below 0 the company loses share, which is the flag "revenue grows slower than the market". The flag is in the config but switched off until TAM files exist',
+      ru: 'Запланировано: рост выручки за 3 года минус годовой рост рынка, на котором продаёт компания, из файла TAM владельца user-data/tam/<T>.json. Ниже 0 компания теряет долю - это флаг «выручка растёт медленнее рынка». Флаг есть в конфиге, но выключен, пока нет файлов TAM',
+    },
+  }),
+];
+
+const BASE: MetricDef[] = [...MARKET, ...VALUATION, ...DIVIDENDS, ...BALANCE, ...GROWTH, ...MARGINS, ...PERFORMANCE, ...TOTAL_RETURN, ...META, ...SWINGS, ...SEC_DERIVED, ...PLANNED, ...SCORE_INPUTS, ...FIELDS, ...SCORE_OUTPUTS];
 
 const textCompanion = (base: MetricDef): MetricDef => def({
   id: `${base.id}Text`, name: { en: `${base.name.en} (text)`, ru: `${base.name.ru} (текст)` }, formula: `issuer display text of ${base.id}`,
