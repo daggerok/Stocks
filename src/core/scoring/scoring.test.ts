@@ -7,7 +7,7 @@ import { loadScoringConfig } from './load-config';
 
 type M = Record<string, unknown>;
 const stock = (ticker: string, metrics: M, sector = 'Technology'): ScreenerRow => ({ ticker, type: 'stock', sector, industry: 'Software', isMine: false, size: 1e10, metrics });
-const etf = (ticker: string, metrics: M): ScreenerRow => ({ ticker, type: 'etf', sector: null, industry: null, isMine: false, size: 1e9, metrics });
+const etf = (ticker: string, metrics: M, category: string | null = null): ScreenerRow => ({ ticker, type: 'etf', sector: category, industry: null, isMine: false, size: 1e9, metrics });
 const T = (en: string, ru = en) => ({ en, ru });
 const c = (metric: string, op: Condition['op'], value: Condition['value']): Condition => ({ metric, op, value, scope: 'absolute', missing: 'fail' });
 
@@ -119,6 +119,13 @@ describe('scores and status on a hand example', () => {
     const r = computeScoring(createUniverse(rows), HAND).rows;
     expect(r.map((x) => x.scores.cheap)).toEqual([100, 0, 100, 50, 0, null, null]);
     expect([r[5].scores.entry, r[6].scores.entry]).toEqual([0, 100]); // the two ETFs among themselves
+  });
+
+  test('ETFs rank inside their fund category; a category under minGroupSize compares with all ETFs (owner answer N4)', () => {
+    // Equity has 3 entry values (= minGroupSize 3) and ranks alone; Bond has 1 and ranks among all 4 ETFs; the stock sector Equity never mixes in
+    const rows = [etf('Q1', { range52w: 10 }, 'Equity'), etf('Q2', { range52w: 50 }, 'Equity'), etf('Q3', { range52w: 90 }, 'Equity'), etf('B1', { range52w: 70 }, 'Bond'), stock('S1', { range52w: 0, volatility1y: 20 }, 'Equity')];
+    const r = computeScoring(createUniverse(rows), HAND).rows;
+    expect(r.slice(0, 4).map((x) => x.scores.entry)).toEqual([100, 50, 0, 33]); // B1: 70 of 10, 50, 70, 90 with lower is better
   });
 });
 

@@ -59,6 +59,17 @@ describe('scopes', () => {
     expect(pick(SECTOR_ROWS, { metric: 'forwardPe', op: '<', value: 50, scope: 'sector', missing: 'skip' })).toEqual(['T0', 'T1', 'T2', 'U0', 'U1', 'U2', 'N']);
   });
 
+  test('an ETF sector is its category, ranked only among ETFs of that category (owner answer N4)', () => {
+    // five Equity ETFs rank among themselves; the stock sector named Equity does not join them; a category under 5 values is missing
+    const rows = [
+      ...[1, 2, 3, 4, 5].map((v, i) => row(`E${i}`, { tr1y: v }, { sector: 'Equity' }, 'etf')),
+      ...[100, 200, 300, 400, 500].map((v, i) => row(`S${i}`, { tr1y: v }, { sector: 'Equity' })),
+      row('B0', { tr1y: 50 }, { sector: 'Fixed Income' }, 'etf'),
+    ];
+    expect(pick(rows, { metric: 'tr1y', op: '>=', value: 60, scope: 'sector' })).toEqual(['E3', 'E4', 'S3', 'S4']);
+    expect(pick(rows, { metric: 'tr1y', op: '>=', value: 0, scope: 'sector', missing: 'fail' })).not.toContain('B0');
+  });
+
   test('peers use the passed groups; a ticker without a group falls back to its industry', () => {
     const peers = { cards: ['T0', 'T1', 'T2', 'T3', 'T4'], other: ['U0'] };
     // T5 has no group: its industry Software (6 values) puts it at P83, so it fails <= 25 even with skip; U1 and U2 fall back to
@@ -158,6 +169,17 @@ describe('presets', () => {
     expect(all.undervalued.unavailable).toContain('peg');
     expect(all['cheap-earnings'].count).toBe(0);
   });
+
+  test('Up over 1 year reads the total return tr1y of stocks and ETFs; Undervalued needs 5-year NI and FCF growth above 0', () => {
+    // owner answer N2: a stock with a price loss but a positive total return passes, an ETF without tr1y fails
+    const u = createUniverse([row('KO', { tr1y: 2, perf1y: -1 }), row('T', { tr1y: -3, perf1y: 1 }), row('SPY', { tr1y: 14 }, {}, 'etf'), row('GLD', { perf1y: 5 }, {}, 'etf')]);
+    expect(tickersOf(u, evaluatePreset(u, BY_ID['positive-1y']).pass)).toEqual(['KO', 'SPY']);
+    // owner answer N3: the shipped thresholds plus niGrowth5y > 0 and fcfGrowth5y > 0
+    const good = { peg: 0.8, forwardToTtmPe: 0.9, pePct5y: 30, roic: 15, operatingMarginSlope3y: 1, niGrowth5y: 8, fcfGrowth5y: 6, niVolatility5y: 25, fcfVolatility5y: 30, cfoToNi: 1.1, debtToEquity: 0.5 };
+    const v = createUniverse([row('A', good), row('B', { ...good, niGrowth5y: 0 }), row('C', { ...good, fcfGrowth5y: -2 }), row('D', { ...good, fcfGrowth5y: null }), row('E', { ...good, niVolatility5y: 26 })]);
+    expect(tickersOf(v, evaluatePreset(v, BY_ID.undervalued).pass)).toEqual(['A']);
+    expect(BY_ID.undervalued.conditions.filter((c) => /Volatility5y$/.test(c.metric)).map((c) => [c.metric, c.value])).toEqual([['niVolatility5y', 25], ['fcfVolatility5y', 30]]);
+  });
 });
 
 describe('expressions and intersections', () => {
@@ -182,9 +204,9 @@ describe('expressions and intersections', () => {
 describe('rows', () => {
   test('stock and ETF rows: size from marketCap or aumValue, isMine from the row flag or the owner list, no metrics -> empty', () => {
     expect(stockRow({ ticker: 'brk.b', sector: 'Financial Services', industry: '', metrics: { marketCap: 1e12, pe: 20 } }, ['BRK-B'])).toEqual({ ticker: 'BRK-B', type: 'stock', sector: 'Financial Services', industry: null, isMine: true, size: 1e12, metrics: { marketCap: 1e12, pe: 20 } });
-    // an ETF reads tr1y as perf1y until the brand feeds publish a price perf1y (plan N2); its own perf1y wins
-    expect(etfRow({ ticker: 'GLD', aumValue: 9e10, metrics: { tr1y: 30 } })).toEqual({ ticker: 'GLD', type: 'etf', sector: null, industry: null, isMine: false, size: 9e10, metrics: { tr1y: 30, perf1y: 30 } });
-    expect(etfRow({ ticker: 'IAU', metrics: { tr1y: 30, perf1y: 28 } }).metrics.perf1y).toBe(28);
+    // metrics as published: no tr1y stands in for perf1y (owner answer N2); the fund category is the ETF sector (owner answer N4)
+    expect(etfRow({ ticker: 'GLD', aumValue: 9e10, category: 'Commodity', metrics: { tr1y: 30 } })).toEqual({ ticker: 'GLD', type: 'etf', sector: 'Commodity', industry: null, isMine: false, size: 9e10, metrics: { tr1y: 30 } });
+    expect(etfRow({ ticker: 'IAU', category: ' ', metrics: { tr1y: 30, perf1y: 28 } })).toMatchObject({ sector: null, metrics: { tr1y: 30, perf1y: 28 } });
     expect(etfRow({ ticker: 'IAU', metrics: { tr1y: null } }).metrics).toEqual({ tr1y: null });
     expect(etfRow({ ticker: 'brk.b' }, new Set(['BRK-B'])).isMine).toBe(true);
     expect(etfRow({ ticker: 'X', isMine: true, aumValue: null })).toEqual({ ticker: 'X', type: 'etf', sector: null, industry: null, isMine: true, size: null, metrics: {} });

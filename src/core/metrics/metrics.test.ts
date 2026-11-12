@@ -44,7 +44,9 @@ describe('metrics registry', () => {
     expect(REGISTRY.byId.range52w.appliesTo).toEqual(['stock', 'etf']);
     expect(ETF_METRIC_KEYS.filter((k) => REGISTRY.byId[k].appliesTo.indexOf('etf') < 0)).toEqual([]);
     expect(STOCK_METRIC_KEYS.filter((k) => REGISTRY.byId[k].appliesTo.indexOf('stock') < 0)).toEqual([]);
-    expect(REGISTRY.byId.perf1y.appliesTo).toEqual(['stock', 'etf']); // ETFs read tr1y as perf1y (plan N2)
+    // "1-year return" is the total return tr1y for both types (owner answer N2); perf1y is a separate price return, ETFs do not publish it
+    expect([REGISTRY.byId.tr1y.appliesTo, REGISTRY.byId.perf1y.appliesTo]).toEqual([['stock', 'etf'], ['stock']]);
+    expect([REGISTRY.byId.tr1y.name.en, REGISTRY.byId.perf1y.name.en, REGISTRY.byId.perf1y.name.ru]).toEqual(['Total return 1Y', 'Price return 1Y', 'Ценовая доходность за год']);
   });
 
   test('every entry sits in exactly one guide group, in registry order', () => {

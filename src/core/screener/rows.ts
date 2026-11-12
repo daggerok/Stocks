@@ -1,10 +1,11 @@
 /// <reference lib="esnext" />
 /**
  * Row adapter: a company row of api/stocks/index.json and a fund row of an ETF brand index.json become one engine row.
- * size is marketCap for a stock and aumValue for an ETF (plan 1.6); ETFs carry no sector or industry yet (null, so sector
- * and industry conditions treat them as missing). isMine comes from the row's own flag once the feed publishes it (plan 1.1),
- * else from the owner's ticker list passed in. ETF feeds publish no price perf1y yet: an ETF row reads its total return tr1y as
- * perf1y (open question N2 of the plan), so "1-year return > 0" also selects ETFs
+ * size is marketCap for a stock and aumValue for an ETF (plan 1.6). The sector of an ETF is its fund category from the brand
+ * feed (owner answer N4; the engine and the scores never mix it with stock sectors); ETFs have no industry (null, so industry
+ * conditions treat them as missing). isMine comes from the row's own flag once the feed publishes it (plan 1.1), else from the
+ * owner's ticker list passed in. Metrics are read as published: "1-year return" is the total return tr1y for stocks and ETFs
+ * (owner answer N2), perf1y is the separate price return and stays empty for ETFs
  */
 import type { ScreenerRow } from './types';
 
@@ -29,16 +30,12 @@ export function stockRow(company: Feed, mineList?: ReadonlySet<string> | readonl
   return { ticker, type: 'stock', sector: text(company.sector), industry: text(company.industry), isMine: mine(company, ticker, mineList), size: num(metrics.marketCap), metrics };
 }
 
-/** perf1y of an ETF row: its own when published, else tr1y */
-export function etfMetrics(fund: Feed): Record<string, unknown> {
-  const metrics = metricsOf(fund);
-  if (num(metrics.perf1y) !== null || num(metrics.tr1y) === null) return metrics;
-  return { ...metrics, perf1y: metrics.tr1y };
-}
+/** The metrics of an ETF fund row as the brand feed publishes them */
+export const etfMetrics = (fund: Feed): Record<string, unknown> => metricsOf(fund);
 
 export function etfRow(fund: Feed, mineList?: ReadonlySet<string> | readonly string[]): ScreenerRow {
   const ticker = normalizeTicker(fund.ticker);
-  return { ticker, type: 'etf', sector: null, industry: null, isMine: mine(fund, ticker, mineList), size: num(fund.aumValue), metrics: etfMetrics(fund) };
+  return { ticker, type: 'etf', sector: text(fund.category), industry: null, isMine: mine(fund, ticker, mineList), size: num(fund.aumValue), metrics: etfMetrics(fund) };
 }
 
 /** All rows of one stocks index and any number of ETF brand indexes; an ETF ticker already present (a fund in two feeds) keeps its first row */

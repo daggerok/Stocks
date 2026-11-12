@@ -403,9 +403,9 @@ const PERF_WINDOWS: Array<[string, string, string, string, string]> = [
 ];
 
 const PERFORMANCE: MetricDef[] = PERF_WINDOWS.map(([id, en, ru, anchorEn, anchorRu]) => def({
-  id, name: { en: id === 'perf1y' ? 'Return 1Y (price)' : `Performance ${en}`, ru: id === 'perf1y' ? 'Доходность за год (цена)' : `Изменение цены за ${ru}`.replace('за с начала', 'с начала') },
-  formula: `last close / ${anchorEn} - 1, × 100, unadjusted closes${id === 'perf1y' ? '; ETFs: tr1y (total return) until the brand feeds publish a price perf1y' : ''}`, unit: 'percent', basis: 'price', source: 'yahoo-chart', direction: 'higher-is-better',
-  appliesTo: id === 'perf1y' ? BOTH : STOCK,
+  id, name: { en: id === 'perf1y' ? 'Price return 1Y' : `Performance ${en}`, ru: id === 'perf1y' ? 'Ценовая доходность за год' : `Изменение цены за ${ru}`.replace('за с начала', 'с начала') },
+  formula: `last close / ${anchorEn} - 1, × 100, unadjusted closes${id === 'perf1y' ? '; price only: the 1-year return of the presets and scores is the total return tr1y' : ''}`, unit: 'percent', basis: 'price', source: 'yahoo-chart', direction: 'higher-is-better',
+  appliesTo: STOCK,
   nullWhen: { en: 'the price history does not reach back to the anchor date', ru: 'история цен не доходит до опорной даты' },
   short: { en: `Price change ${({ WTD: 'week to date', MTD: 'month to date', QTD: 'quarter to date', YTD: 'year to date' } as Record<string, string>)[en] ?? `over ${en}`}, without dividends`, ru: `Изменение цены за ${ru} без дивидендов`.replace('за с начала', 'с начала') },
   guide: {
@@ -435,8 +435,8 @@ const TOTAL_RETURN: MetricDef[] = TR_SPECS.map(([id, en, ru, spanEn, spanRu, ann
   nullWhen: { en: 'the history (or the fund) is younger than the horizon' + (id === 'siAnn' ? ' of one year' : ''), ru: 'история (или фонд) моложе горизонта' + (id === 'siAnn' ? ' в один год' : '') },
   short: { en: `Return with dividends reinvested ${spanEn}`, ru: `Доходность с реинвестированием дивидендов ${spanRu}` },
   guide: {
-    en: `Total return ${spanEn}: price change plus reinvested dividends. Stocks use dividend and split-adjusted closes of the Yahoo chart; ETFs carry the issuer's official NAV total return where the brand publishes it, else a figure derived from Yahoo, and returnsBasis says which. ${annual ? 'The annualized rate compares horizons of different length; 7-10% a year is the long-run equity average' : 'A cumulative figure: divide by the years only roughly, the CAGR columns do it exactly'}`,
-    ru: `Полная доходность ${spanRu}: изменение цены плюс реинвестированные дивиденды. У акций - по закрытиям графика Yahoo с поправкой на дивиденды и сплиты; у ETF - официальная доходность по NAV от эмитента, если бренд её публикует, иначе расчёт по Yahoo, и returnsBasis говорит, что именно. ${annual ? 'Годовой темп позволяет сравнивать горизонты разной длины; 7-10% в год - долгосрочное среднее для акций' : 'Это накопленная величина: делить её на число лет можно лишь грубо, точно это делают колонки CAGR'}`,
+    en: `Total return ${spanEn}: price change plus reinvested dividends. ${id === 'tr1y' ? 'This is the 1-year return of the screener (Up over 1 year), for stocks and ETFs alike; perf1y is the separate price-only return. ' : ''}Stocks use dividend and split-adjusted closes of the Yahoo chart; ETFs carry the issuer's official NAV total return where the brand publishes it, else a figure derived from Yahoo, and returnsBasis says which. ${annual ? 'The annualized rate compares horizons of different length; 7-10% a year is the long-run equity average' : 'A cumulative figure: divide by the years only roughly, the CAGR columns do it exactly'}`,
+    ru: `Полная доходность ${spanRu}: изменение цены плюс реинвестированные дивиденды. ${id === 'tr1y' ? 'Это доходность за год в скринере («Рост за год»), одинаково для акций и ETF; perf1y - отдельная доходность только по цене. ' : ''}У акций - по закрытиям графика Yahoo с поправкой на дивиденды и сплиты; у ETF - официальная доходность по NAV от эмитента, если бренд её публикует, иначе расчёт по Yahoo, и returnsBasis говорит, что именно. ${annual ? 'Годовой темп позволяет сравнивать горизонты разной длины; 7-10% в год - долгосрочное среднее для акций' : 'Это накопленная величина: делить её на число лет можно лишь грубо, точно это делают колонки CAGR'}`,
   },
 }));
 
@@ -1068,12 +1068,12 @@ const FIELDS: MetricDef[] = [
     },
   }),
   def({
-    id: 'sector', name: { en: 'Sector', ru: 'Сектор' }, formula: 'Yahoo assetProfile.sector', unit: 'category', basis: 'meta', source: 'yahoo-summary', direction: 'neutral', appliesTo: BOTH,
-    nullWhen: { en: 'Yahoo has no profile (also every ETF for now)', ru: 'у Yahoo нет профиля (пока и у всех ETF)' },
-    short: { en: 'Yahoo sector of the company', ru: 'Сектор компании по Yahoo' },
+    id: 'sector', name: { en: 'Sector', ru: 'Сектор' }, formula: 'Yahoo assetProfile.sector; ETFs: the fund category of the brand feed', unit: 'category', basis: 'meta', source: 'yahoo-summary', direction: 'neutral', appliesTo: BOTH,
+    nullWhen: { en: 'Yahoo has no profile, or the ETF brand publishes no category', ru: 'у Yahoo нет профиля или бренд ETF не публикует категорию' },
+    short: { en: 'Yahoo sector of the company, fund category of an ETF', ru: 'Сектор компании по Yahoo, категория фонда у ETF' },
     guide: {
-      en: 'The Yahoo sector, such as Technology or Utilities. The sector scope compares a metric with the companies of the same sector as a percentile; a sector with fewer than five companies that have the metric makes such a condition behave as missing',
-      ru: 'Сектор по Yahoo, например Technology или Utilities. Scope sector сравнивает метрику с компаниями того же сектора через перцентиль; если в секторе меньше пяти компаний с этой метрикой, условие ведёт себя как пустое',
+      en: 'The Yahoo sector, such as Technology or Utilities. The sector scope compares a metric with the companies of the same sector as a percentile; a sector with fewer than five companies that have the metric makes such a condition behave as missing. For an ETF the sector is its fund category from the brand feed (Equity, Fixed Income and so on): ETFs are compared only with ETFs of the same category',
+      ru: 'Сектор по Yahoo, например Technology или Utilities. Scope sector сравнивает метрику с компаниями того же сектора через перцентиль; если в секторе меньше пяти компаний с этой метрикой, условие ведёт себя как пустое. У ETF сектор - категория фонда из брендового фида (Equity, Fixed Income и т. д.): ETF сравниваются только с ETF той же категории',
     },
   }),
   def({

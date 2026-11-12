@@ -6,8 +6,8 @@
     "ru": "Рост за год"
   },
   "description": {
-    "en": "A refinement: 1-year return (perf1y) above 0, combined with AND on top of the chosen presets. ETFs publish only the total return tr1y for now, so an ETF reads tr1y here",
-    "ru": "Уточнение: доходность за год (perf1y) выше 0, добавляется через И поверх выбранных пресетов. ETF пока публикуют только полную доходность tr1y, поэтому у ETF здесь читается tr1y"
+    "en": "A refinement: 1-year total return (tr1y: price change plus reinvested dividends) above 0, combined with AND on top of the chosen presets. Stocks and ETFs both publish tr1y; the price-only return is the separate metric perf1y",
+    "ru": "Уточнение: полная доходность за год (tr1y: изменение цены плюс реинвестированные дивиденды) выше 0, добавляется через И поверх выбранных пресетов. tr1y публикуют и акции, и ETF; доходность только по цене - отдельная метрика perf1y"
   },
   "appliesTo": [
     "stock",
@@ -17,7 +17,7 @@
   "refine": true,
   "conditions": [
     {
-      "metric": "perf1y",
+      "metric": "tr1y",
       "op": ">",
       "value": 0,
       "scope": "absolute",
