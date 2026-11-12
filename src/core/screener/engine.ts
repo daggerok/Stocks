@@ -4,7 +4,8 @@
  * gives every row PASS, FAIL or SKIP; a preset combines its conditions ("all" or the soft "N of M"), reports the funnel and
  * the metrics that are not in the feed yet. Rules: null is never 0; a relative scope reads the share of the group (rows with
  * a value) that is strictly lower, 0-100; a group with fewer than MIN_GROUP values behaves as missing; a condition on a metric
- * that does not apply to the row type (quickRatio for an ETF) is skipped; a row of a type the preset does not apply to fails
+ * that does not apply to the row type (quickRatio for an ETF) is skipped; a row of a type the preset does not apply to fails;
+ * the peers scope of a ticker without a peer group compares it with its industry (plan stage 6)
  */
 import { createRegistry, isNumericMetric, Registry } from '../metrics';
 import { Condition, Expression, HISTORY_METRICS, PeerGroups, Preset, RELATIVE_SCOPES, ScreenerRow, Scope } from './types';
@@ -73,7 +74,10 @@ function groupKey(universe: Universe, index: number, scope: Scope): string | nul
   return null;
 }
 
-/** Percentile (0-100) of each row's metric inside its scope group, NaN when the row has no value, no group or the group is under MIN_GROUP */
+/**
+ * Percentile (0-100) of each row's metric inside its scope group, NaN when the row has no value, no group or the group is under MIN_GROUP.
+ * peers: a row without a peer group takes its percentile in the whole industry (every row of the industry, grouped or not)
+ */
 export function percentiles(universe: Universe, metric: string, scope: Scope): Float64Array {
   const cacheKey = `${metric}|${scope}`;
   const cached = universe.tables[cacheKey];
@@ -100,6 +104,10 @@ export function percentiles(universe: Universe, metric: string, scope: Scope): F
       if (j > 0 && values[members[j]] !== values[members[j - 1]]) below = j; // ties share the count of strictly lower values
       out[members[j]] = (below / members.length) * 100;
     }
+  }
+  if (scope === 'peers') {
+    const industry = percentiles(universe, metric, 'industry');
+    for (let i = 0; i < n; i += 1) if (universe.peerGroupOf[i] === null) out[i] = industry[i];
   }
   universe.tables[cacheKey] = out;
   return out;

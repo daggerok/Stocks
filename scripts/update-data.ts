@@ -1101,7 +1101,15 @@ export async function readWatchlist(): Promise<{ file: string; tickers: Set<stri
   return null;
 }
 
-export function indexDocument(companies: JsonRecord[]): JsonRecord {
+/**
+ * The owner's list (scripts/All.txt or All.csv) as the screener's "Mine" preset reads it (plan 1.1): every row gets isMine, and the
+ * index lists every ticker of the file in mineTickers, also the ETFs and funds that are not in the stock feed. No list: isMine false
+ */
+export function withIsMine(row: JsonRecord, mine: ReadonlySet<string> | null): JsonRecord {
+  return { ...row, isMine: mine ? mine.has(String(row.ticker)) : false };
+}
+
+export function indexDocument(companies: JsonRecord[], mineTickers?: string[]): JsonRecord {
   return {
     generatedAt: stamp(),
     source: {
@@ -1109,6 +1117,7 @@ export function indexDocument(companies: JsonRecord[]): JsonRecord {
       history: 'Yahoo Finance public chart API (adjusted close)', snapshot: 'Yahoo Finance quoteSummary (market cap, TTM and forward valuation)',
     },
     counts: { companies: companies.length },
+    ...(mineTickers ? { mineTickers } : {}),
     companies,
   };
 }
@@ -1199,8 +1208,8 @@ export async function run(controls: Record<string, string | undefined>, options:
   const outsideWatchlist: string[] = [];
   if (allowed) for (const ticker of Array.from(byTicker.keys())) if (!allowed.has(ticker)) { byTicker.delete(ticker); outsideWatchlist.push(ticker); }
   // every row gets range52w from its own price and 52-week low and high, also the rows this run did not refresh
-  const companies = Array.from(byTicker.values()).sort((a, b) => String(a.ticker).localeCompare(String(b.ticker))).map(withRange52w);
-  await writeIfChanged(indexFile(), indexDocument(companies), compactIndexText);
+  const companies = Array.from(byTicker.values()).sort((a, b) => String(a.ticker).localeCompare(String(b.ticker))).map(withRange52w).map((row) => withIsMine(row, allowed));
+  await writeIfChanged(indexFile(), indexDocument(companies, allowed ? Array.from(allowed).sort() : undefined), compactIndexText);
   if (allowed && watchlist) {
     // folders go only after the index stops listing them; a folder of a listed stock is never touched
     let folders: string[] = [];

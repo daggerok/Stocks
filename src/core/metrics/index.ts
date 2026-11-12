@@ -59,3 +59,5 @@ export function validateRegistry(metrics: MetricDef[]): string[] {
 export function unregisteredKeys(keys: readonly string[], registry: Registry = REGISTRY): string[] {
   return keys.filter((k) => !registry.byId[k]);
 }
+export { groupMetrics, metricGroup, METRIC_GROUPS } from './groups';
+export type { MetricGroup } from './groups';

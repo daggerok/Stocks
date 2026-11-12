@@ -457,13 +457,17 @@ describe('pipeline', () => {
     expect(await readText('index.json')).toBe(text); // the compact file is still a zero-diff rerun
   });
 
-  test('watchlist: All.txt keeps only its stocks and removes the rest, a blank file means a full update', async () => {
+  test('watchlist: All.txt keeps only its stocks, marks them isMine and removes the rest, a blank file means a full update', async () => {
     await run(controls());
     const tickers = async () => (await readIndex()).companies.map((c: any) => c.ticker);
     expect(await tickers()).toEqual(['AAA', 'BBB']);
+    expect((await readIndex()).companies.map((c: any) => c.isMine)).toEqual([false, false]); // no list: nothing is the owner's
+    expect((await readIndex()).mineTickers).toBeUndefined();
     await writeFile(join(dir, 'All.txt'), 'NASDAQ:aaa\nVOO\n'); // VOO is an ETF, absent from the SEC table
     expect(await run(controls())).toMatchObject({ updated: 1, failed: 0, rows: 1 });
     expect(await tickers()).toEqual(['AAA']);
+    expect((await readIndex()).companies[0].isMine).toBe(true); // the "Mine" preset reads isMine; ETFs of the list come in mineTickers
+    expect((await readIndex()).mineTickers).toEqual(['AAA', 'VOO']);
     expect((await readdir(join(dir, 'companies'))).sort()).toEqual(['AAA']);
     expect(await run(controls({ TICKERS: 'BBB' }))).toMatchObject({ updated: 0, rows: 1 }); // TICKERS outside the list are skipped
     await writeFile(join(dir, 'All.txt'), ' \n\n');
