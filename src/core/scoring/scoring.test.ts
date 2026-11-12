@@ -121,6 +121,14 @@ describe('scores and status on a hand example', () => {
     expect([r[5].scores.entry, r[6].scores.entry]).toEqual([0, 100]); // the two ETFs among themselves
   });
 
+  test('a stock of a small sector ranks against the whole stock market, every sector included, not only the other small sectors', () => {
+    // minGroupSize 3: sector A has 2 P/E values, so A1, A2 and the row without a sector rank among all 6 stocks; B (3 values) ranks alone.
+    // Ranked only with the other small-sector rows (15, 25, 35) A1 would get 100 and N1 50
+    const rows = [stock('A1', { pe: 15 }, 'A'), stock('A2', { pe: 35 }, 'A'), stock('B1', { pe: 10 }, 'B'), stock('B2', { pe: 20 }, 'B'), stock('B3', { pe: 30 }, 'B'), stock('N1', { pe: 25 }, '')];
+    const r = computeScoring(createUniverse(rows), HAND).rows;
+    expect(r.map((x) => x.scores.cheap)).toEqual([80, 0, 100, 50, 0, 40]); // market of 6: 10 100, 15 80, 20 60, 25 40, 30 20, 35 0; a row without a sector ranks there too
+  });
+
   test('ETFs rank inside their fund category; a category under minGroupSize compares with all ETFs (owner answer N4)', () => {
     // Equity has 3 entry values (= minGroupSize 3) and ranks alone; Bond has 1 and ranks among all 4 ETFs; the stock sector Equity never mixes in
     const rows = [etf('Q1', { range52w: 10 }, 'Equity'), etf('Q2', { range52w: 50 }, 'Equity'), etf('Q3', { range52w: 90 }, 'Equity'), etf('B1', { range52w: 70 }, 'Bond'), stock('S1', { range52w: 0, volatility1y: 20 }, 'Equity')];
@@ -189,6 +197,37 @@ describe('the shipped config', () => {
         expect({ archetype, id, a: r.map((x) => x.archetype), stops: r.map((x) => x.stops), status: r[0].status }).toEqual({ archetype, id, a: [archetype, archetype], stops: [[id], []], status: 'rejected' });
       });
     });
+  });
+
+  test('the main red flag has a second rule: cash conversion below 0.5 while net income grows (owner answer N21)', () => {
+    const flag = config.flags.filter((f) => f.id === 'ni-up-cfo-not')[0];
+    const alt = (flag.or ?? [])[0];
+    const limit = Number(alt.conditions.filter((x) => x.metric === 'cfoToNi')[0].value); // the threshold lives in the config
+    const rows = [
+      stock('CASHLESS', { niGrowth3y: 5, cfoToNi: limit - 0.2 }), // CFO turned negative: no cfoGrowth3y, the first rule is silent
+      stock('BACKED', { niGrowth3y: 5, cfoToNi: limit + 0.4 }),
+      stock('SHRINKING', { niGrowth3y: -5, cfoToNi: limit - 0.2 }),
+      stock('FIRST', { niGrowth3y: 12, cfoGrowth3y: 1, cfoToNi: 1 }),
+    ];
+    const result = computeScoring(createUniverse(rows), config);
+    expect(result.rows.map((x) => x.flags.indexOf('ni-up-cfo-not') >= 0)).toEqual([true, false, false, true]);
+    expect(flagTexts(config, result.rows[0], rows[0], 'en')[0].detail).toBe(`Profit grows, cash flow does not: Net income growth 3Y 5% > 0, Cash conversion (CFO / NI) ${(limit - 0.2).toFixed(1)} < ${limit}`);
+    expect(flagTexts(config, result.rows[3], rows[3], 'en')[0].detail).toContain('Operating cash flow growth 3Y'); // the first rule explains itself
+    const broken = JSON.parse(JSON.stringify(config)) as ScoringConfig;
+    (broken.flags[0].or ?? [])[0].conditions[0].metric = 'notAMetric';
+    expect(validateScoringConfig(broken).join('\n')).toContain('flags 1 (ni-up-cfo-not) or 1: ');
+  });
+
+  test('REITs are growth only by approximate FFO growth, else stable; revenue growth from acquisitions does not count (owner answer N22)', () => {
+    const reit = (t: string, m: M) => stock(t, { isReit: true, ...m }, 'Real Estate');
+    const rows = [
+      reit('O', { volatility1y: 18, revenueGrowth3y: 22, ffoGrowth3y: 4 }), // acquisitions lift revenue, FFO grows slowly
+      reit('FAST', { volatility1y: 35, revenueGrowth3y: 30, ffoGrowth3y: 20 }),
+      reit('NOFFO', { volatility1y: 35, revenueGrowth3y: 30 }), // no FFO growth yet -> stable
+      reit('SWING', { volatility1y: 60, ffoGrowth3y: 20 }), // the price rule still comes first
+      stock('SAAS', { isReit: false, volatility1y: 35, revenueGrowth3y: 22 }),
+    ];
+    expect(computeScoring(createUniverse(rows), config).rows.map((x) => x.archetype)).toEqual(['stable', 'growth', 'stable', 'volatile', 'growth']);
   });
 
   test('ETFs get only Entry point (no EPS adjustment) and Dividend; the other scores stay empty', () => {

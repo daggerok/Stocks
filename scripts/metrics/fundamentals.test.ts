@@ -80,6 +80,12 @@ describe('fundamentals formulas', () => {
     const reit = fundamentalMetrics(sec([GOOD], { netIncome: 100, da: 60, gainOnSaleOfProperty: 10, dividendsPaid: 120 }), { ...CTX, industry: 'REIT - Retail' });
     expect([reit.ffoApprox, reit.ffoPayoutApprox]).toEqual([150, 80]);
     expect(fundamentalMetrics(sec([GOOD], { netIncome: 100, da: 60 }), CTX).ffoApprox).toBeNull(); // not a REIT
+    expect(reit.ffoGrowth3y).toBeNull(); // one fiscal year only
+    // annual FFO 200 now (150 + 60 - 10) and 100 three years back (80 + 20): (200 / 100)^(1/3) - 1 = 25.99%
+    const years: Row[] = [{ ...GOOD, netIncome: 150, da: 60, gainOnSaleOfProperty: 10 }, GOOD, GOOD, { ...GOOD, netIncome: 80, da: 20 }];
+    const grown = fundamentalMetrics(sec(years, { netIncome: 100, da: 60 }), { ...CTX, industry: 'REIT - Retail' });
+    expect(grown.ffoGrowth3y).toBe(25.99);
+    expect(fundamentalMetrics(sec(years, { netIncome: 100, da: 60 }), CTX).ffoGrowth3y).toBeNull(); // not a REIT
     const bank = withSectorExceptions({ pe: 10, quickRatio: 1, evEbitda: 5, piotroskiF: 7, fcfMargin: 20 }, 'Banks - Diversified');
     expect(bank).toEqual({ pe: 10, quickRatio: null, evEbitda: null, piotroskiF: null, fcfMargin: null });
     expect(withSectorExceptions({ quickRatio: 1 }, 'Software - Application')).toEqual({ quickRatio: 1 });

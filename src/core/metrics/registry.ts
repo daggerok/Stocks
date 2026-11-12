@@ -945,6 +945,17 @@ const SEC_DERIVED: MetricDef[] = [
       ru: 'Дивиденды, выплаченные за последние двенадцать месяцев, делённые на приблизительный FFO за те же месяцы. REIT обязаны раздавать большую часть налогооблагаемого дохода, поэтому payout от чистой прибыли выглядит выше 100%, даже когда дивиденд надёжен; от FFO ниже 80% - комфортно, выше 100% - дивиденд не покрыт операциями',
     },
   }),
+  def({
+    id: 'ffoGrowth3y', name: { en: 'Approximate FFO growth 3Y', ru: 'Рост приблизительного FFO за 3 года' }, formula: 'REITs only: CAGR of the fiscal-year approximate FFO (net income + D&A - gains on sale of property) over 3 years, %',
+    unit: 'percent', basis: 'fy', source: 'sec', direction: 'higher-is-better',
+    nullWhen: { en: 'not a REIT, fewer than 4 fiscal years, or FFO zero or negative at either end', ru: 'не REIT, меньше 4 финансовых лет или FFO нулевой либо отрицательный на одном из концов' },
+    sectorNotes: { en: 'The archetype rules read it for REITs instead of revenue growth: acquisitions lift a REIT\'s revenue faster than its earnings', ru: 'Правила архетипа берут его у REIT вместо роста выручки: покупки объектов поднимают выручку REIT быстрее, чем его заработок' },
+    short: { en: 'Yearly growth of REIT earnings with depreciation added back', ru: 'Годовой рост заработка REIT с возвращённой амортизацией' },
+    guide: {
+      en: 'Compound annual growth of the approximate FFO between the fiscal year three years back and the latest one, from the annual filings. A REIT grows its revenue by buying properties with new shares and debt, so revenue growth overstates how fast the business grows for its owners; FFO growth is closer to it. The archetype rules use it: a REIT is growth only when this value reaches the growth threshold, otherwise stable',
+      ru: 'Среднегодовой рост приблизительного FFO между финансовым годом три года назад и последним, по годовым отчётам. REIT растит выручку покупкой объектов на новые акции и долг, поэтому рост выручки завышает рост бизнеса для владельцев; рост FFO ближе к нему. Его читают правила архетипа: REIT растущий, только когда это значение достигает порога роста, иначе стабильный',
+    },
+  }),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1082,6 +1093,15 @@ const FOREIGN: MetricDef[] = [
       ru: 'Большинство иностранных эмитентов публикуют промежуточные результаты в отчётах 6-K без XBRL, поэтому в SEC есть только факты их годовых 20-F или 40-F. Тогда TTM - последний финансовый год, ему может быть до 15 месяцев, дату конца года показывает ttmAsOf. Такие строки сравнивают с американскими осторожно: быстрорастущая компания на годовом TTM выглядит дороже. Когда этот финансовый год закончился больше 12 месяцев назад, P/E, P/S, P/FCF, P/B и EV/EBITDA пусты; иностранный слой старше 15 месяцев не используется, строка остаётся на данных Yahoo',
     },
   }),
+  def({
+    id: 'isReit', name: { en: 'REIT', ru: 'REIT' }, formula: 'the Yahoo industry starts with REIT (set by the screener row adapter)',
+    unit: 'flag', basis: 'meta', source: 'feed', direction: 'neutral',
+    short: { en: 'Real estate investment trust by its Yahoo industry', ru: 'Инвестиционный фонд недвижимости по отрасли Yahoo' },
+    guide: {
+      en: 'True when the Yahoo industry of the company starts with REIT (REIT - Retail, REIT - Industrial and the like), the same test the updater uses for the approximate FFO. The archetype rules use it to judge a REIT by FFO growth instead of revenue growth, and conditions can keep or drop REITs with it',
+      ru: 'True, когда отрасль компании по Yahoo начинается с REIT (REIT - Retail, REIT - Industrial и подобные), та же проверка, что у апдейтера для приблизительного FFO. Правила архетипа по нему оценивают REIT по росту FFO вместо роста выручки, условия могут оставить или убрать REIT',
+    },
+  }),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1201,8 +1221,8 @@ const SCORE_OUTPUTS: MetricDef[] = [
     unit: 'category', basis: 'snapshot', source: 'computed', direction: 'neutral', appliesTo: BOTH,
     short: { en: 'Stable, growth or volatile: decides weights and stop factors', ru: 'Стабильная, растущая или волатильная: задаёт веса и стоп-факторы' },
     guide: {
-      en: 'Every row gets one of three archetypes by an ordered list of rules in preset format, the first matching rule wins: volatile (volatility1y at least 45%), growth (revenue growing 15% a year over 3 years, or 25% in the last year while free cash flow is negative), stable (pays a dividend or volatility below 30%); without a match the default archetype. ETFs only meet the price rules. The archetype picks the metric weights, the score weights, the status thresholds and the stop factors',
-      ru: 'Каждая строка получает один из трёх архетипов по упорядоченному списку правил в формате пресета, побеждает первое совпавшее: волатильная (volatility1y от 45%), растущая (выручка растёт на 15% в год за 3 года или на 25% за последний год при отрицательном свободном потоке), стабильная (платит дивиденд или волатильность ниже 30%); без совпадения - архетип по умолчанию. ETF попадают только под ценовые правила. Архетип выбирает веса метрик, веса оценок, пороги статуса и стоп-факторы',
+      en: 'Every row gets one of three archetypes by an ordered list of rules in preset format, the first matching rule wins: volatile (volatility1y at least 45%), a REIT growth by approximate FFO growth of 15% a year or stable otherwise, growth (revenue growing 15% a year over 3 years, or 25% in the last year while free cash flow is negative), stable (pays a dividend or volatility below 30%); without a match the default archetype. ETFs only meet the price rules. The archetype picks the metric weights, the score weights, the status thresholds and the stop factors',
+      ru: 'Каждая строка получает один из трёх архетипов по упорядоченному списку правил в формате пресета, побеждает первое совпавшее: волатильная (volatility1y от 45%), REIT растущий по росту приблизительного FFO от 15% в год, иначе стабильный, растущая (выручка растёт на 15% в год за 3 года или на 25% за последний год при отрицательном свободном потоке), стабильная (платит дивиденд или волатильность ниже 30%); без совпадения - архетип по умолчанию. ETF попадают только под ценовые правила. Архетип выбирает веса метрик, веса оценок, пороги статуса и стоп-факторы',
     },
   }),
   scoring({

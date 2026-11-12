@@ -12,11 +12,11 @@ const ETF_METRIC_KEYS = [
   'siAnnText', 'indicatedDividendYieldText', 'secYieldUnsubsidizedText', 'ytdText', 'dividendYieldBasisText', 'dividendYieldComputed', 'secYieldKind',
 ];
 /** Row fields and the metrics the base presets reference before the updater publishes them */
-const SCREENER_KEYS = ['ticker', 'type', 'sector', 'industry', 'isMine', 'size', 'peg', 'pePct5y', 'pFcfPct5y', 'yieldVsAvg5y', 'operatingMarginSlope3y', 'niVolatility5y', 'fcfVolatility5y', 'cfoToNi', 'forwardToTtmPe', 'volatility1y', 'pctFromAth', 'capexToRevenueDelta3y', 'sigmaFromMean60d'];
+const SCREENER_KEYS = ['ticker', 'type', 'sector', 'industry', 'isMine', 'size', 'peg', 'pePct5y', 'pFcfPct5y', 'yieldVsAvg5y', 'operatingMarginSlope3y', 'niVolatility5y', 'fcfVolatility5y', 'cfoToNi', 'forwardToTtmPe', 'volatility1y', 'pctFromAth', 'capexToRevenueDelta3y', 'sigmaFromMean60d', 'isReit'];
 
 describe('metrics registry', () => {
   test('covers every metrics key of the Stocks feed, the ETF feeds and the screener', () => {
-    expect(STOCK_METRIC_KEYS.length).toBe(144);
+    expect(STOCK_METRIC_KEYS.length).toBe(145);
     expect(unregisteredKeys(STOCK_METRIC_KEYS)).toEqual([]);
     expect(unregisteredKeys(ETF_METRIC_KEYS)).toEqual([]);
     expect(unregisteredKeys(SCREENER_KEYS)).toEqual([]);

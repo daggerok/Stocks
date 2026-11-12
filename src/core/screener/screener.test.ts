@@ -203,7 +203,9 @@ describe('expressions and intersections', () => {
 
 describe('rows', () => {
   test('stock and ETF rows: size from marketCap or aumValue, isMine from the row flag or the owner list, no metrics -> empty', () => {
-    expect(stockRow({ ticker: 'brk.b', sector: 'Financial Services', industry: '', metrics: { marketCap: 1e12, pe: 20 } }, ['BRK-B'])).toEqual({ ticker: 'BRK-B', type: 'stock', sector: 'Financial Services', industry: null, isMine: true, size: 1e12, metrics: { marketCap: 1e12, pe: 20 } });
+    expect(stockRow({ ticker: 'brk.b', sector: 'Financial Services', industry: '', metrics: { marketCap: 1e12, pe: 20 } }, ['BRK-B'])).toEqual({ ticker: 'BRK-B', type: 'stock', sector: 'Financial Services', industry: null, isMine: true, size: 1e12, metrics: { marketCap: 1e12, pe: 20, isReit: false } });
+    expect(stockRow({ ticker: 'O', industry: 'REIT - Retail', metrics: {} }).metrics.isReit).toBe(true); // owner answer N22
+    expect(stockRow({ ticker: 'X', industry: 'Real Estate Services', metrics: {} }).metrics.isReit).toBe(false);
     // metrics as published: no tr1y stands in for perf1y (owner answer N2); the fund category is the ETF sector (owner answer N4)
     expect(etfRow({ ticker: 'GLD', aumValue: 9e10, category: 'Commodity', metrics: { tr1y: 30 } })).toEqual({ ticker: 'GLD', type: 'etf', sector: 'Commodity', industry: null, isMine: false, size: 9e10, metrics: { tr1y: 30 } });
     expect(etfRow({ ticker: 'IAU', category: ' ', metrics: { tr1y: 30, perf1y: 28 } })).toMatchObject({ sector: null, metrics: { tr1y: 30, perf1y: 28 } });

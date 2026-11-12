@@ -5,7 +5,7 @@
  * feed (owner answer N4; the engine and the scores never mix it with stock sectors); ETFs have no industry (null, so industry
  * conditions treat them as missing). isMine comes from the row's own flag once the feed publishes it (plan 1.1), else from the
  * owner's ticker list passed in. Metrics are read as published: "1-year return" is the total return tr1y for stocks and ETFs
- * (owner answer N2), perf1y is the separate price return and stays empty for ETFs
+ * (owner answer N2), perf1y is the separate price return and stays empty for ETFs. A stock row also gets the flag isReit from its industry
  */
 import type { ScreenerRow } from './types';
 
@@ -24,10 +24,14 @@ function mine(row: Feed, ticker: string, list?: ReadonlySet<string> | readonly s
   return (list as ReadonlySet<string>).has(ticker);
 }
 
+/** A REIT by its Yahoo industry, the same test as the updater's isReit (scripts/metrics/fundamentals.ts) */
+export const isReitIndustry = (industry: string | null): boolean => /^REIT\b/.test(industry ?? '');
+
 export function stockRow(company: Feed, mineList?: ReadonlySet<string> | readonly string[]): ScreenerRow {
   const ticker = normalizeTicker(company.ticker);
-  const metrics = metricsOf(company);
-  return { ticker, type: 'stock', sector: text(company.sector), industry: text(company.industry), isMine: mine(company, ticker, mineList), size: num(metrics.marketCap), metrics };
+  const industry = text(company.industry);
+  const metrics: Record<string, unknown> = { ...metricsOf(company), isReit: isReitIndustry(industry) }; // the archetype rules judge REITs by FFO growth (owner answer N22)
+  return { ticker, type: 'stock', sector: text(company.sector), industry, isMine: mine(company, ticker, mineList), size: num(metrics.marketCap), metrics };
 }
 
 /** The metrics of an ETF fund row as the brand feed publishes them */
