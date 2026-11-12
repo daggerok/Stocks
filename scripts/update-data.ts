@@ -4,16 +4,18 @@
 import { appendFile, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { epsCagr3y, ESTIMATE_METRIC_KEYS, estimateMetrics, parseEstimates, type Estimates } from './metrics/estimates';
-import { FUNDAMENTAL_METRIC_KEYS, fundamentalMetrics, isFinancial, ownEbitdaMetrics, withSectorExceptions } from './metrics/fundamentals';
+import { capMultiples, FUNDAMENTAL_METRIC_KEYS, fundamentalMetrics, isFinancial, ownEbitdaMetrics, withSectorExceptions } from './metrics/fundamentals';
 import { HISTORY_METRIC_KEYS, historyMetrics } from './metrics/history';
 import { DIVIDEND_HISTORY_KEYS, dividendHistory } from './metrics/dividends';
 import { pctFrom52wHigh, swingMetrics } from './metrics/swing';
-import { parseCompanyFacts, type SecFundamentals, type Split } from './sec/companyfacts';
+import { column, parseCompanyFacts, type SecFundamentals, type Split } from './sec/companyfacts';
+import { fxPairs, fxPoints, usdLayer, usdView, type FxSeries, type UsdLayer } from './sec/fx';
 import { TAGS } from './sec/tags';
 
 // Stocks listed on Nasdaq, NYSE and Cboe: static ./api/stocks feed.
 //   universe      SEC company_tickers_exchange.json (ticker, CIK, exchange)
-//   fundamentals  SEC EDGAR XBRL companyfacts (annual 10-K series up to ~15 years; scripts/sec: 10-K and 10-Q quarters and TTM)
+//   fundamentals  SEC EDGAR XBRL companyfacts (annual 10-K series up to ~15 years; scripts/sec: 10-K and 10-Q quarters and TTM,
+//                 20-F and 40-F of foreign issuers in us-gaap or ifrs-full, converted to USD at Yahoo FX rates by scripts/sec/fx.ts)
 //   market data   Yahoo Finance chart API (history, dividends, returns)
 //   snapshot      Yahoo Finance quoteSummary (market cap, TTM and forward valuation; needs cookie + crumb)
 
@@ -404,7 +406,8 @@ const YAHOO_ANNUAL_TYPES: Record<string, keyof AnnualRow> = {
 const ABSOLUTE_FIELDS = new Set<keyof AnnualRow>(['capex', 'dividendsPaid']);
 const YAHOO_FILLED_FIELDS = Object.values(YAHOO_ANNUAL_TYPES);
 
-export function parseYahooAnnual(payload: JsonRecord): Map<string, Partial<AnnualRow>> {
+/** Annual points by period end; with `currency` only the points in that currency (a point without currencyCode is kept) */
+export function parseYahooAnnual(payload: JsonRecord, currency?: string): Map<string, Partial<AnnualRow>> {
   const byDate = new Map<string, Partial<AnnualRow>>();
   for (const item of payload?.timeseries?.result ?? []) {
     const type: string = item?.meta?.type?.[0];
@@ -413,6 +416,7 @@ export function parseYahooAnnual(payload: JsonRecord): Map<string, Partial<Annua
     for (const point of item[type] ?? []) {
       const value = numberOrNull(point?.reportedValue);
       if (value === null || !point?.asOfDate) continue;
+      if (currency && point.currencyCode && point.currencyCode !== currency) continue;
       const row = byDate.get(point.asOfDate) ?? {};
       (row as JsonRecord)[field] = ABSOLUTE_FIELDS.has(field) ? Math.abs(value) : value;
       byDate.set(point.asOfDate, row);
@@ -421,9 +425,38 @@ export function parseYahooAnnual(payload: JsonRecord): Map<string, Partial<Annua
   return byDate;
 }
 
-async function fetchYahooAnnual(ticker: string, config: UpdaterConfig): Promise<Map<string, Partial<AnnualRow>>> {
+async function fetchYahooAnnual(ticker: string, config: UpdaterConfig, currency?: string): Promise<Map<string, Partial<AnnualRow>>> {
   const query = new URLSearchParams({ type: Object.keys(YAHOO_ANNUAL_TYPES).join(','), period1: '1262304000', period2: String(Math.floor(Date.now() / 1000) + 86_400) });
-  return parseYahooAnnual(await fetchJson(`${YAHOO_TIMESERIES_URL}/${encodeURIComponent(ticker)}?${query}`, `[ fundamen  ] ${ticker}`, config, { 'User-Agent': BROWSER_UA }));
+  return parseYahooAnnual(await fetchJson(`${YAHOO_TIMESERIES_URL}/${encodeURIComponent(ticker)}?${query}`, `[ fundamen  ] ${ticker}`, config, { 'User-Agent': BROWSER_UA }), currency);
+}
+
+/**
+ * Annual rows from the fiscal years of the SEC layer, in its reporting currency: the rows of a foreign issuer (20-F or 40-F,
+ * us-gaap or ifrs-full), whose facts buildAnnualRows (10-K, us-gaap, USD) does not read
+ */
+export function annualRowsFromSec(sec: SecFundamentals | null): AnnualRow[] {
+  if (!sec) return [];
+  const ends = (sec.fy?.end ?? []) as Array<string | null>;
+  const col = (k: string) => column(sec.fy, k);
+  const c = {
+    revenue: col('revenue'), grossProfit: col('grossProfit'), operatingIncome: col('operatingIncome'), da: col('da'), netIncome: col('netIncome'), eps: col('epsDiluted'),
+    cfo: col('cfo'), capex: col('capex'), dividendsPaid: col('dividendsPaid'), assets: col('assets'), currentAssets: col('currentAssets'), currentLiabilities: col('currentLiabilities'),
+    cash: col('cash'), sti: col('shortTermInvestments'), longInvestments: col('longTermInvestments'), receivables: col('receivables'), debt: col('debt'), equity: col('equity'),
+    pretax: col('pretaxIncome'), tax: col('incomeTax'),
+  };
+  const rows: AnnualRow[] = [];
+  ends.forEach((end, i) => {
+    if (!end) return;
+    const v = (k: keyof typeof c) => c[k][i] ?? null;
+    const oi = v('operatingIncome'), da = v('da'), cfo = v('cfo'), capex = v('capex'), cash = v('cash'), pretax = v('pretax'), tax = v('tax');
+    rows.push({
+      end, revenue: v('revenue'), grossProfit: v('grossProfit'), operatingIncome: oi, ebitda: oi !== null && da !== null ? oi + da : null, netIncome: v('netIncome'), eps: v('eps'),
+      operatingCashFlow: cfo, capex, fcf: cfo !== null && capex !== null ? cfo - capex : null, dividendsPaid: v('dividendsPaid'),
+      assets: v('assets'), currentAssets: v('currentAssets'), currentLiabilities: v('currentLiabilities'), cash: cash === null ? null : cash + (v('sti') ?? 0), longInvestments: v('longInvestments'), receivables: v('receivables'),
+      debt: v('debt'), equity: v('equity'), taxRate: pretax !== null && tax !== null && pretax > 0 ? tax / pretax : null,
+    });
+  });
+  return rows;
 }
 
 const emptyRow = (end: string): AnnualRow => ({ end, revenue: null, grossProfit: null, operatingIncome: null, ebitda: null, netIncome: null, eps: null, operatingCashFlow: null, capex: null, fcf: null, dividendsPaid: null, assets: null, currentAssets: null, currentLiabilities: null, cash: null, longInvestments: null, receivables: null, debt: null, equity: null, taxRate: null });
@@ -665,6 +698,7 @@ const getYahooSession = async (config: UpdaterConfig): Promise<YahooSession> => 
 
 export type Snapshot = {
   quoteType: string; name: string; sector: string | null; industry: string | null; currency: string; financialCurrency: string;
+  country?: string | null; // assetProfile.country: the issuer's country (plan 1.1)
   marketCap: number | null; enterpriseValue: number | null; sharesOutstanding: number | null; beta: number | null;
   pe: number | null; forwardPe: number | null; ps: number | null; forwardRevenue: number | null; evEbitda: number | null; pb: number | null;
   freeCashflow: number | null; ebitda: number | null; week52High: number | null; week52Low: number | null;
@@ -682,7 +716,7 @@ export function parseSummary(payload: JsonRecord): Snapshot {
   const trend = (r.earningsTrend?.trend ?? []).find((t: JsonRecord) => t.period === '+1y');
   return {
     quoteType: String(price.quoteType ?? ''), name: String(price.longName ?? price.shortName ?? ''),
-    sector: r.assetProfile?.sector ?? null, industry: r.assetProfile?.industry ?? null,
+    sector: r.assetProfile?.sector ?? null, industry: r.assetProfile?.industry ?? null, country: r.assetProfile?.country ?? null,
     currency: String(price.currency ?? ''), financialCurrency: String(fd.financialCurrency ?? price.currency ?? ''),
     marketCap: numberOrNull(price.marketCap) ?? numberOrNull(sd.marketCap), enterpriseValue: numberOrNull(ks.enterpriseValue),
     sharesOutstanding: numberOrNull(ks.sharesOutstanding), beta: numberOrNull(sd.beta) ?? numberOrNull(ks.beta),
@@ -815,17 +849,27 @@ const METRIC_KEYS = [
   ...FUNDAMENTAL_METRIC_KEYS,
   // Yahoo earningsTrend and the two PEGs (scripts/metrics/estimates.ts), own 5-year history (scripts/metrics/history.ts)
   ...ESTIMATE_METRIC_KEYS, ...HISTORY_METRIC_KEYS,
+  // foreign issuers (plan 1.1 and 1.3): Yahoo country, the ADR flag and an annual-only TTM
+  'isAdr', 'country', 'ttmIsAnnual',
 ] as const;
 
 /** Every key of a published `metrics` object, in order: the screener registry must describe each one (src/core/metrics). */
 export const STOCK_METRIC_KEYS: readonly string[] = [...METRIC_KEYS, 'returnsBasis', 'performanceAsOf'];
 
 export const RETURNS_BASIS = 'Yahoo chart API: performance from unadjusted closes (D windows, 1W (5 daily candles) and 2W (10) count daily candles; 1M and 1Q take the candle closest to the same day 1 and 3 months earlier; WTD, MTD, QTD and YTD start at the last close before the current calendar week, month, quarter or year; 4M, 6M and 52W are calendar windows anchored on the last close on or before the target date), total return and CAGR from dividend- and split-adjusted closes';
+function foreignBasis(taxonomy: string, yahoo: boolean): string {
+  return `SEC EDGAR XBRL ${taxonomy} facts of the annual 20-F or 40-F report${yahoo ? ' with gaps filled from Yahoo fundamentals-timeseries' : ''}, in the reporting currency; growth and margins in that currency, amounts and multiples over market cap in USD at Yahoo FX rates (balance sheet at the period-end rate, flows at the period average)`;
+}
 export const FUNDAMENTALS_BASIS = {
   sec: 'SEC EDGAR XBRL annual 10-K facts; valuation multiples from the Yahoo quoteSummary TTM snapshot',
   'sec+yahoo': 'SEC EDGAR XBRL annual 10-K facts with gaps filled from Yahoo fundamentals-timeseries; valuation multiples from the Yahoo quoteSummary TTM snapshot',
   yahoo: 'Yahoo fundamentals-timeseries annual statements (no usable SEC history); valuation multiples from the Yahoo quoteSummary TTM snapshot',
+  'sec-ifrs': foreignBasis('ifrs-full', false),
+  'sec-ifrs+yahoo': foreignBasis('ifrs-full', true),
+  'sec-foreign': foreignBasis('us-gaap', false),
+  'sec-foreign+yahoo': foreignBasis('us-gaap', true),
 } as const;
+export type FundamentalsSource = keyof typeof FUNDAMENTALS_BASIS;
 
 /** A kept row published before a metric key existed gets that key as null, in METRIC_KEYS order: every row has the same key set */
 export function withMetricKeys(row: JsonRecord): JsonRecord {
@@ -839,10 +883,15 @@ export function withMetricKeys(row: JsonRecord): JsonRecord {
 
 /** SEC TTM revenue against the Yahoo snapshot revenue (plan 1.8): more than 20% apart is a scale or tagging error */
 export const SCALE_TOLERANCE_PCT = 20;
-export function scaleCheck(secRevenue: unknown, yahooRevenue: unknown): { ok: boolean; diffPct: number } | null {
+/**
+ * An annual-only TTM (20-F filers) is the last fiscal year, Yahoo's revenue is a real TTM: growth alone moves them apart, so the
+ * tolerance is wider; a scale error (×1000) still fails
+ */
+export const SCALE_TOLERANCE_ANNUAL_PCT = 50;
+export function scaleCheck(secRevenue: unknown, yahooRevenue: unknown, tolerancePct = SCALE_TOLERANCE_PCT): { ok: boolean; diffPct: number } | null {
   if (typeof secRevenue !== 'number' || typeof yahooRevenue !== 'number' || !(secRevenue > 0) || !(yahooRevenue > 0)) return null;
   const diffPct = round((Math.abs(secRevenue - yahooRevenue) / yahooRevenue) * 100);
-  return { ok: diffPct <= SCALE_TOLERANCE_PCT, diffPct };
+  return { ok: diffPct <= tolerancePct, diffPct };
 }
 
 export function completeMetrics(parts: JsonRecord, performanceAsOf: string | null): JsonRecord {
@@ -851,6 +900,52 @@ export function completeMetrics(parts: JsonRecord, performanceAsOf: string | nul
   out.returnsBasis = RETURNS_BASIS;
   out.performanceAsOf = performanceAsOf;
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// foreign issuers (plan 1.3): FX series per currency and run, the age limit of an annual-only SEC layer
+
+const FX_CHART_FROM = 946_684_800; // 2000-01-01
+let fxCache = new Map<string, Promise<FxSeries>>();
+
+async function loadFx(currency: string, config: UpdaterConfig): Promise<FxSeries> {
+  const { direct, inverse } = fxPairs(currency);
+  const query = new URLSearchParams({ period1: String(FX_CHART_FROM), period2: String(Math.floor(Date.now() / 1000) + 86_400), interval: '1d' });
+  const days = async (pair: string) => parseChart(await fetchJson(`${YAHOO_CHART_URL}/${encodeURIComponent(pair)}?${query}`, `[ fx        ] ${pair}`, config, { 'User-Agent': BROWSER_UA })).days;
+  try {
+    const direct1 = await days(direct);
+    if (direct1.length) return { currency, pair: direct, inverted: false, points: fxPoints(direct1, false) };
+  } catch (error) { note(`[ fx        ] ${direct}: ${error instanceof Error ? error.message : String(error)} - trying ${inverse}`); }
+  const inverse1 = await days(inverse);
+  if (!inverse1.length) throw new Error(`no Yahoo FX series for ${currency} (${direct}, ${inverse})`);
+  return { currency, pair: inverse, inverted: true, points: fxPoints(inverse1, true) };
+}
+
+/** The USD-per-unit series of a currency, loaded once per run (every issuer of that currency shares it) */
+export function fxSeries(currency: string, config: UpdaterConfig): Promise<FxSeries> {
+  let cached = fxCache.get(currency);
+  if (!cached) { cached = loadFx(currency, config); fxCache.set(currency, cached); }
+  return cached;
+}
+
+/** A layer of a foreign issuer: a 20-F or 40-F annual report, or amounts in a currency other than USD */
+export const isForeignLayer = (sec: SecFundamentals | null): sec is SecFundamentals =>
+  !!sec && (sec.currency !== 'USD' || sec.annualForm === '20-F' || sec.annualForm === '40-F');
+
+/** A foreign layer whose TTM ends more than this before the last close is stale (plan 1.2): the Yahoo fallback is fresher */
+export const FOREIGN_STALE_DAYS = 456; // 15 months
+export function staleForeignLayer(sec: SecFundamentals, asOf: string): boolean {
+  const end = typeof sec.ttm?.end === 'string' ? sec.ttm.end : null;
+  return !end || (Date.parse(`${asOf}T00:00:00Z`) - Date.parse(`${end}T00:00:00Z`)) / DAY_MS > FOREIGN_STALE_DAYS;
+}
+
+const foreignSource = (sec: SecFundamentals, withYahoo: boolean): FundamentalsSource =>
+  sec.taxonomy === 'ifrs-full' ? (withYahoo ? 'sec-ifrs+yahoo' : 'sec-ifrs') : (withYahoo ? 'sec-foreign+yahoo' : 'sec-foreign');
+
+/** isAdr (plan 1.1): no source flags an ADR, so the flag is an issuer outside the US (Yahoo country) that files the annual 20-F */
+export function adrFlag(country: string | null, annualForm: string | null): boolean | null {
+  if (!country) return null;
+  return country !== 'United States' && annualForm === '20-F';
 }
 
 // ---------------------------------------------------------------------------
@@ -979,17 +1074,28 @@ export async function processCompany(listing: Listing, config: UpdaterConfig, pr
 
   // 2. SEC fundamentals
   let rows: AnnualRow[] = [];
-  let fundamentalsSource: 'sec' | 'sec+yahoo' | 'yahoo' = 'sec';
+  let fundamentalsSource: FundamentalsSource = 'sec';
   let fundamentalsNote = '';
   let secFailed = false;
   let secMissing = false; // the CIK has no XBRL company facts at all (funds, trusts, non-filers)
   let sec: SecFundamentals | null = null;
+  let annualForm: string | null | undefined; // undefined: unknown this run (a failed SEC download)
   try {
     const facts = await fetchJson(`${SEC_FACTS_URL}/CIK${toCik(listing.cik)}.json`, `[ sec       ] ${ticker}`, config);
     rows = buildAnnualRows(facts);
     sec = parseCompanyFacts(facts, { splits: chart?.splits ?? [] });
+    annualForm = sec?.annualForm ?? null;
+    // a foreign issuer (plan 1.3): annual rows from its 20-F or 40-F layer; a layer older than 15 months keeps the Yahoo fallback
+    if (isForeignLayer(sec)) {
+      const asOf = chart?.days[chart.days.length - 1]?.date ?? prevMeta?.asOfDate ?? new Date().toISOString().slice(0, 10);
+      if (staleForeignLayer(sec, asOf)) {
+        note(`[ sec       ] ${ticker}: ${sec.taxonomy} facts end ${sec.ttm.end}, more than 15 months before ${asOf} - Yahoo fallback`);
+        sec = null;
+        rows = [];
+      } else if (!rows.length) rows = annualRowsFromSec(sec);
+    }
   } catch (error) {
-    if (!prevMeta && /: 404 /.test(String(error))) secMissing = true;
+    if (!prevMeta && /: 404 /.test(String(error))) { secMissing = true; annualForm = null; }
     else if (!prevMeta) throw error; // nothing to fall back to
     else secFailed = true;
     if (secFailed) {
@@ -1001,7 +1107,9 @@ export async function processCompany(listing: Listing, config: UpdaterConfig, pr
   // scale check (plan 1.8): SEC TTM revenue vs the Yahoo snapshot; a miss withholds this run's SEC values and keeps the published
   // ones. Banks and insurers define revenue differently (net of interest expense or not), so for them it is only reported
   const industry: string | null = snapshot?.industry ?? prevMeta?.industry ?? null;
-  const scale = secFailed ? null : scaleCheck(sec?.ttm?.revenue, snapshot?.totalRevenue);
+  // compared in one currency: Yahoo's revenue is in its financialCurrency, the SEC layer in its reporting currency
+  const sameCurrency = !sec || !snapshot?.financialCurrency || snapshot.financialCurrency === sec.currency;
+  const scale = secFailed || !sameCurrency ? null : scaleCheck(sec?.ttm?.revenue, snapshot?.totalRevenue, sec?.ttmIsAnnual ? SCALE_TOLERANCE_ANNUAL_PCT : SCALE_TOLERANCE_PCT);
   let withheld = false;
   if (scale && !scale.ok && !isFinancial(industry)) {
     withheld = true;
@@ -1014,14 +1122,20 @@ export async function processCompany(listing: Listing, config: UpdaterConfig, pr
   const checks: JsonRecord = { ...((secChecks as JsonRecord | undefined) ?? (keepPublished ? prevMeta?.fundamentals?.checks ?? {} : {})), scale };
   // Yahoo only fills null fields: when the 4 latest SEC years carry every field it could fill, the request adds nothing to them
   const secComplete = rows.length >= 4 && rows.slice(0, 4).every((r) => YAHOO_FILLED_FIELDS.every((key) => r[key] !== null));
+  const foreign = isForeignLayer(sec);
   if (!config.skipYahoo && !keepPublished && !secComplete) {
     try {
-      const merged = mergeAnnual(rows, await fetchYahooAnnual(ticker, config));
+      // a foreign layer takes Yahoo's points only in its own reporting currency
+      const merged = mergeAnnual(rows, await fetchYahooAnnual(ticker, config, foreign && sec ? sec.currency : undefined));
       rows = merged.rows;
       fundamentalsSource = merged.source;
     } catch (error) { note(`[ fundamen  ] ${ticker}: ${error instanceof Error ? error.message : String(error)}`); }
   }
+  if (foreign && sec && fundamentalsSource !== 'yahoo' && rows.length) fundamentalsSource = foreignSource(sec, fundamentalsSource === 'sec+yahoo');
   if (!rows.length) fundamentalsNote = 'no annual fundamentals available';
+  // the layer in USD for amounts and multiples over market cap; a kept layer keeps its published conversion
+  let usd: UsdLayer | null = null;
+  if (sec && sec.currency !== 'USD') usd = keepPublished ? prevMeta?.fundamentals?.usd ?? null : usdLayer(sec, await fxSeries(sec.currency, config));
 
   // 3. assemble the company completely in memory
   const prevMarket = prevMeta?.market ?? null;
@@ -1050,13 +1164,25 @@ export async function processCompany(listing: Listing, config: UpdaterConfig, pr
   const fundamentals = fundamentalsMetrics(rows);
   const secLayer = sec ? (secStored as SecFundamentals) : null;
   const marketCap = numberOrNull(market.valuation?.marketCap);
-  const derived = fundamentalMetrics(secLayer, { marketCap, sector: snapshot?.sector ?? prevMeta?.sector ?? null, industry });
-  const estimates = estimateMetrics(market.estimates ?? null, numberOrNull(market.valuation?.pe), numberOrNull(market.valuation?.forwardPe), epsCagr3y(secLayer?.fy) ?? numberOrNull(fundamentals.epsGrowth3y));
-  // own 5-year history needs the full daily chart: without a fresh one (SKIP_YAHOO) the published values stay
+  // foreign issuer: formulas that mix market cap (USD) with amounts read the USD layer, multiples go over market cap (plan 1.3)
+  const foreignLayer = isForeignLayer(secLayer);
+  const marketLayer: SecFundamentals | null = !secLayer ? null : secLayer.currency === 'USD' ? secLayer : usd ? usdView(secLayer, usd) : null;
+  const derived = fundamentalMetrics(secLayer, { marketCap, sector: snapshot?.sector ?? prevMeta?.sector ?? null, industry, ...(foreignLayer ? { usd: marketLayer } : {}) });
+  const multiples: JsonRecord = foreignLayer ? capMultiples(marketLayer, marketCap) : {};
+  const pe = foreignLayer ? numberOrNull(multiples.pe) : numberOrNull(market.valuation?.pe);
+  const estimates = estimateMetrics(market.estimates ?? null, pe, numberOrNull(market.valuation?.forwardPe), epsCagr3y(secLayer?.fy) ?? numberOrNull(fundamentals.epsGrowth3y));
+  // own 5-year history needs the full daily chart: without a fresh one (SKIP_YAHOO) the published values stay; a foreign issuer
+  // has none of the P/E and P/FCF percentiles (price per ADR against shares and amounts of the ordinary shares)
   const history5y: JsonRecord = chart
-    ? historyMetrics(chart.days, numberOrNull(market.price), secLayer, chart.dividends, numberOrNull(market.dividends?.dividendYield))
+    ? historyMetrics(chart.days, numberOrNull(market.price), foreignLayer ? null : secLayer, chart.dividends, numberOrNull(market.dividends?.dividendYield))
     : Object.fromEntries(HISTORY_METRIC_KEYS.map((k) => [k, prevMeta?.metrics?.[k] ?? null]));
-  const parts: JsonRecord = { ...fundamentals, ...(market.valuation ?? {}), ...(market.returns ?? {}), ...(market.dividends ?? {}), ...(market.swing ?? {}), ...derived, ...ownEbitdaMetrics(secLayer, marketCap), ...estimates, ...history5y, price: market.price, week52High: market.week52High, week52Low: market.week52Low, range52w: range52wPosition(market.price, market.week52Low, market.week52High), pctFrom52wHigh: pctFrom52wHigh(market.price, market.week52High) };
+  const country: string | null = snapshot ? snapshot.country ?? null : prevMeta?.metrics?.country ?? null;
+  const issuer: JsonRecord = {
+    isAdr: annualForm === undefined ? prevMeta?.metrics?.isAdr ?? null : adrFlag(country, annualForm),
+    country,
+    ttmIsAnnual: secLayer && typeof secLayer.ttmIsAnnual === 'boolean' ? secLayer.ttmIsAnnual : null,
+  };
+  const parts: JsonRecord = { ...fundamentals, ...(market.valuation ?? {}), ...(market.returns ?? {}), ...(market.dividends ?? {}), ...(market.swing ?? {}), ...derived, ...multiples, ...ownEbitdaMetrics(foreignLayer ? marketLayer : secLayer, marketCap), ...estimates, ...history5y, ...issuer, price: market.price, week52High: market.week52High, week52Low: market.week52Low, range52w: range52wPosition(market.price, market.week52Low, market.week52High), pctFrom52wHigh: pctFrom52wHigh(market.price, market.week52High) };
   if (parts.marketCap === undefined || parts.marketCap === null) parts.marketCap = null;
   const metrics = withSectorExceptions(completeMetrics(parts, market.asOfDate ?? null), industry) as JsonRecord;
   if (metrics.marketCap === null) return { skipped: 'no market cap (unit, warrant, preferred share or note)' };
@@ -1084,7 +1210,7 @@ export async function processCompany(listing: Listing, config: UpdaterConfig, pr
   const meta = {
     schemaVersion: FEED_SCHEMA_VERSION, ...row,
     sources: { universe: SEC_TICKERS_URL, fundamentals: `${SEC_FACTS_URL}/CIK${toCik(listing.cik)}.json`, market: 'Yahoo Finance chart API', snapshot: 'Yahoo Finance quoteSummary' },
-    market, fundamentals: { asOf: rows[0]?.end ?? null, annual: rows, sec: secLayer, checks }, history,
+    market, fundamentals: { asOf: rows[0]?.end ?? null, annual: rows, sec: secLayer, ...(usd ? { usd } : {}), checks }, history,
   };
   await writeIfChanged(new URL('meta.json', dir), meta, metaText);
   await pruneHistoryPages(dir, Array.isArray(history.pages) ? history.pages : []);
@@ -1204,6 +1330,7 @@ export async function run(controls: Record<string, string | undefined>, options:
   verboseOutput = config.verbose;
   yahooSession = null;
   yahooSessionRetryAt = 0;
+  fxCache = new Map<string, Promise<FxSeries>>();
 
   const table = parseSecTickers(await fetchJson(SEC_TICKERS_URL, '[ universe  ] SEC ticker table', config));
   const previous = await readPreviousRows(table);
@@ -1304,18 +1431,42 @@ export async function run(controls: Record<string, string | undefined>, options:
   }
   const checkLines = Object.keys(checkFails).filter((name) => checkFails[name].length).map((name) => `data check ${name}: ${checkFails[name].length} (${listNames(checkFails[name], 20)})`);
   for (const line of checkLines) console.log(`[ check     ] ${line}`);
+  console.log(`[ check     ] ${adrCoverageLine(companies)}`);
   if (process.env.GITHUB_STEP_SUMMARY) {
     await appendFile(process.env.GITHUB_STEP_SUMMARY, `### Stocks data update\n\n- updated: ${results.length}\n- skipped: ${skipped}\n- failed: ${failed}\n- companies: ${companies.length}\n${checkLines.map((l) => `- ${l}\n`).join('')}\n`, 'utf8');
+    await appendFile(process.env.GITHUB_STEP_SUMMARY, `${adrCoverageLine(companies)}\n\n`, 'utf8');
     await appendFile(process.env.GITHUB_STEP_SUMMARY, coverageMarkdown(companies), 'utf8');
   }
   return { updated: results.length, skipped, failed, rows: companies.length };
+}
+
+export type AdrCoverage = { adr: number; secIfrs: number; secUsGaap: number; yahoo: number; none: number };
+/** Where the fundamentals of the ADR rows come from (plan 1.3): SEC ifrs-full, SEC us-gaap, the Yahoo fallback or nothing */
+export function adrCoverage(companies: JsonRecord[]): AdrCoverage {
+  const out: AdrCoverage = { adr: 0, secIfrs: 0, secUsGaap: 0, yahoo: 0, none: 0 };
+  const ifrs = [FUNDAMENTALS_BASIS['sec-ifrs'], FUNDAMENTALS_BASIS['sec-ifrs+yahoo']];
+  const usGaap = [FUNDAMENTALS_BASIS['sec-foreign'], FUNDAMENTALS_BASIS['sec-foreign+yahoo'], FUNDAMENTALS_BASIS.sec, FUNDAMENTALS_BASIS['sec+yahoo']];
+  for (const c of companies) {
+    if (c.metrics?.isAdr !== true) continue;
+    out.adr += 1;
+    const basis = String(c.fundamentalsBasis ?? '');
+    if (ifrs.indexOf(basis) >= 0) out.secIfrs += 1;
+    else if (usGaap.indexOf(basis) >= 0) out.secUsGaap += 1;
+    else if (basis === FUNDAMENTALS_BASIS.yahoo) out.yahoo += 1;
+    else out.none += 1;
+  }
+  return out;
+}
+export function adrCoverageLine(companies: JsonRecord[]): string {
+  const c = adrCoverage(companies);
+  return `ADR fundamentals: ${c.adr} ADRs, SEC ifrs-full ${c.secIfrs}, SEC us-gaap ${c.secUsGaap}, Yahoo fallback ${c.yahoo}, none ${c.none}`;
 }
 
 /** Coverage of every numeric metric (share of companies with a value), overall and per sector: the step summary table (plan 1.8) */
 export function coverageMarkdown(companies: JsonRecord[]): string {
   if (!companies.length) return '';
   const sectors = Array.from(new Set(companies.map((c) => String(c.sector ?? 'Unknown')))).sort();
-  const keys = METRIC_KEYS.filter((k) => !companies.some((c) => typeof c.metrics?.[k] === 'string')); // numeric metrics only
+  const keys = METRIC_KEYS.filter((k) => !companies.some((c) => typeof c.metrics?.[k] === 'string' || typeof c.metrics?.[k] === 'boolean')); // numeric metrics only
   const share = (rows: JsonRecord[], k: string) => (rows.length ? `${Math.round((rows.filter((c) => typeof c.metrics?.[k] === 'number').length / rows.length) * 100)}` : '');
   const bySector = sectors.map((s) => companies.filter((c) => String(c.sector ?? 'Unknown') === s));
   const head = `| metric | all (${companies.length}) | ${sectors.map((s, i) => `${s} (${bySector[i].length})`).join(' | ')} |`;
@@ -1329,8 +1480,10 @@ Stocks static data updater (Nasdaq, NYSE, Cboe)
 
 Sources:
   universe      SEC company_tickers_exchange.json (ticker, CIK, exchange)
-  fundamentals  SEC EDGAR XBRL companyfacts, annual 10-K facts (Yahoo
-                fundamentals-timeseries fills gaps and covers IFRS filers)
+  fundamentals  SEC EDGAR XBRL companyfacts: 10-K and 10-Q facts, the 20-F and
+                40-F of foreign issuers (us-gaap or ifrs-full, Yahoo FX rates
+                convert amounts to USD); Yahoo fundamentals-timeseries fills
+                gaps and covers issuers without usable SEC facts
   history       Yahoo Finance public chart API (daily, published as monthly rows
                 with daily rows for the last 31 days)
   snapshot      Yahoo Finance quoteSummary (market cap, TTM and forward valuation)

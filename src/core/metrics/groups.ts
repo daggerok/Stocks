@@ -27,7 +27,7 @@ put('safety', ['fcfNegativeYears', 'balanceYoyMaxChange', 'balanceYoyMaxLine']);
 put('dividends', ['dividendStreak', 'dividendCut10y']);
 put('growth', ['revenueGrowthVsTam']);
 put('scores', ['scoreCheap', 'scoreQuality', 'scoreSafety', 'scoreDividend', 'scoreEntry', 'statusScore', 'archetype', 'status', 'why', 'flags', 'flagCount']);
-put('fields', ['ticker', 'type', 'sector', 'industry', 'isMine', 'size']);
+put('fields', ['ticker', 'type', 'sector', 'industry', 'isMine', 'size', 'isAdr', 'country', 'ttmIsAnnual']);
 
 export function metricGroup(def: MetricDef): MetricGroup {
   const listed = LISTS[def.id];

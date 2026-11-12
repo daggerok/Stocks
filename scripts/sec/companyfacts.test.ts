@@ -115,3 +115,78 @@ describe('sec companyfacts', () => {
     expect(fiscalYearOf('2023-01-31')).toBe(2023);
   });
 });
+
+// A slice of TSM's companyfacts (CIK 0001046179, real values of the 20-F filed 2025-04-17): ifrs-full in TWD plus a USD
+// convenience translation of the latest year, no quarterly XBRL
+const F = (start: string | null, end: string, val: number, filed = '2025-04-17', form = '20-F') => (start ? { start, end, val, form, filed } : { end, val, form, filed });
+const Y22 = ['2022-01-01', '2022-12-31'] as const;
+const Y23 = ['2023-01-01', '2023-12-31'] as const;
+const Y24 = ['2024-01-01', '2024-12-31'] as const;
+
+function tsm(): any {
+  const twd = (list: unknown[], usd?: unknown) => ({ units: usd ? { TWD: list, USD: [usd] } : { TWD: list } });
+  return {
+    facts: {
+      'ifrs-full': {
+        Revenue: twd([F(...Y22, 2263891300000), F(...Y23, 2161735800000), F(...Y24, 2894307700000)], F(...Y24, 88268000000)),
+        ProfitLossAttributableToOwnersOfParent: twd([F(...Y22, 992923400000), F(...Y23, 851740000000), F(...Y24, 1158380200000)], F(...Y24, 35327200000)),
+        ProfitLoss: twd([F(...Y23, 851027700000), F(...Y24, 1157523900000)]), // includes minorities: the parent's line wins
+        CashFlowsFromUsedInOperatingActivities: twd([F(...Y23, 1241967300000), F(...Y24, 1826177100000)]),
+        PurchaseOfPropertyPlantAndEquipmentClassifiedAsInvestingActivities: twd([F(...Y23, 949816800000), F(...Y24, 956006500000)]),
+        Assets: twd([F(null, Y23[1], 5532196600000), F(null, Y24[1], 6691764700000)], F(null, Y24[1], 204079400000)),
+        EquityAttributableToOwnersOfParent: twd([F(null, Y23[1], 3429522400000), F(null, Y24[1], 4244266500000)]),
+        DilutedEarningsLossPerShare: { units: { 'TWD/shares': [F(...Y23, 32.85), F(...Y24, 44.67)], 'USD/shares': [F(...Y24, 1.36)] } },
+        AdjustedWeightedAverageShares: { units: { shares: [F(...Y23, 25929300000), F(...Y24, 25929700000)] } },
+        // no Borrowings total: debt = long-term + current portion + bonds (non-current and current)
+        LongtermBorrowings: twd([F(null, Y24[1], 31824400000)]),
+        CurrentPortionOfLongtermBorrowings: twd([F(null, Y24[1], 59857900000)]),
+        NoncurrentPortionOfNoncurrentBondsIssued: twd([F(null, Y24[1], 926604500000)]),
+        CurrentBondsIssuedAndCurrentPortionOfNoncurrentBondsIssued: twd([F(null, Y24[1], 57148000000)]),
+      },
+    },
+  };
+}
+
+describe('sec companyfacts: ifrs-full and 20-F (plan 1.3)', () => {
+  test('ifrs-full mapping: TSM FY2024 in TWD from the 20-F, the USD convenience translation is not the reporting currency', () => {
+    const sec = parseCompanyFacts(tsm());
+    if (!sec) throw new Error('no SEC layer');
+    expect([sec.currency, sec.taxonomy, sec.annualForm]).toEqual(['TWD', 'ifrs-full', '20-F']);
+    expect(sec.fy.end).toEqual(['2024-12-31', '2023-12-31', '2022-12-31']);
+    expect(column(sec.fy, 'revenue')).toEqual([2894307700000, 2161735800000, 2263891300000]);
+    expect(column(sec.fy, 'netIncome')[0]).toBe(1158380200000);
+    expect([column(sec.fy, 'cfo')[0], column(sec.fy, 'capex')[0], column(sec.fy, 'epsDiluted')[0], column(sec.fy, 'sharesDiluted')[0]]).toEqual([1826177100000, 956006500000, 44.67, 25929700000]);
+    expect([column(sec.fy, 'assets')[0], column(sec.fy, 'equity')[0]]).toEqual([6691764700000, 4244266500000]);
+    expect(column(sec.fy, 'debt')[0]).toBe(31824400000 + 59857900000 + 926604500000 + 57148000000);
+    expect([sec.units.revenue, sec.units.epsDiluted, sec.units.sharesDiluted]).toEqual(['TWD', 'TWD/shares', 'shares']);
+  });
+
+  test('ttmIsAnnual: an issuer without quarterly XBRL gets TTM = the last fiscal year; a 10-K and 10-Q filer does not', () => {
+    const sec = parseCompanyFacts(tsm());
+    if (!sec) throw new Error('no SEC layer');
+    expect([sec.ttmIsAnnual, sec.ttm.basis, sec.ttm.end, sec.quarters.end.length]).toEqual([true, 'fy', '2024-12-31', 0]);
+    expect([sec.ttm.revenue, sec.ttm.netIncome, sec.ttm.assets]).toEqual([2894307700000, 1158380200000, 6691764700000]);
+    const us = parseCompanyFacts(apple());
+    expect([us?.ttmIsAnnual, us?.currency, us?.taxonomy, us?.annualForm]).toEqual([false, 'USD', 'us-gaap', '10-K']);
+  });
+
+  test('us-gaap first, then ifrs-full: Toyota moved to IFRS in FY2021 and one series joins both, us-gaap wins a shared period', () => {
+    // real values (JPY): us-gaap 20-F up to FY2020 (year to 2020-03-31), ifrs-full from the 20-F filed 2021-06-24, which restated FY2020
+    const jpy = (list: unknown[]) => ({ units: { JPY: list } });
+    const facts = {
+      facts: {
+        'us-gaap': { NetIncomeLoss: jpy([F('2018-04-01', '2019-03-31', 1882873000000, '2019-06-21'), F('2019-04-01', '2020-03-31', 2076183000000, '2020-06-24')]) },
+        'ifrs-full': {
+          ProfitLossAttributableToOwnersOfParent: jpy([F('2019-04-01', '2020-03-31', 2036140000000, '2021-06-24'), F('2020-04-01', '2021-03-31', 2245261000000, '2021-06-24'), F('2021-04-01', '2022-03-31', 2850110000000, '2022-06-23')]),
+          Revenue: jpy([F('2020-04-01', '2021-03-31', 27214594000000, '2021-06-24'), F('2021-04-01', '2022-03-31', 31379507000000, '2022-06-23')]),
+        },
+      },
+    };
+    const sec = parseCompanyFacts(facts);
+    if (!sec) throw new Error('no SEC layer');
+    expect([sec.currency, sec.taxonomy, sec.ttmIsAnnual]).toEqual(['JPY', 'ifrs-full', true]);
+    expect(sec.fy.end).toEqual(['2022-03-31', '2021-03-31', '2020-03-31', '2019-03-31']);
+    expect(column(sec.fy, 'netIncome')).toEqual([2850110000000, 2245261000000, 2076183000000, 1882873000000]);
+    expect(parseCompanyFacts(facts, { taxonomies: ['us-gaap'] })?.fy.end).toEqual(['2020-03-31', '2019-03-31']);
+  });
+});

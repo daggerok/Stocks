@@ -7,7 +7,12 @@
 import { column, type SecFundamentals } from '../sec/companyfacts';
 
 type Num = number | null;
-export type FundamentalsContext = { marketCap: Num; sector: string | null; industry: string | null };
+/**
+ * `usd`: the layer in USD (scripts/sec/fx.ts usdView) of an issuer that reports in another currency. Formulas that mix the market
+ * cap with amounts (Altman's market cap over liabilities, the approximate FFO amount) read it; every ratio, growth rate and
+ * margin reads the layer in its reporting currency (plan 1.3)
+ */
+export type FundamentalsContext = { marketCap: Num; sector: string | null; industry: string | null; usd?: SecFundamentals | null };
 
 /** Keys this module adds to `metrics`, in the order they are published */
 export const FUNDAMENTAL_METRIC_KEYS = [
@@ -249,7 +254,8 @@ export function fundamentalMetrics(sec: SecFundamentals | null, ctx: Fundamental
   const cash = v.ttm('cash');
   if (fin(fcf) && fcf < 0 && fin(cash)) out.cashRunwayMonths = roundTo((cash + (v.ttm('shortTermInvestments') ?? 0)) / (-fcf / 12), 1);
 
-  const z = altman(sec, ctx);
+  // a foreign layer without a USD conversion (ctx.usd null) has no Altman Z: its classic form mixes market cap with liabilities
+  const z = altman(ctx.usd === undefined ? sec : ctx.usd, ctx);
   out.altmanZ = z.altmanZ;
   out.altmanVariant = z.altmanVariant;
   out.piotroskiF = isFinancial(ctx.industry) ? null : piotroski(sec);
@@ -283,7 +289,9 @@ export function fundamentalMetrics(sec: SecFundamentals | null, ctx: Fundamental
     // approximate FFO: net income + depreciation (the cash flow D&A line: Schedule III real estate depreciation is annual only)
     // - gains on sale of property (a REIT without a gain line counts 0)
     const ffo = ni + (v.ttm('da') as number) - (v.ttm('gainOnSaleOfProperty') ?? 0);
-    out.ffoApprox = Math.round(ffo);
+    const u = ctx.usd ? view(ctx.usd) : null; // the amount is published in USD
+    const ffoUsd = ctx.usd === undefined ? ffo : u && fin(u.ttm('netIncome')) && fin(u.ttm('da')) ? (u.ttm('netIncome') as number) + (u.ttm('da') as number) - (u.ttm('gainOnSaleOfProperty') ?? 0) : null;
+    out.ffoApprox = ffoUsd === null ? null : Math.round(ffoUsd);
     out.ffoPayoutApprox = pct(v.ttm('dividendsPaid'), ffo);
   }
   return out;
@@ -308,6 +316,30 @@ export function ownEbitdaMetrics(sec: SecFundamentals | null, marketCap: Num): {
     evEbitda: ev !== null && ev > 0 ? r2(ev / ebitda) : null,
     fcfToEbitda: fin(fcf) ? r2((fcf / ebitda) * 100) : null,
     netDebtToEbitda: fin(debt) && fin(cash) ? r2((debt - cash - sti - (v.ttm('longTermInvestments') ?? 0)) / ebitda) : null,
+  };
+}
+
+export type CapMultiples = { pe: Num; ps: Num; pFcf: Num; pb: Num; enterpriseValue: Num };
+
+/**
+ * Multiples over market cap for a foreign issuer (plan 1.3): P/E = market cap / TTM net income, P/S over revenue, P/FCF over
+ * CFO - capex, P/B over equity, EV = market cap + debt + minority interest + preferred - cash - short-term investments, every
+ * amount of the USD layer. Price over EPS would mix a price per ADR with EPS per ordinary share (the ADR ratio is not in the SEC
+ * data). A denominator of zero or less gives null
+ */
+export function capMultiples(usd: SecFundamentals | null, marketCap: Num): CapMultiples {
+  const none: CapMultiples = { pe: null, ps: null, pFcf: null, pb: null, enterpriseValue: null };
+  if (!usd || !pos(marketCap)) return none;
+  const v = view(usd);
+  const debt = v.ttm('debt');
+  const cash = v.ttm('cash');
+  const ev = fin(debt) && fin(cash) ? marketCap + debt + (v.ttm('minorityInterest') ?? 0) + (v.ttm('preferredStock') ?? 0) - cash - (v.ttm('shortTermInvestments') ?? 0) : null;
+  return {
+    pe: r2(ratio(marketCap, v.ttm('netIncome'))),
+    ps: r2(ratio(marketCap, v.ttm('revenue'))),
+    pFcf: r2(ratio(marketCap, fcfOf(v.ttm('cfo'), v.ttm('capex')))),
+    pb: r2(ratio(marketCap, v.ttm('equity'))),
+    enterpriseValue: ev === null ? null : Math.round(ev),
   };
 }
 

@@ -16,7 +16,7 @@ const SCREENER_KEYS = ['ticker', 'type', 'sector', 'industry', 'isMine', 'size',
 
 describe('metrics registry', () => {
   test('covers every metrics key of the Stocks feed, the ETF feeds and the screener', () => {
-    expect(STOCK_METRIC_KEYS.length).toBe(138);
+    expect(STOCK_METRIC_KEYS.length).toBe(141);
     expect(unregisteredKeys(STOCK_METRIC_KEYS)).toEqual([]);
     expect(unregisteredKeys(ETF_METRIC_KEYS)).toEqual([]);
     expect(unregisteredKeys(SCREENER_KEYS)).toEqual([]);
