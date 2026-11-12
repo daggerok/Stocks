@@ -1,5 +1,5 @@
 /// <reference types="bun" />
-import { getLocale, pick, setLocale, t } from './core/i18n';
+import { format, getLocale, Params, pick, setLocale, t } from './core/i18n';
 import { groupMetrics, isNumericMetric, MetricDef, REGISTRY } from './core/metrics';
 import {
   canonicalPreset, changedConditions, Condition as ScreenerCondition, createUniverse, decodePresetHash, encodePresetHash, ETF_BRANDS_URL, EtfBrand, etfFeedUrl, etfMetrics, etfRow,
@@ -563,8 +563,26 @@ function parseDateTs(value: unknown): number {
   return Number.isNaN(parsed) ? NaN : parsed;
 }
 
+/**
+ * A fixed English text of the page chrome in the current language: key `ui.<text>` of the dictionaries, `{name}` params filled.
+ * English is the default; a text without an entry stays English (owner answer N7: the whole UI through t())
+ */
+function L(text: string, params?: Params): string {
+  const key = `ui.${text}`;
+  const out = t(key, params);
+  return out === key ? format(text, params) : out;
+}
+
+/** Header of a metric column: the registry name in the current language, else the translated fixed label */
+function colLabel(col: Col): string {
+  const def = REGISTRY.byId[col.key === 'athDateTs' ? 'athDate' : col.key];
+  return def ? pick(def.name) : L(col.label);
+}
+
 function getHeaderTooltip(header: string): string {
   if (!header) return '';
+  const own = t(`tip.${header}`);
+  if (own !== `tip.${header}`) return own;
   if (COLUMN_TOOLTIPS[header]) return COLUMN_TOOLTIPS[header];
   const clean = String(header).trim();
   const keys = Object.keys(COLUMN_TOOLTIPS);
@@ -1296,7 +1314,7 @@ function delay(ms: number): Promise<void> {
 
 /** A user action that re-renders the whole table: the spinner shows while it runs (and only if it takes longer than a blink). */
 function renderBusy(keepRows = true, after?: () => void): void {
-  withBusy('Updating the table…', () => {
+  withBusy(L('Updating the table…'), () => {
     render(keepRows);
     if (after) after();
   });
@@ -1344,9 +1362,9 @@ function nextPaint(): Promise<void> {
  * revalidated; the table is rebuilt only when generatedAt moved.
  */
 async function loadCatalog(): Promise<void> {
-  setBusy(true, 'Loading the stock feed…');
+  setBusy(true, L('Loading the stock feed…'));
   const fontsReady = loadFonts();
-  el.tableBody.innerHTML = `<tr><td colspan="10" class="py-12 text-center text-slate-400 dark:text-slate-500">Loading the stock catalog…</td></tr>`;
+  el.tableBody.innerHTML = `<tr><td colspan="10" class="py-12 text-center text-slate-400 dark:text-slate-500">${escapeHtml(L('Loading the stock catalog…'))}</td></tr>`;
   const cached = await Promise.race([
     idbGet(cacheKey()),
     new Promise<any>(resolve => setTimeout(() => resolve(null), 1500)),
@@ -1381,12 +1399,12 @@ async function loadCatalog(): Promise<void> {
     const message = error instanceof Error ? (error.name === 'AbortError' ? 'timeout' : error.message) : String(error);
     console.warn(`Stock feed unavailable: ${message}`);
     el.loadWarning.hidden = false;
-    el.loadWarning.textContent = hasCache ? 'showing cached data' : 'feed unavailable';
+    el.loadWarning.textContent = hasCache ? L('showing cached data') : L('feed unavailable');
     el.loadWarning.title = message;
     if (!hasCache) {
       state.loading = false;
-      el.tickerCount.textContent = 'Error';
-      el.tableBody.innerHTML = `<tr><td colspan="10" class="py-12 text-center text-rose-500 dark:text-rose-300">${escapeHtml(`Unable to load the stock feed: ${message}. Serve this folder (bunx serve . -p 1234) after running ./scripts/update-data.ts, or open the published site.`)}</td></tr>`;
+      el.tickerCount.textContent = L('Error');
+      el.tableBody.innerHTML = `<tr><td colspan="10" class="py-12 text-center text-rose-500 dark:text-rose-300">${escapeHtml(L('Unable to load the stock feed: {message}. Serve this folder (bunx serve . -p 1234) after running ./scripts/update-data.ts, or open the published site.', { message }))}</td></tr>`;
     }
   }
   state.loading = false;
@@ -1403,9 +1421,9 @@ async function loadCatalog(): Promise<void> {
 }
 
 function renderLoadProgress(): void {
-  if (state.loading) el.loadProgress.textContent = `Loading the stock feed…${store ? ` ${store.n.toLocaleString('en-US')} stocks from cache` : ''}`;
+  if (state.loading) el.loadProgress.textContent = `${L('Loading the stock feed…')}${store ? ` ${L('{count} stocks from cache', { count: store.n.toLocaleString('en-US') })}` : ''}`;
   else if (etfState === 'loading') el.loadProgress.textContent = t('screener.loadingEtfs', { done: etfDone, total: etfBrands.length });
-  else el.loadProgress.textContent = usingRemote ? 'remote (github.io)' : '';
+  else el.loadProgress.textContent = usingRemote ? L('remote (github.io)') : '';
   el.loadProgress.hidden = !el.loadProgress.textContent;
 }
 
@@ -1477,7 +1495,7 @@ async function loadNextHistoryPage(blocking = true): Promise<void> {
   if (!entry || entry.loading || entry.nextPage >= entry.manifest.pages.length) return;
   entry.loading = true;
   renderStaticLoadSentinel();
-  if (blocking) setBusy(true, 'Loading more rows…');
+  if (blocking) setBusy(true, L('Loading more rows…'));
   try {
     const page = await fetchPage(key, entry.manifest.pages[entry.nextPage]);
     if (!entry.headers.length && page.headers.length) entry.headers = page.headers;
@@ -1505,7 +1523,7 @@ function renderStaticLoadSentinel(): void {
   }
   const more = entry.nextPage < entry.manifest.pages.length;
   el.staticLoadSentinel.classList.toggle('hidden', !more);
-  el.staticLoadStatus.textContent = entry.loading ? 'Loading more rows…' : more ? 'Scroll or click to load more rows…' : '';
+  el.staticLoadStatus.textContent = entry.loading ? L('Loading more rows…') : more ? L('Scroll or click to load more rows…') : '';
 }
 
 // =========================================================================
@@ -1600,14 +1618,22 @@ const MANDATORY_COLUMN = 'ticker';
 
 /** One row of the Columns menu per column, first to last as in the table; Use and Ticker are listed but locked. */
 function menuColumns(): Array<{ key: string; label: string; locked: boolean }> {
-  return [{ key: 'use', label: 'Stock - Use', locked: true }]
-    .concat(BASE_FILTER_COLUMNS.map(col => ({ key: col.key, label: `Stock - ${col.label}`, locked: col.key === MANDATORY_COLUMN })))
-    .concat(COLS.map(col => ({ key: col.key, label: `${col.group} - ${col.label}`, locked: false })));
+  return [{ key: 'use', label: `${L('Stock')} - ${L('Use')}`, locked: true }]
+    .concat(BASE_FILTER_COLUMNS.map(col => ({ key: col.key, label: `${L('Stock')} - ${baseColLabel(col)}`, locked: col.key === MANDATORY_COLUMN })))
+    .concat(COLS.map(col => ({ key: col.key, label: `${L(col.group)} - ${colLabel(col)}`, locked: false })));
+}
+
+/** Header of a base column in the current language (screener and scoring columns keep their own keys) */
+function baseColLabel(col: CatalogColumn): string {
+  if (col.key === 'presets') return t('screener.badges');
+  if (col.key === 'type') return t('screener.type.column');
+  if (SCORING_TEXT_KEYS.includes(col.key)) return t(`scoring.col.${col.key}`);
+  return L(col.label);
 }
 
 /** Every catalog column in display order, shown or not: the filters work on all of them. */
 function allCatalogColumns(): CatalogColumn[] {
-  return BASE_FILTER_COLUMNS.concat(COLS.map(col => ({ key: col.key, label: col.label, kind: col.fmt === 'basis' ? 'basis' : col.fmt === 'date' ? 'date' : col.fmt === 'text' ? 'text' : 'num', fmt: col.fmt })));
+  return BASE_FILTER_COLUMNS.map(col => ({ ...col, label: baseColLabel(col) })).concat(COLS.map(col => ({ key: col.key, label: colLabel(col), kind: col.fmt === 'basis' ? 'basis' : col.fmt === 'date' ? 'date' : col.fmt === 'text' ? 'text' : 'num', fmt: col.fmt })));
 }
 
 /** The columns of the catalog table in display order: the fixed ones and the columns checked in the Columns menu. */
@@ -1619,10 +1645,10 @@ function catalogFilterColumns(): CatalogColumn[] {
 function catalogCellText(col: CatalogColumn, id: number): string {
   const s = store;
   if (!s) return '';
-  if (col.key === 'type') return s.typeText[id].toLowerCase();
+  if (col.key === 'type') return L(s.typeText[id]).toLowerCase();
   if (col.key === 'presets') return passedPresets(id).map(p => pick(p.title)).join(' ').toLowerCase();
   if (SCORING_TEXT_KEYS.includes(col.key)) return scoringText(col.key, id).toLowerCase();
-  if (s.text[col.key]) return s.text[col.key][id].toLowerCase();
+  if (s.text[col.key]) return (s.text[col.key][id] ? L(s.text[col.key][id]) : '').toLowerCase();
   if (col.kind === 'text') return col.key === 'ticker' ? s.fields.ticker[id] : col.key === 'name' ? s.fields.name[id] : col.key === 'exchange' ? s.fields.exchange[id] : col.key === 'sector' ? s.fields.sector[id] : s.fields.industry[id];
   if (col.kind === 'basis') { const cls = s.num.basisCls[id]; return BASIS_BADGES[Number.isFinite(cls) ? String(cls) : 'none'].label.toLowerCase(); }
   if (col.kind === 'date') return dateColumnText(col.key, s.raw[id]).toLowerCase();
@@ -1810,7 +1836,7 @@ function catalogRowNumber(id: number, index: number): number {
 }
 
 function getTabs(): TabInfo[] {
-  return [{ id: 'All', label: 'All Stocks', count: nonBlacklistedIds().length }];
+  return [{ id: 'All', label: L('All Stocks'), count: nonBlacklistedIds().length }];
 }
 
 function getSelectedTabs(): TabInfo[] {
@@ -1821,15 +1847,15 @@ function getSelectedTabs(): TabInfo[] {
     DETAIL_TABS.filter(tab => hasFiles || tab.key === 'overview').forEach(tab => {
       tabs.push({
         id: `detail:${tab.key}`,
-        label: tab.key === 'overview' ? `${activeStock.ticker} ${tab.label}` : tab.label,
+        label: tab.key === 'overview' ? `${activeStock.ticker} ${L(tab.label)}` : L(tab.label),
         count: getDetailCount(tab.key),
       });
     });
   }
   // The second panel is always shown (no layout jump on the first or last selection): without an active stock its tabs are disabled placeholders.
-  if (!activeStock) DETAIL_TABS.forEach(tab => tabs.push({ id: `detail:${tab.key}`, label: tab.label, count: 0, disabled: true }));
+  if (!activeStock) DETAIL_TABS.forEach(tab => tabs.push({ id: `detail:${tab.key}`, label: L(tab.label), count: 0, disabled: true }));
   const picked = selectedKeys().length;
-  tabs.push({ id: 'watchlist', label: 'Watchlist', count: picked, disabled: picked === 0 });
+  tabs.push({ id: 'watchlist', label: L('Watchlist'), count: picked, disabled: picked === 0 });
   return tabs;
 }
 
@@ -1879,7 +1905,7 @@ function renderTabButtons(container: any, tabs: TabInfo[], alwaysShow: boolean):
     if (tab.id === 'All') {
       return `
         <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs transition border whitespace-nowrap ${isActive ? activeClasses : inactiveClasses}">
-          <input type="checkbox" id="select-all-toggle" ${allSelected ? 'checked' : ''} class="w-3.5 h-3.5 accent-blue-600 cursor-pointer" title="Select / Deselect all stocks" />
+          <input type="checkbox" id="select-all-toggle" ${allSelected ? 'checked' : ''} class="w-3.5 h-3.5 accent-blue-600 cursor-pointer" title="${escapeHtml(L('Select / Deselect all stocks'))}" />
           <button data-tab="All" class="font-medium hover:underline focus:outline-hidden">
             ${escapeHtml(tab.label)} (${tab.count})
           </button>
@@ -1952,9 +1978,9 @@ function tabLabel(tab: ActiveTab): string {
   const match = /^detail:(.+)$/.exec(tab);
   if (match) {
     const found = DETAIL_TABS.find(item => item.key === match[1]);
-    return found ? found.label : tab;
+    return found ? L(found.label) : tab;
   }
-  return tab === 'watchlist' ? 'Watchlist' : 'All Stocks';
+  return tab === 'watchlist' ? L('Watchlist') : L('All Stocks');
 }
 
 function isDetailTab(tab: ActiveTab): boolean {
@@ -1994,7 +2020,7 @@ function applyColumnSelection(selected: Set<string>): void {
 }
 
 function filterSummary(selected: number, total: number): string {
-  return selected === total ? `${selected} of ${total}` : `${selected} selected`;
+  return selected === total ? L('{selected} of {total}', { selected, total }) : L('{selected} selected', { selected });
 }
 
 function columnItems(): DropdownItem[] {
@@ -2025,9 +2051,9 @@ function renderFilters(): void {
       if (!state.hiddenExchanges.has(store.exchangeText[i])) sectorCounts.set(store.sectorText[i], (sectorCounts.get(store.sectorText[i]) || 0) + 1);
     }
   }
-  exchangeItems = store ? store.exchanges.map(name => ({ id: name, label: name || '(no exchange)', count: exchangeCounts.get(name) || 0, selected: !state.hiddenExchanges.has(name) })) : [];
+  exchangeItems = store ? store.exchanges.map(name => ({ id: name, label: name || L('(no exchange)'), count: exchangeCounts.get(name) || 0, selected: !state.hiddenExchanges.has(name) })) : [];
   exchangeItems.sort((a, b) => collator.compare(a.id || '~', b.id || '~'));
-  sectorItems = store ? store.sectors.map(name => ({ id: name, label: name || '(no sector)', count: sectorCounts.get(name) || 0, selected: !state.hiddenSectors.has(name) })) : [];
+  sectorItems = store ? store.sectors.map(name => ({ id: name, label: name || L('(no sector)'), count: sectorCounts.get(name) || 0, selected: !state.hiddenSectors.has(name) })) : [];
   sectorItems.sort((a, b) => collator.compare(a.id || '~', b.id || '~'));
   const paint = (items: DropdownItem[], button: any, badge: any, summary: any): void => {
     const selected = items.filter(item => item.selected);
@@ -2047,14 +2073,14 @@ function renderFilters(): void {
 
 type DropdownItem = { id: string; label: string; count: number; selected: boolean; badges?: string; locked?: boolean }; // locked: always selected, cannot be toggled
 
-type Dropdown = { refresh(): void; open(query?: string): void; close(restoreFocus?: boolean): void; isOpen(): boolean };
+type Dropdown = { refresh(): void; open(query?: string): void; close(restoreFocus?: boolean): void; isOpen(): boolean; relabel(): void };
 
 type DropdownConfig = {
   trigger: any;
   panel: any;
-  title: string; // "Exchanges"
-  noun: string; // "exchanges", used in the search placeholder and the empty state
-  unit: string; // what the row number counts: "stocks" or "columns"
+  title(): string; // "Exchanges" in the current language
+  noun(): string; // "exchanges", used in the search placeholder and the empty state
+  unit(): string; // what the row number counts: "stocks" or "columns"
   getItems(): DropdownItem[];
   /** Receives the complete new selection; the owner persists it and re-renders. */
   onChange(selected: Set<string>): void;
@@ -2081,25 +2107,45 @@ function createDropdown(cfg: DropdownConfig): Dropdown {
   const uid = panel.id;
   const reduceMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   panel.setAttribute('role', 'dialog');
-  panel.setAttribute('aria-label', cfg.title);
   panel.innerHTML = `
     <div class="dd-search">
       <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="9" cy="9" r="5.5"/><path d="m13.5 13.5 3.5 3.5"/></svg>
-      <input type="text" class="dd-input" role="combobox" aria-expanded="true" aria-autocomplete="list" aria-controls="${uid}-list" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Search ${escapeHtml(cfg.noun)}..." aria-label="Search ${escapeHtml(cfg.noun)}" />
-      <button type="button" class="dd-qclear" hidden aria-label="Clear search" tabindex="-1">✕</button>
-      <button type="button" class="dd-close" aria-label="Close ${escapeHtml(cfg.title)}">✕</button>
+      <input type="text" class="dd-input" role="combobox" aria-expanded="true" aria-autocomplete="list" aria-controls="${uid}-list" autocomplete="off" autocapitalize="off" spellcheck="false" />
+      <button type="button" class="dd-qclear" hidden tabindex="-1">✕</button>
+      <button type="button" class="dd-close">✕</button>
     </div>
-    <div class="dd-actions" role="group" aria-label="Bulk actions for the shown ${escapeHtml(cfg.noun)}">
-      <button type="button" class="dd-act" data-act="all" title="Select every shown row (Ctrl/Cmd+A)">All</button>
-      <button type="button" class="dd-act" data-act="none" title="Deselect every shown row">Clear</button>
-      <button type="button" class="dd-act" data-act="toggle" title="Invert the selection of the shown rows">Toggle</button>
-      <button type="button" class="dd-act" data-act="reset" title="Back to the default: everything selected, whatever the search">Reset</button>
+    <div class="dd-actions" role="group">
+      <button type="button" class="dd-act" data-act="all"></button>
+      <button type="button" class="dd-act" data-act="none"></button>
+      <button type="button" class="dd-act" data-act="toggle"></button>
+      <button type="button" class="dd-act" data-act="reset"></button>
     </div>
     <div class="dd-meta">
       <span class="dd-count" aria-live="polite"></span>
-      <button type="button" class="dd-seltoggle" aria-pressed="false" title="Show only the rows selected so far">Selected only</button>
+      <button type="button" class="dd-seltoggle" aria-pressed="false"></button>
     </div>
-    <div class="dd-list themed-scroll" id="${uid}-list" tabindex="-1" role="listbox" aria-multiselectable="true" aria-label="${escapeHtml(cfg.title)}"></div>`;
+    <div class="dd-list themed-scroll" id="${uid}-list" tabindex="-1" role="listbox" aria-multiselectable="true"></div>`;
+  /** The fixed texts of the panel in the current language (called again by the language switch) */
+  function relabel(): void {
+    const set = (selector: string, text: string | null, attrs: Record<string, string> = {}) => {
+      const node: any = panel.querySelector(selector);
+      if (!node) return;
+      if (text !== null) node.textContent = text;
+      Object.keys(attrs).forEach(name => node.setAttribute(name, attrs[name]));
+    };
+    panel.setAttribute('aria-label', cfg.title());
+    set('.dd-input', null, { placeholder: L('Search {noun}...', { noun: cfg.noun() }), 'aria-label': L('Search {noun}', { noun: cfg.noun() }) });
+    set('.dd-qclear', null, { 'aria-label': L('Clear search') });
+    set('.dd-close', null, { 'aria-label': L('Close {title}', { title: cfg.title() }) });
+    set('.dd-actions', null, { 'aria-label': L('Bulk actions for the shown {noun}', { noun: cfg.noun() }) });
+    set('[data-act="all"]', L('All'), { title: L('Select every shown row (Ctrl/Cmd+A)') });
+    set('[data-act="none"]', L('Clear'), { title: L('Deselect every shown row') });
+    set('[data-act="toggle"]', L('Toggle'), { title: L('Invert the selection of the shown rows') });
+    set('[data-act="reset"]', L('Reset'), { title: L('Back to the default: everything selected, whatever the search') });
+    set('.dd-seltoggle', L('Selected only'), { title: L('Show only the rows selected so far') });
+    set('.dd-list', null, { 'aria-label': cfg.title() });
+  }
+  relabel();
   const backdrop = document.createElement('div');
   backdrop.className = 'dd-backdrop';
   // Portal both to <body>: no ancestor stacking context or overflow can cover or clip the popover.
@@ -2153,18 +2199,18 @@ function createDropdown(cfg: DropdownConfig): Dropdown {
     const keepScroll = list.scrollTop;
     list.innerHTML = shown.length
       ? shown.map((item, i) => `
-        <div class="dd-opt${item.count === 0 ? ' dd-zero' : ''}${item.locked ? ' dd-locked' : ''}" role="option" id="${optionId(i)}" data-id="${escapeHtml(item.id)}" aria-selected="${item.selected}"${item.locked ? ' aria-disabled="true" title="Always shown"' : ''}>
+        <div class="dd-opt${item.count === 0 ? ' dd-zero' : ''}${item.locked ? ' dd-locked' : ''}" role="option" id="${optionId(i)}" data-id="${escapeHtml(item.id)}" aria-selected="${item.selected}"${item.locked ? ` aria-disabled="true" title="${escapeHtml(L('Always shown'))}"` : ''}>
           <span class="dd-check">${DD_TICK}</span>
           <span class="dd-name" title="${escapeHtml(item.label)}">${escapeHtml(item.label)}</span>
           ${item.badges || ''}
-          <span class="dd-num" title="${escapeHtml(cfg.unit)}">${item.count}</span>
-          ${item.locked ? `<span class="dd-only dd-only-ghost" aria-hidden="true">Only</span>` : `<button type="button" class="dd-only" data-only tabindex="-1" aria-label="Only ${escapeHtml(item.label)}">Only</button>`}
+          <span class="dd-num" title="${escapeHtml(cfg.unit())}">${item.count}</span>
+          ${item.locked ? `<span class="dd-only dd-only-ghost" aria-hidden="true">${escapeHtml(L('Only'))}</span>` : `<button type="button" class="dd-only" data-only tabindex="-1" aria-label="${escapeHtml(L('Only {name}', { name: item.label }))}">${escapeHtml(L('Only'))}</button>`}
         </div>`).join('')
-      : `<div class="dd-empty">${selectedOnly && !query.trim() ? `Nothing selected` : `No ${escapeHtml(cfg.noun)} match “${escapeHtml(query.trim())}”`}</div>`;
+      : `<div class="dd-empty">${escapeHtml(selectedOnly && !query.trim() ? L('Nothing selected') : L('No {noun} match “{query}”', { noun: cfg.noun(), query: query.trim() }))}</div>`;
     list.scrollTop = keepScroll;
     const selectedTotal = all.filter(item => item.selected).length;
     const narrowed = Boolean(query.trim()) || selectedOnly;
-    count.textContent = `${selectedTotal} of ${all.length} selected${narrowed ? ` · ${shown.filter(item => item.selected).length} of ${shown.length} shown` : ''}`;
+    count.textContent = `${L('{selected} of {total} selected', { selected: selectedTotal, total: all.length })}${narrowed ? ` · ${L('{selected} of {total} shown', { selected: shown.filter(item => item.selected).length, total: shown.length })}` : ''}`;
     qClear.hidden = !query;
     selToggle.setAttribute('aria-pressed', String(selectedOnly));
     selToggle.classList.toggle('is-on', selectedOnly);
@@ -2336,7 +2382,7 @@ function createDropdown(cfg: DropdownConfig): Dropdown {
     if (next) next.focus();
   });
 
-  return { refresh, open, close, isOpen: () => isOpen };
+  return { refresh, open, close, isOpen: () => isOpen, relabel };
 }
 
 // ---- one custom tooltip for the whole app (top layer) -------------------------
@@ -2445,7 +2491,7 @@ function initSearchSuggest(): void {
   input.setAttribute('aria-autocomplete', 'list');
   input.setAttribute('aria-controls', 'search-suggest');
   input.setAttribute('aria-expanded', 'false');
-  input.setAttribute('title', 'Words are ANDed across ticker, company, exchange, sector, industry and source. Use exchange:nyse, sector:"financial services", industry:banks, ticker:aapl to target one field.');
+  input.setAttribute('title', L(SEARCH_TIP));
 
   const isOpen = () => !panel.hidden;
   function close(): void {
@@ -2460,11 +2506,11 @@ function initSearchSuggest(): void {
   function paint(): void {
     panel.innerHTML = items.map((item, i) => `
       <div class="dd-opt${i === active ? ' is-active' : ''}" role="option" id="sg-o${i}" data-i="${i}" aria-selected="${item.selected}">
-        <span class="sg-kind sg-${item.kind}">${item.kind === 'exchange' ? 'Exchange' : 'Sector'}</span>
+        <span class="sg-kind sg-${item.kind}">${escapeHtml(item.kind === 'exchange' ? L('Exchange') : L('Sector'))}</span>
         <span class="dd-name" title="${escapeHtml(item.label)}">${escapeHtml(item.label)}</span>
-        <span class="dd-num" title="stocks">${item.count}</span>
-        <button type="button" class="dd-only" data-only tabindex="-1" aria-label="Only ${escapeHtml(item.label)}">Only</button>
-      </div>`).join('') + '<div class="sg-hint">Enter adds to the selection, Shift+Enter shows only this</div>';
+        <span class="dd-num" title="${escapeHtml(L('stocks'))}">${item.count}</span>
+        <button type="button" class="dd-only" data-only tabindex="-1" aria-label="${escapeHtml(L('Only {name}', { name: item.label }))}">${escapeHtml(L('Only'))}</button>
+      </div>`).join('') + `<div class="sg-hint">${escapeHtml(L('Enter adds to the selection, Shift+Enter shows only this'))}</div>`;
     if (active >= 0) input.setAttribute('aria-activedescendant', `sg-o${active}`);
     else input.removeAttribute('aria-activedescendant');
   }
@@ -2733,8 +2779,8 @@ function syncSearchInput(): void {
     el.searchInput.value = query;
   }
   el.searchInput.placeholder = isCatalogTab(state.activeTab)
-    ? 'Search ticker, company, sector... or exchange:nyse'
-    : `Search ${tabLabel(state.activeTab)}...`;
+    ? L('Search ticker, company, sector... or exchange:nyse')
+    : L('Search {tab}...', { tab: tabLabel(state.activeTab) });
   updateSearchClearBtn();
 }
 
@@ -2785,7 +2831,9 @@ function sortHeader(label: string, key: string, numeric = false, extraClass = ''
 /** Header badge with the column type (auto-detected or set by the user); click cycles the type, Shift+click returns to auto-detection. */
 function typeBadgeHtml(scope: string, key: string, type: ColType, detected: ColType): string {
   const overridden = type !== detected;
-  const title = `Column type: ${COL_TYPE_NAMES[type]} (${overridden ? 'set by you, detected: ' + COL_TYPE_NAMES[detected] : 'auto-detected'}). Click to cycle the type, Shift+click to return to auto-detection.`;
+  const title = overridden
+    ? L('Column type: {type} (set by you, detected: {detected}). Click to cycle the type, Shift+click to return to auto-detection.', { type: L(COL_TYPE_NAMES[type]), detected: L(COL_TYPE_NAMES[detected]) })
+    : L('Column type: {type} (auto-detected). Click to cycle the type, Shift+click to return to auto-detection.', { type: L(COL_TYPE_NAMES[type]) });
   return `<button type="button" data-type-col="${escapeHtml(key)}" data-filter-scope="${escapeHtml(scope)}" title="${escapeHtml(title)}" class="type-badge ${COL_TYPE_CLASSES[type]}${overridden ? ' is-override' : ''}">${COL_TYPE_LABELS[type]}</button>`;
 }
 
@@ -2798,15 +2846,16 @@ function filterRowHtml(scope: string, cells: FilterCell[], leading: string): str
     const active = expression.trim() !== '';
     const compiled = active ? compileFilter(expression, cell.type) : null;
     const error = compiled && !compiled.ok ? compiled.error : '';
-    const help = `${error ? 'Cannot apply this filter: ' + error + '. ' : ''}${COL_TYPE_HELP[cell.type]}`;
-    return `<th class="filter-cell${cell.extraClass ? ' ' + cell.extraClass : ''}"><div class="filter-wrap"><input type="text" data-filter-col="${escapeHtml(cell.key)}" data-filter-scope="${escapeHtml(scope)}" value="${escapeHtml(expression)}" placeholder="${escapeHtml(COL_TYPE_PLACEHOLDERS[cell.type])}" spellcheck="false" autocomplete="off" aria-label="Filter ${escapeHtml(cell.label)}" title="${escapeHtml(help)}" class="filter-input${active ? ' is-active' : ''}${error ? ' is-invalid' : ''}" />${active ? `<button type="button" data-clear-filter="${escapeHtml(cell.key)}" data-filter-scope="${escapeHtml(scope)}" class="filter-clear" title="Clear this filter" aria-label="Clear the ${escapeHtml(cell.label)} filter">✕</button>` : ''}</div></th>`;
+    const help = `${error ? L('Cannot apply this filter: {error}.', { error }) + ' ' : ''}${L(COL_TYPE_HELP[cell.type])}`;
+    return `<th class="filter-cell${cell.extraClass ? ' ' + cell.extraClass : ''}"><div class="filter-wrap"><input type="text" data-filter-col="${escapeHtml(cell.key)}" data-filter-scope="${escapeHtml(scope)}" value="${escapeHtml(expression)}" placeholder="${escapeHtml(COL_TYPE_PLACEHOLDERS[cell.type])}" spellcheck="false" autocomplete="off" aria-label="${escapeHtml(L('Filter {name}', { name: cell.label }))}" title="${escapeHtml(help)}" class="filter-input${active ? ' is-active' : ''}${error ? ' is-invalid' : ''}" />${active ? `<button type="button" data-clear-filter="${escapeHtml(cell.key)}" data-filter-scope="${escapeHtml(scope)}" class="filter-clear" title="${escapeHtml(L('Clear this filter'))}" aria-label="${escapeHtml(L('Clear the {name} filter', { name: cell.label }))}">✕</button>` : ''}</div></th>`;
   }).join('')}</tr>`;
 }
 
+const SEARCH_TIP = 'Words are ANDed across ticker, company, exchange, sector, industry and source. Use exchange:nyse, sector:"financial services", industry:banks, ticker:aapl to target one field.';
 const STICKY_RANK_TIP = 'Sticky rank: the position of the row in the table sorted by the current column, before the column filters. Column filters only hide rows, so the numbers keep gaps (1, 4, 7...); the sort, the search and the top panel (Watchlist, exchanges, sectors, blacklist, hide stale) rank again. Sticky # off: 1..N of the shown rows.';
 
 function indexHeader(): string {
-  return `<th class="py-3.5 px-4 w-12 text-center" title="${escapeHtml(state.stickyRank && currentFilterScope() ? STICKY_RANK_TIP : getHeaderTooltip('#'))}">#</th>`;
+  return `<th class="py-3.5 px-4 w-12 text-center" title="${escapeHtml(state.stickyRank && currentFilterScope() ? L(STICKY_RANK_TIP) : getHeaderTooltip('#'))}">#</th>`;
 }
 
 function useHeader(): string {
@@ -2815,8 +2864,8 @@ function useHeader(): string {
   const allSelected = ids.length > 0 && ids.every(id => state.selected.has(keys[id]));
   return `<th class="catalog-sticky-col catalog-sticky-use py-3.5 px-4 w-20 text-center" title="${escapeHtml(getHeaderTooltip('Use'))}">
     <div class="inline-flex items-center justify-center gap-1">
-      <input type="checkbox" id="select-all-checkbox" ${allSelected ? 'checked' : ''} class="w-4 h-4 accent-blue-600 cursor-pointer" title="Select / Deselect all visible stocks" />
-      <span>Use</span>
+      <input type="checkbox" id="select-all-checkbox" ${allSelected ? 'checked' : ''} class="w-4 h-4 accent-blue-600 cursor-pointer" title="${escapeHtml(L('Select / Deselect all visible stocks'))}" />
+      <span>${escapeHtml(L('Use'))}</span>
     </div>
   </th>`;
 }
@@ -2851,7 +2900,7 @@ function sourceBadge(id: number): string {
   const cls = store.num.basisCls[id];
   const badge = BASIS_BADGES[Number.isFinite(cls) ? String(cls) : 'none'];
   const row = store.raw[id];
-  const title = `${row.fundamentalsBasis || 'unavailable'}${row.fundamentalsAsOf ? ` (fiscal year ended ${row.fundamentalsAsOf})` : ''}`;
+  const title = `${row.fundamentalsBasis || L('unavailable')}${row.fundamentalsAsOf ? ` (${L('fiscal year ended {date}', { date: row.fundamentalsAsOf })})` : ''}`;
   return `<span class="src-badge ${badge.cls}" title="${escapeHtml(title)}">${badge.label}</span>`;
 }
 
@@ -2869,11 +2918,11 @@ function cellHtml(col: Col, id: number): string {
   if (!s) return '';
   const numCls = 'py-2.5 px-4 text-right font-mono text-slate-700 dark:text-slate-300';
   if (col.fmt === 'basis') return `<td class="py-2.5 px-4">${sourceBadge(id)}</td>`;
-  if (col.fmt === 'text') return `<td class="py-2.5 px-4 text-slate-600 dark:text-slate-400 whitespace-nowrap">${escapeHtml(s.text[col.key][id] || DASH)}</td>`;
+  if (col.fmt === 'text') return `<td class="py-2.5 px-4 text-slate-600 dark:text-slate-400 whitespace-nowrap">${escapeHtml(s.text[col.key][id] ? L(s.text[col.key][id]) : DASH)}</td>`;
   if (col.fmt === 'date') {
     const text = dateColumnText(col.key, s.raw[id]);
     const stale = col.key === 'perfTs' && isStaleId(id);
-    const tip = stale ? ` title="${text ? 'The last price is older than ' + state.staleDays + ' days' : 'Return as-of date is unknown'}"` : '';
+    const tip = stale ? ` title="${escapeHtml(text ? L('The last price is older than {days} days', { days: state.staleDays }) : L('Return as-of date is unknown'))}"` : '';
     return `<td class="py-2.5 px-4 font-mono ${stale ? 'text-amber-600 dark:text-amber-400' : 'text-slate-600 dark:text-slate-400'}"${tip}>${escapeHtml(text || DASH)}</td>`;
   }
   if (col.key === 'range52w') {
@@ -2896,13 +2945,13 @@ function stockRowHtml(id: number, index: number, cols: Col[]): string {
           <td class="py-2.5 px-4 text-slate-400 dark:text-slate-500 text-xs text-center font-mono">${catalogRowNumber(id, index)}</td>
           <td class="catalog-sticky-col catalog-sticky-use py-2.5 px-4 text-center">
             <div class="inline-flex items-center justify-center gap-1.5">
-              <input data-checkbox="${escapeHtml(key)}" type="checkbox" ${selected ? 'checked' : ''} class="w-4 h-4 accent-blue-600 cursor-pointer" aria-label="Use ${escapeHtml(key)}" />
-              <button data-blacklist="${escapeHtml(key)}" class="w-4 h-4 rounded-sm text-slate-300 dark:text-slate-600 hover:text-rose-500 dark:hover:text-rose-400 leading-none transition" title="Blacklist ${escapeHtml(key)} - hide it from All Stocks">✕</button>
+              <input data-checkbox="${escapeHtml(key)}" type="checkbox" ${selected ? 'checked' : ''} class="w-4 h-4 accent-blue-600 cursor-pointer" aria-label="${escapeHtml(L('Use {ticker}', { ticker: key }))}" />
+              <button data-blacklist="${escapeHtml(key)}" class="w-4 h-4 rounded-sm text-slate-300 dark:text-slate-600 hover:text-rose-500 dark:hover:text-rose-400 leading-none transition" title="${escapeHtml(L('Blacklist {ticker} - hide it from All Stocks', { ticker: key }))}">✕</button>
             </div>
           </td>
           <td class="catalog-sticky-col catalog-sticky-ticker py-2.5 px-4 font-mono font-semibold text-blue-600 dark:text-blue-400">${s.assetType[id] === 0 ? `<button type="button" class="tp-open" data-page="${escapeHtml(key)}" title="${escapeHtml(t('tp.open.tip', { ticker: key }))}">${escapeHtml(key)}</button>` : escapeHtml(key)}</td>
           ${state.hiddenCols.has('name') ? '' : `<td class="py-2.5 px-4 text-slate-700 dark:text-slate-300 font-medium" title="${escapeHtml(s.name[id])}">${escapeHtml(s.name[id])}</td>`}
-          ${state.hiddenCols.has('type') ? '' : `<td class="py-2.5 px-4 text-slate-600 dark:text-slate-300"${s.raw[id].brand ? ` title="${escapeHtml(s.raw[id].brand)}"` : ''}>${escapeHtml(s.typeText[id])}</td>`}
+          ${state.hiddenCols.has('type') ? '' : `<td class="py-2.5 px-4 text-slate-600 dark:text-slate-300"${s.raw[id].brand ? ` title="${escapeHtml(s.raw[id].brand)}"` : ''}>${escapeHtml(L(s.typeText[id]))}</td>`}
           ${state.hiddenCols.has('exchange') ? '' : `<td class="py-2.5 px-4 text-slate-600 dark:text-slate-300">${escapeHtml(s.exchangeText[id] || DASH)}</td>`}
           ${state.hiddenCols.has('sector') ? '' : `<td class="py-2.5 px-4 text-slate-600 dark:text-slate-300">${escapeHtml(s.sectorText[id] || DASH)}</td>`}
           ${state.hiddenCols.has('industry') ? '' : `<td class="py-2.5 px-4 text-slate-600 dark:text-slate-300" title="${escapeHtml(s.industryText[id])}">${escapeHtml(s.industryText[id] || DASH)}</td>`}
@@ -3097,8 +3146,7 @@ function renderCatalogTable(): void {
       ${filterColumns.map(col => {
         const base = BASE_FILTER_COLUMNS.some(item => item.key === col.key);
         const numeric = col.kind === 'num';
-        const label = col.key === 'presets' ? t('screener.badges') : col.key === 'type' ? t('screener.type.column') : SCORING_TEXT_KEYS.includes(col.key) ? t(`scoring.col.${col.key}`) : col.label;
-        return sortHeader(label, col.key, numeric, col.key === 'ticker' ? 'catalog-sticky-col catalog-sticky-ticker' : '', badgeFor(col), catalogHeaderTip(col.key, col.label));
+        return sortHeader(col.label, col.key, numeric, col.key === 'ticker' ? 'catalog-sticky-col catalog-sticky-ticker' : '', badgeFor(col), catalogHeaderTip(col.key));
       }).join('')}
     </tr>`;
   const filterLeading = `<th class="filter-cell"></th><th class="filter-cell catalog-sticky-col catalog-sticky-use"><div class="flex items-center justify-center gap-1 text-slate-400 dark:text-slate-500 text-[0.65rem] uppercase tracking-wider"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4h18l-7 8v6l-4 2v-8z"/></svg>filter</div></th>`;
@@ -3112,11 +3160,13 @@ function renderCatalogTable(): void {
 
   if (!ids.length) {
     const message = !store || (store.n === 0 && state.loading)
-      ? 'Loading the stock catalog…'
+      ? L('Loading the stock catalog…')
       : store.n === 0
-        ? 'The stock feed is empty. Run ./scripts/update-data.ts first.'
+        ? L('The stock feed is empty. Run ./scripts/update-data.ts first.')
         : etfState === 'loading' && scr.type === 'etf' ? t('screener.loadingEtfs', { done: etfDone, total: etfBrands.length })
-          : state.activeTab === 'watchlist' ? 'No selected stocks match your search and filters.' : `No ${scr.type === 'stock' ? 'stocks' : scr.type === 'etf' ? 'ETFs' : 'stocks or ETFs'} match your search${Object.keys(scr.chips).length ? ', screener presets' : ''} and filters.`;
+          : state.activeTab === 'watchlist' ? L('No selected stocks match your search and filters.')
+            : Object.keys(scr.chips).length ? L('No {what} match your search, screener presets and filters.', { what: L(scr.type === 'stock' ? 'stocks' : scr.type === 'etf' ? 'ETFs' : 'stocks or ETFs') })
+              : L('No {what} match your search and filters.', { what: L(scr.type === 'stock' ? 'stocks' : scr.type === 'etf' ? 'ETFs' : 'stocks or ETFs') });
     el.tableBody.innerHTML = `<tr><td colspan="${catalogColspan()}" class="py-12 text-center text-slate-400 dark:text-slate-500">${escapeHtml(message)}</td></tr>`;
   } else {
     el.tableBody.innerHTML = catalogWindowHtml(mountedFrom, mounted, cols);
@@ -3133,7 +3183,7 @@ function renderCatalogStatus(ids: number[]): void {
   const queryText = catalogQuery() ? ` matching “${catalogQuery()}”` : '';
   const rankText = state.stickyRank && ids.length ? ` # = rank among ${catalogBaseline().ids.length.toLocaleString('en-US')} before the column filters.` : '';
   setStatus(`Showing ${ids.length} stock${ids.length === 1 ? '' : 's'}${queryText}.${selected ? ` ${selected} selected.` : ' No stocks selected yet.'}${rankText}`, selected ? 'success' : 'info');
-  el.tickerCount.textContent = `${ids.length.toLocaleString('en-US')} ${scr.type === 'stock' ? 'stocks' : scr.type === 'etf' ? 'ETFs' : 'rows'}`;
+  el.tickerCount.textContent = L(scr.type === 'stock' ? '{count} stocks' : scr.type === 'etf' ? '{count} ETFs' : '{count} rows', { count: ids.length.toLocaleString('en-US') });
 }
 
 /**
@@ -3186,14 +3236,14 @@ function renderFilterControls(): void {
   el.filtersBtn.disabled = !scope;
   el.filtersBtn.setAttribute('aria-pressed', String(state.showFilters));
   el.filtersBtn.classList.toggle('is-filtered', count > 0);
-  el.filtersSummary.textContent = state.showFilters ? 'on' : 'off';
+  el.filtersSummary.textContent = state.showFilters ? L('on') : L('off');
   el.filtersBadge.hidden = count === 0;
   el.filtersBadge.textContent = String(count);
   el.clearFiltersBtn.hidden = count === 0;
   el.rankBtn.disabled = !scope; // the overview has no column filters: its # is always 1..N
   el.rankBtn.setAttribute('aria-pressed', String(state.stickyRank));
   el.rankBtn.classList.toggle('is-filtered', state.stickyRank && Boolean(scope));
-  el.rankSummary.textContent = state.stickyRank ? 'on' : 'off';
+  el.rankSummary.textContent = state.stickyRank ? L('on') : L('off');
 }
 
 /** The second header row sticks right below the first one: tell the CSS how tall the first row is. */
@@ -3290,7 +3340,7 @@ function renderGrid(cols: GridCol[], rows: any[], emptyMessage: string, scope = 
   el.tableHead.innerHTML = `
     <tr>
       ${indexHeader()}
-      ${cols.map((col, i) => sortHeader(col.label, col.key, col.numeric, '', badge(col, i))).join('')}
+      ${cols.map((col, i) => sortHeader(gridLabel(col.label), col.key, col.numeric, '', badge(col, i), getHeaderTooltip(gridTipKey(col.label)))).join('')}
     </tr>${filterRow}
   `;
   bindSortHeaders();
@@ -3304,7 +3354,7 @@ function renderGrid(cols: GridCol[], rows: any[], emptyMessage: string, scope = 
         ${cols.map((col, i) => {
           const cell = String(row.cells[i] ?? '');
           const link = /^https?:\/\//.test(cell)
-            ? `<a class="text-blue-600 dark:text-blue-400 hover:underline" href="${escapeHtml(cell)}" target="_blank" rel="noopener noreferrer">open link</a>`
+            ? `<a class="text-blue-600 dark:text-blue-400 hover:underline" href="${escapeHtml(cell)}" target="_blank" rel="noopener noreferrer">${escapeHtml(L('open link'))}</a>`
             : escapeHtml(cell === '' ? DASH : cell);
           return `<td class="py-2.5 px-4 ${col.numeric ? 'text-right font-mono' : ''} text-slate-700 dark:text-slate-300">${link}</td>`;
         }).join('')}
@@ -3313,30 +3363,30 @@ function renderGrid(cols: GridCol[], rows: any[], emptyMessage: string, scope = 
 }
 
 function renderEmptyDetail(message: string): void {
-  el.tableHead.innerHTML = `<tr>${indexHeader()}<th class="py-3.5 px-4">Details</th></tr>`;
+  el.tableHead.innerHTML = `<tr>${indexHeader()}<th class="py-3.5 px-4">${escapeHtml(L('Details'))}</th></tr>`;
   el.tableBody.innerHTML = `<tr><td colspan="2" class="py-12 text-center text-slate-400 dark:text-slate-500">${escapeHtml(message)}</td></tr>`;
-  el.tickerCount.textContent = state.activeKey ? state.activeKey : '0 stocks';
+  el.tickerCount.textContent = state.activeKey ? state.activeKey : L('{count} stocks', { count: 0 });
 }
 
 function renderDetailTable(key: string): void {
   const activeStock = getActiveStock();
   if (!activeStock) {
-    renderEmptyDetail(state.loading ? 'Loading the stock feed…' : 'Select a stock row to see its details.');
+    renderEmptyDetail(state.loading ? L('Loading the stock feed…') : L('Select a stock row to see its details.'));
     return;
   }
   if (key === 'overview') return renderOverviewTable(activeStock);
   const meta = metaCache.get(activeStock.key);
   if (meta === undefined) {
-    renderEmptyDetail(`Loading ${activeStock.ticker} ${key}…`);
+    renderEmptyDetail(L('Loading {ticker} {what}…', { ticker: activeStock.ticker, what: L(key) }));
     void loadMeta(activeStock.key).then(loaded => {
       if (!isDetailTab(state.activeTab) || state.activeKey !== activeStock.key) return;
-      if (!loaded) renderEmptyDetail(`Could not load ${activeStock.ticker} data: its meta.json is unavailable. Reload to retry.`);
+      if (!loaded) renderEmptyDetail(L('Could not load {ticker} data: its meta.json is unavailable. Reload to retry.', { ticker: activeStock.ticker }));
       else render();
     });
     return;
   }
   if (meta === null) {
-    renderEmptyDetail(`${activeStock.ticker} has no published per-stock files yet.`);
+    renderEmptyDetail(L('{ticker} has no published per-stock files yet.', { ticker: activeStock.ticker }));
     return;
   }
   if (key === 'fundamentals') return renderFundamentalsTable(activeStock, meta);
@@ -3432,20 +3482,20 @@ function fundamentalsGrid(meta: any): { cols: GridCol[]; rows: any[] } {
 
 function renderFundamentalsTable(stock: StockRef, meta: any): void {
   const grid = fundamentalsGrid(meta);
-  renderGrid(grid.cols, grid.rows, 'No annual fundamentals match your search and filters.', 'fundamentals');
+  renderGrid(grid.cols, grid.rows, L('No annual fundamentals match your search and filters.'), 'fundamentals');
   el.tickerCount.textContent = stock.ticker;
   const foreign = foreignCurrency(meta && meta.financialCurrency ? meta.financialCurrency : stock.raw.financialCurrency);
-  renderSubtitle(`${stock.ticker} fundamentals · one row per fiscal year, newest first${foreign ? `; amounts in ${foreign}` : ''}; ${stock.raw.fundamentalsBasis || 'source unavailable'}.`);
+  renderSubtitle(`${L('{ticker} fundamentals · one row per fiscal year, newest first', { ticker: stock.ticker })}${foreign ? `; ${L('amounts in {currency}', { currency: foreign })}` : ''}; ${stock.raw.fundamentalsBasis || L('source unavailable')}.`);
 }
 
 function dividendRows(meta: any): Array<{ raw: any[]; cells: string[] }> {
   const market = meta && meta.market ? meta.market : {};
   const out: Array<{ raw: any[]; cells: string[] }> = [];
   (Array.isArray(market.recentDividends) ? market.recentDividends : []).forEach((item: any) => {
-    out.push({ raw: ['Payment', item.date, item.amount], cells: ['Payment', String(item.date), numberOrNull(item.amount)?.toFixed(4) ?? DASH] });
+    out.push({ raw: ['Payment', item.date, item.amount], cells: [L('Payment'), String(item.date), numberOrNull(item.amount)?.toFixed(4) ?? DASH] });
   });
   (Array.isArray(market.annualDps) ? market.annualDps : []).forEach((item: any) => {
-    out.push({ raw: ['Year', String(item.year), item.dps], cells: ['Year', String(item.year), numberOrNull(item.dps)?.toFixed(4) ?? DASH] });
+    out.push({ raw: ['Year', String(item.year), item.dps], cells: [L('Year'), String(item.year), numberOrNull(item.dps)?.toFixed(4) ?? DASH] });
   });
   return out;
 }
@@ -3458,28 +3508,28 @@ const DIVIDEND_COLS: GridCol[] = [
 
 function renderDividendsTable(stock: StockRef, meta: any): void {
   const rows = gridView(DIVIDEND_COLS, meta, () => dividendRows(meta), 'dividends');
-  renderGrid(DIVIDEND_COLS, rows, `${stock.ticker} has no dividends matching your search and filters.`, 'dividends');
+  renderGrid(DIVIDEND_COLS, rows, L('{ticker} has no dividends matching your search and filters.', { ticker: stock.ticker }), 'dividends');
   el.tickerCount.textContent = stock.ticker;
-  renderSubtitle(`${stock.ticker} dividends · the latest ex-dividend payments and dividends per share summed per calendar year, split adjusted (Yahoo Finance).`);
+  renderSubtitle(L('{ticker} dividends · the latest ex-dividend payments and dividends per share summed per calendar year, split adjusted (Yahoo Finance).', { ticker: stock.ticker }));
 }
 
 function renderHistoryTable(stock: StockRef, meta: any): void {
   const entry = sheetState.get(stock.key);
   if (!meta.history || !Array.isArray(meta.history.pages) || !meta.history.pages.length) {
-    renderEmptyDetail(`${stock.ticker} has no published price history.`);
+    renderEmptyDetail(L('{ticker} has no published price history.', { ticker: stock.ticker }));
     return;
   }
   if (!entry) {
-    renderEmptyDetail(`Loading ${stock.ticker} history…`);
+    renderEmptyDetail(L('Loading {ticker} {what}…', { ticker: stock.ticker, what: L('history') }));
     void ensureHistory(stock.key, meta.history).then(() => { if (state.activeTab === 'detail:history' && state.activeKey === stock.key) render(); });
     return;
   }
   const headers = entry.headers;
   const cols: GridCol[] = headers.map((header, i) => ({ label: header || `Col ${i + 1}`, key: `c${i}`, numeric: NUMERIC_HISTORY_HEADERS.includes(header) }));
   const rows = gridView(cols, entry.rows, () => entry.rows.map(row => ({ raw: row, cells: row })), 'history');
-  renderGrid(cols, rows, `No rows match your search and filters${entry.loading ? ' (still loading…)' : ''}.`, 'history');
+  renderGrid(cols, rows, entry.loading ? L('No rows match your search and filters (still loading…).') : L('No rows match your search and filters.'), 'history');
   el.tickerCount.textContent = stock.ticker;
-  renderSubtitle(`${stock.ticker} history · ${entry.rows.length.toLocaleString('en-US')} of ${(entry.manifest.totalRows || 0).toLocaleString('en-US')} rows loaded${entry.manifest.asOf ? ` (as of ${entry.manifest.asOf})` : ''}; month-end closes, daily rows for the last 31 days.`);
+  renderSubtitle(`${L('{ticker} history · {loaded} of {total} rows loaded', { ticker: stock.ticker, loaded: entry.rows.length.toLocaleString('en-US'), total: (entry.manifest.totalRows || 0).toLocaleString('en-US') })}${entry.manifest.asOf ? ` (${L('as of {date}', { date: entry.manifest.asOf })})` : ''}; ${L('month-end closes, daily rows for the last 31 days.')}`);
 }
 
 function overviewRows(stock: StockRef): Array<{ section: string; metric: string; value: unknown }> {
@@ -3499,6 +3549,7 @@ function overviewRows(stock: StockRef): Array<{ section: string; metric: string;
     { section: 'Price', metric: 'Price As Of', value: raw.asOfDate },
     { section: 'Price', metric: 'Market Cap', value: formatMoney(metrics.marketCap) },
   ];
+  const FIXED_OVERVIEW_ROWS = rows.length;
   COLS.forEach(col => {
     const id = stock.id;
     const value = store && store.num[col.key] ? store.num[col.key][id] : NaN;
@@ -3508,8 +3559,9 @@ function overviewRows(stock: StockRef): Array<{ section: string; metric: string;
     else if (col.fmt === 'text') shown = (store ? store.text[col.key][id] : '') || DASH;
     else shown = col.fmt === 'pct' ? formatPercent(value) : col.fmt === 'x' ? formatRatio(value) : col.fmt === 'pp' ? formatPoints(value)
       : col.fmt === 'money' ? formatMoney(value) : col.fmt === 'price' ? formatPrice(value) : formatInteger(value);
-    rows.push({ section: col.group, metric: col.label, value: shown });
+    rows.push({ section: L(col.group), metric: colLabel(col), value: col.fmt === 'text' && shown !== DASH ? L(shown) : shown });
   });
+  const fixedFrom = rows.length; // the fixed rows below and the company and price rows above are English texts to translate
   rows.push({ section: 'Data', metric: 'Returns Basis', value: metrics.returnsBasis });
   if (meta && meta.sources) {
     rows.push(
@@ -3520,6 +3572,7 @@ function overviewRows(stock: StockRef): Array<{ section: string; metric: string;
     );
   }
   if (meta && meta.history) rows.push({ section: 'Data', metric: 'History Rows', value: meta.history.totalRows });
+  rows.forEach((row, i) => { if (i < FIXED_OVERVIEW_ROWS || i >= fixedFrom) { row.section = L(row.section); row.metric = L(row.metric); } });
   return rows;
 }
 
@@ -3540,15 +3593,15 @@ function renderOverviewTable(stock: StockRef): void {
   el.tableHead.innerHTML = `
     <tr>
       ${indexHeader()}
-      ${sortHeader('Section', 'section')}
-      ${sortHeader('Metric', 'metric')}
-      ${sortHeader('Value', 'value')}
+      ${sortHeader(L('Section'), 'section', false, '', '', getHeaderTooltip('Section'))}
+      ${sortHeader(L('Metric'), 'metric', false, '', '', getHeaderTooltip('Metric'))}
+      ${sortHeader(L('Value'), 'value', false, '', '', getHeaderTooltip('Value'))}
     </tr>
   `;
   bindSortHeaders();
 
   if (!rows.length) {
-    el.tableBody.innerHTML = `<tr><td colspan="4" class="py-12 text-center text-slate-400 dark:text-slate-500">No overview metrics match your search.</td></tr>`;
+    el.tableBody.innerHTML = `<tr><td colspan="4" class="py-12 text-center text-slate-400 dark:text-slate-500">${escapeHtml(L('No overview metrics match your search.'))}</td></tr>`;
   } else {
     el.tableBody.innerHTML = rows.map((row, index) => `
       <tr class="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition border-b border-slate-100 dark:border-slate-700/30">
@@ -3557,7 +3610,7 @@ function renderOverviewTable(stock: StockRef): void {
         <td class="py-2.5 px-4 text-slate-700 dark:text-slate-300 font-medium">${escapeHtml(row.metric)}</td>
         <td class="py-2.5 px-4 text-slate-700 dark:text-slate-300 font-mono">${
           /^https?:\/\//.test(String(row.value))
-            ? `<a class="text-blue-600 dark:text-blue-400 hover:underline" href="${escapeHtml(row.value)}" target="_blank" rel="noopener noreferrer">open link</a>`
+            ? `<a class="text-blue-600 dark:text-blue-400 hover:underline" href="${escapeHtml(row.value)}" target="_blank" rel="noopener noreferrer">${escapeHtml(L('open link'))}</a>`
             : escapeHtml(row.value)
         }</td>
       </tr>
@@ -3565,7 +3618,7 @@ function renderOverviewTable(stock: StockRef): void {
   }
 
   el.tickerCount.textContent = stock.ticker;
-  renderSubtitle(`${stock.ticker} overview · ${rows.length} metrics. Fundamentals describe the latest fiscal year, valuation multiples a trailing snapshot; see Data for sources and as-of dates.`);
+  renderSubtitle(L('{ticker} overview · {count} metrics. Fundamentals describe the latest fiscal year, valuation multiples a trailing snapshot; see Data for sources and as-of dates.', { ticker: stock.ticker, count: rows.length }));
 }
 
 // =========================================================================
@@ -3586,19 +3639,19 @@ function renderHeaderSummary(subtitle: HTMLElement, keys: Iterable<string>, acti
   if (!selected.length) return;
   const paint = (count: number): void => {
     subtitle.replaceChildren();
-    subtitle.append(document.createTextNode(`${selected.length} selected: `));
+    subtitle.append(document.createTextNode(`${L('{selected} selected', { selected: selected.length })}: `));
     selected.slice(0, count).forEach((key, index) => {
       if (index) subtitle.append(document.createTextNode(', '));
       const link = document.createElement('a');
       link.href = '#';
       link.dataset.headerStock = key;
-      link.title = `View ${key} details`;
+      link.title = L('View {ticker} details', { ticker: key });
       link.className = `font-semibold ${key === activeKey ? 'text-blue-700 dark:text-blue-300 underline' : 'text-blue-600 dark:text-blue-400 hover:underline'}`;
       link.textContent = key;
       link.addEventListener('click', event => { event.preventDefault(); activate(key); });
       subtitle.append(link);
     });
-    if (selected.length > count) subtitle.append(document.createTextNode(` and ${selected.length - count} more`));
+    if (selected.length > count) subtitle.append(document.createTextNode(` ${L('and {count} more', { count: selected.length - count })}`));
   };
   // as many tickers as fit on the title row before the tabs (the line never wraps, see the ellipsis in index.html)
   subtitleRefit = () => {
@@ -3610,7 +3663,7 @@ function renderHeaderSummary(subtitle: HTMLElement, keys: Iterable<string>, acti
       paint(count);
     }
     // not even one ticker fits: only the count, never a cut-off word
-    if (subtitle.scrollWidth > subtitle.clientWidth) subtitle.replaceChildren(document.createTextNode(selected.length + ' selected'));
+    if (subtitle.scrollWidth > subtitle.clientWidth) subtitle.replaceChildren(document.createTextNode(L('{selected} selected', { selected: selected.length })));
   };
   subtitleRefit();
   if (!subtitleObserved && typeof ResizeObserver === 'function') {
@@ -3620,30 +3673,30 @@ function renderHeaderSummary(subtitle: HTMLElement, keys: Iterable<string>, acti
 }
 
 function renderSubtitleDetails(text?: string): void {
-  const baseText = text ? String(text) : 'Search every stock, select stocks via the “Use” checkbox, then open the Watchlist tab.';
+  const baseText = text ? String(text) : L('Search every stock, select stocks via the “Use” checkbox, then open the Watchlist tab.');
   const contextText = text ? baseText : `${baseText} ${tabLabel(state.activeTab)}: ${el.tickerCount.textContent || ''}.`;
   const keys = selectedKeys();
   let selectionItem = '';
   if (keys.length > 0 && store) {
     const everyone = nonBlacklistedIds();
     if (everyone.length === keys.length && everyone.every(id => state.selected.has(store ? store.ticker[id] : ''))) {
-      selectionItem = ` · All ${everyone.length} stocks selected`;
+      selectionItem = ` · ${L('All {count} stocks selected', { count: everyone.length })}`;
     } else if (keys.length <= 12) {
       const badges = keys.sort((a, b) => collator.compare(a, b)).map(key => {
         const isActive = key === state.activeKey;
-        return `<a href="javascript:void(0)" data-activate-stock="${escapeHtml(key)}" title="View ${escapeHtml(key)} details" class="font-semibold ${isActive ? 'text-blue-700 dark:text-blue-300 underline' : 'text-blue-600 dark:text-blue-400 hover:underline'}">${escapeHtml(key)}</a>`;
+        return `<a href="javascript:void(0)" data-activate-stock="${escapeHtml(key)}" title="${escapeHtml(L('View {ticker} details', { ticker: key }))}" class="font-semibold ${isActive ? 'text-blue-700 dark:text-blue-300 underline' : 'text-blue-600 dark:text-blue-400 hover:underline'}">${escapeHtml(key)}</a>`;
       }).join(', ');
-      selectionItem = ` · ${keys.length} selected: ${badges}`;
+      selectionItem = ` · ${escapeHtml(L('{selected} selected', { selected: keys.length }))}: ${badges}`;
     } else {
-      selectionItem = ` · ${keys.length} selected`;
+      selectionItem = ` · ${escapeHtml(L('{selected} selected', { selected: keys.length }))}`;
     }
   }
   const generated = generatedAt ? new Date(generatedAt).toLocaleString() : '';
   const total = store ? store.n : 0;
-  const where = API_MODE === 'remote' || usingRemote ? `read from GitHub Pages (${REMOTE_BASE})` : 'read from ./api/stocks/ next to this page, falling back to GitHub Pages when the folder is missing';
+  const where = API_MODE === 'remote' || usingRemote ? L('read from GitHub Pages ({url})', { url: REMOTE_BASE }) : L('read from ./api/stocks/ next to this page, falling back to GitHub Pages when the folder is missing');
   el.subtitle.innerHTML = `
     <span class="block sm:inline">${escapeHtml(contextText)}${selectionItem}</span>
-    <span class="block sm:inline">· ${total.toLocaleString('en-US')} stocks${generated ? ` · feed updated ${escapeHtml(generated)}` : ''}. Data: static feed, ${escapeHtml(where)}, generated from SEC EDGAR XBRL filings and Yahoo Finance. Independent, unofficial tool; not affiliated with any exchange or issuer.</span>
+    <span class="block sm:inline">· ${escapeHtml(L('{count} stocks', { count: total.toLocaleString('en-US') }))}${generated ? ` · ${escapeHtml(L('feed updated {date}', { date: generated }))}` : ''}. ${escapeHtml(L('Data: static feed, {where}, generated from SEC EDGAR XBRL filings and Yahoo Finance. Independent, unofficial tool; not affiliated with any exchange or issuer.', { where }))}</span>
   `;
   el.subtitle.querySelectorAll('a[data-activate-stock]').forEach((link: any) => {
     link.addEventListener('click', () => activateStock(link.dataset.activateStock || ''));
@@ -3802,18 +3855,18 @@ function clearSelectionAndSearch(): void {
   backdrop.className = 'clear-backdrop';
   backdrop.innerHTML = `
     <div class="clear-modal" role="dialog" aria-modal="true" aria-labelledby="clear-title">
-      <h2 id="clear-title" class="clear-title">Clear</h2>
-      <p class="clear-hint">Choose what to reset to the first-visit view. Your choice is remembered for the next time.</p>
+      <h2 id="clear-title" class="clear-title">${escapeHtml(L('Clear'))}</h2>
+      <p class="clear-hint">${escapeHtml(L('Choose what to reset to the first-visit view. Your choice is remembered for the next time.'))}</p>
       <div class="clear-tools">
-        <button type="button" class="dd-act" data-clear-all>All</button>
-        <button type="button" class="dd-act" data-clear-none>None</button>
+        <button type="button" class="dd-act" data-clear-all>${escapeHtml(L('All'))}</button>
+        <button type="button" class="dd-act" data-clear-none>${escapeHtml(L('None'))}</button>
       </div>
       <div class="clear-list">
-        ${RESET_ITEMS.map(item => `<label class="clear-row"><input type="checkbox" data-clear-id="${item.id}" class="w-4 h-4 accent-blue-600" ${saved[item.id] === false ? '' : 'checked'} /><span>${escapeHtml(item.label)}</span></label>`).join('')}
+        ${RESET_ITEMS.map(item => `<label class="clear-row"><input type="checkbox" data-clear-id="${item.id}" class="w-4 h-4 accent-blue-600" ${saved[item.id] === false ? '' : 'checked'} /><span>${escapeHtml(L(item.label))}</span></label>`).join('')}
       </div>
       <div class="clear-actions">
-        <button type="button" class="clear-btn" data-clear-cancel>Cancel<kbd>Esc</kbd></button>
-        <button type="button" class="clear-btn clear-btn-ok" data-clear-ok>OK<kbd>Enter</kbd></button>
+        <button type="button" class="clear-btn" data-clear-cancel>${escapeHtml(L('Cancel'))}<kbd>Esc</kbd></button>
+        <button type="button" class="clear-btn clear-btn-ok" data-clear-ok>${escapeHtml(L('OK'))}<kbd>Enter</kbd></button>
       </div>
     </div>`;
   document.body.appendChild(backdrop);
@@ -3907,7 +3960,7 @@ function renderBlacklistPanel(): void {
     chip.className = 'inline-flex items-center gap-1.5 bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-700/50 rounded-full pl-3 pr-1.5 py-1 text-xs font-medium';
     const id = store ? store.keyIndex.get(key) : undefined;
     chip.title = id !== undefined && store ? store.name[id] : key;
-    chip.innerHTML = `${escapeHtml(key)}<button data-unblacklist="${escapeHtml(key)}" class="w-5 h-5 rounded-full hover:bg-rose-200 dark:hover:bg-rose-800 transition" title="Remove ${escapeHtml(key)} from blacklist">✕</button>`;
+    chip.innerHTML = `${escapeHtml(key)}<button data-unblacklist="${escapeHtml(key)}" class="w-5 h-5 rounded-full hover:bg-rose-200 dark:hover:bg-rose-800 transition" title="${escapeHtml(L('Remove {ticker} from blacklist', { ticker: key }))}">✕</button>`;
     el.blacklistChips.appendChild(chip);
   });
   el.blacklistEmpty.classList.toggle('hidden', keys.length > 0);
@@ -3932,7 +3985,7 @@ function exportCell(col: Col, id: number): string {
   if (!s) return '';
   if (col.fmt === 'basis') return String(s.raw[id].fundamentalsBasis || '');
   if (col.fmt === 'date') return dateColumnText(col.key, s.raw[id]);
-  if (col.fmt === 'text') return s.text[col.key][id];
+  if (col.fmt === 'text') return s.text[col.key][id] ? L(s.text[col.key][id]) : '';
   return numberCell(nanToNull(s.num[col.key][id]));
 }
 
@@ -3964,7 +4017,7 @@ function currentExportRows(): { headers: string[]; rows: string[][]; scope: stri
         headers: ['#', ...entry.headers],
         rows: gridView(cols, entry.rows, () => entry.rows.map(row => ({ raw: row, cells: row })), 'history').map((row: any, index: number) => [String(gridRowNumber(row, index)), ...row.cells]),
         scope: stock ? `${stock.ticker}-history` : 'history',
-        warning: partial ? `Only ${entry.rows.length.toLocaleString('en-US')} of ${(entry.manifest.totalRows || 0).toLocaleString('en-US')} rows are loaded (scroll the table to load more). Export the loaded rows only?` : undefined,
+        warning: partial ? L('Only {loaded} of {total} rows are loaded (scroll the table to load more). Export the loaded rows only?', { loaded: entry.rows.length.toLocaleString('en-US'), total: (entry.manifest.totalRows || 0).toLocaleString('en-US') }) : undefined,
       };
     }
     return { headers: [], rows: [], scope: 'history' };
@@ -3973,13 +4026,13 @@ function currentExportRows(): { headers: string[]; rows: string[][]; scope: stri
   const s = store;
   const ids = catalogIds();
   return {
-    headers: ['#', 'Selected', 'Ticker', 'Company', 'Type', 'Exchange', 'Sector', 'Industry', 'Price ($)', 'Market Cap ($)', 'Presets', 'Archetype', 'Status', 'Why', 'Flags', ...COLS.map(col => (col.fmt === 'pct' ? `${col.label} (%)` : col.fmt === 'pp' ? `${col.label} (pp)` : col.label))],
+    headers: ['#', L('Selected'), L('Ticker'), L('Company'), t('screener.type.column'), L('Exchange'), L('Sector'), L('Industry'), `${L('Price')} ($)`, `${L('Market Cap')} ($)`, t('screener.badges'), ...SCORING_TEXT_KEYS.map(key => t(`scoring.col.${key}`)), ...COLS.map(col => (col.fmt === 'pct' ? `${colLabel(col)} (%)` : col.fmt === 'pp' ? `${colLabel(col)} (${L('pp')})` : colLabel(col)))],
     rows: s ? ids.map((id, index) => [
       String(catalogRowNumber(id, index)),
-      state.selected.has(s.ticker[id]) ? 'yes' : 'no',
+      state.selected.has(s.ticker[id]) ? L('yes') : L('no'),
       s.ticker[id],
       s.name[id],
-      s.typeText[id],
+      L(s.typeText[id]),
       s.exchangeText[id],
       s.sectorText[id],
       s.industryText[id],
@@ -4001,8 +4054,8 @@ function copyTickers(): void {
   if (!values.length) return;
   void copyText(values.join(', ')).then(ok => {
     const oldText = el.copyBtn.textContent;
-    el.copyBtn.textContent = ok ? 'Copied!' : 'Copy failed';
-    setTimeout(() => { el.copyBtn.textContent = oldText || 'Copy Tickers'; }, 1000);
+    el.copyBtn.textContent = ok ? L('Copied!') : L('Copy failed');
+    setTimeout(() => { el.copyBtn.textContent = oldText || L('Copy Tickers'); }, 1000);
   });
 }
 
@@ -4237,27 +4290,27 @@ function bindEvents(): void {
   exchangeDd = createDropdown({
     trigger: el.exchangeBtn,
     panel: el.exchangePanel,
-    title: 'Exchanges',
-    noun: 'exchanges',
-    unit: 'stocks',
+    title: () => L('Exchanges'),
+    noun: () => L('exchanges'),
+    unit: () => L('stocks'),
     getItems: () => exchangeItems,
     onChange: applyExchangeSelection,
   });
   sectorDd = createDropdown({
     trigger: el.sectorBtn,
     panel: el.sectorPanel,
-    title: 'Sectors',
-    noun: 'sectors',
-    unit: 'stocks',
+    title: () => L('Sectors'),
+    noun: () => L('sectors'),
+    unit: () => L('stocks'),
     getItems: () => sectorItems,
     onChange: applySectorSelection,
   });
   columnsDd = createDropdown({
     trigger: el.columnsBtn,
     panel: el.columnsPanel,
-    title: 'Columns',
-    noun: 'columns',
-    unit: 'column position',
+    title: () => L('Columns'),
+    noun: () => L('columns'),
+    unit: () => L('column position'),
     getItems: columnItems,
     onChange: applyColumnSelection,
   });
@@ -4564,13 +4617,23 @@ function presetBadgesHtml(id: number): string {
 }
 
 /** Header tooltip of a catalog column: the registry name and short text in the current language, else the built-in English text */
-function catalogHeaderTip(key: string, label: string): string {
+function catalogHeaderTip(key: string): string {
   if (key === 'presets') return t('screener.badges.tip');
   if (key === 'type') return t('screener.type.column.tip');
   if (SCORING_TEXT_KEYS.includes(key)) return t(`scoring.col.${key}.tip`);
-  const def = REGISTRY.byId[key];
-  return def ? `${pick(def.name)}: ${pick(def.short)}` : getHeaderTooltip(label);
+  const def = REGISTRY.byId[key === 'athDateTs' ? 'athDate' : key];
+  if (def) return `${pick(def.name)}: ${pick(def.short)}`;
+  const base = BASE_FILTER_COLUMNS.filter(col => col.key === key)[0];
+  const own = COLS.filter(col => col.key === key)[0];
+  return getHeaderTooltip(base ? base.label : own ? own.label : key);
 }
+
+/** A sheet header (fundamentals, dividends, history) in the current language; "Revenue (EUR)" keeps the currency */
+function gridLabel(label: string): string {
+  const match = /^(.*) \(([A-Z]{3})\)$/.exec(label);
+  return match ? `${L(match[1])} (${match[2]})` : L(label);
+}
+const gridTipKey = (label: string): string => label.replace(/ \([A-Z]{3}\)$/, '');
 
 // ---- scoring columns: five scores, archetype, status, Why and flags (plan stage 5; logic and texts in src/core/scoring) ----
 
@@ -6312,11 +6375,21 @@ function applyLanguage(): void {
   el.signalsTitle.textContent = t('signals.title');
   el.signalsClose.title = t('signals.close');
   el.signalsClose.setAttribute('aria-label', t('signals.close'));
+  // the static texts of index.html carry their English text as the key: data-i18n (text), -title, -placeholder, -aria (aria-label)
+  document.querySelectorAll('[data-i18n]').forEach((node: any) => { node.textContent = L(node.dataset.i18n); });
+  document.querySelectorAll('[data-i18n-title]').forEach((node: any) => { node.title = L(node.dataset.i18nTitle); });
+  document.querySelectorAll('[data-i18n-placeholder]').forEach((node: any) => { node.placeholder = L(node.dataset.i18nPlaceholder); });
+  document.querySelectorAll('[data-i18n-aria]').forEach((node: any) => { node.setAttribute('aria-label', L(node.dataset.i18nAria)); });
+  [exchangeDd, sectorDd, columnsDd].forEach(dd => dd?.relabel());
+  el.searchInput.setAttribute('title', L(SEARCH_TIP));
+  syncSearchInput();
+  filtersSig = ''; // the exchange and sector summaries are texts of the current language
 }
 
 function switchLanguage(locale: string): void {
   setLocale(locale);
   metricOptionsLocale = '';
+  catalogTypeCache = null; // the shown texts of the text columns changed
   applyLanguage();
   renderScreener();
   renderGuide();
