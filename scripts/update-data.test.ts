@@ -602,26 +602,30 @@ describe('pipeline', () => {
     expect(await readText('index.json')).toBe(text); // the compact file is still a zero-diff rerun
   });
 
-  test('watchlist: All.txt keeps only its stocks, marks them isMine and removes the rest, a blank file means a full update', async () => {
+  test('watchlist: All.txt only marks isMine and lists mineTickers, it never removes a stock; its stocks go first in a bounded run', async () => {
     await run(controls());
     const tickers = async () => (await readIndex()).companies.map((c: any) => c.ticker);
     expect(await tickers()).toEqual(['AAA', 'BBB']);
     expect((await readIndex()).companies.map((c: any) => c.isMine)).toEqual([false, false]); // no list: nothing is the owner's
     expect((await readIndex()).mineTickers).toBeUndefined();
-    await writeFile(join(dir, 'All.txt'), 'NASDAQ:aaa\nVOO\n'); // VOO is an ETF, absent from the SEC table
-    expect(await run(controls())).toMatchObject({ updated: 1, failed: 0, rows: 1 });
-    expect(await tickers()).toEqual(['AAA']);
-    expect((await readIndex()).companies[0].isMine).toBe(true); // the "Mine" preset reads isMine; ETFs of the list come in mineTickers
-    expect((await readIndex()).mineTickers).toEqual(['AAA', 'VOO']);
-    expect((await readdir(join(dir, 'companies'))).sort()).toEqual(['AAA']);
-    expect(await run(controls({ TICKERS: 'BBB' }))).toMatchObject({ updated: 0, rows: 1 }); // TICKERS outside the list are skipped
-    await writeFile(join(dir, 'All.txt'), ' \n\n');
-    await writeFile(join(dir, 'All.csv'), 'Symbol\nBBB\n'); // an empty All.txt falls through to All.csv
-    await run(controls());
-    expect(await tickers()).toEqual(['BBB']);
-    await writeFile(join(dir, 'All.csv'), '');
-    await run(controls());
+    await writeFile(join(dir, 'All.txt'), 'NASDAQ:bbb\nVOO\n'); // VOO is an ETF, absent from the SEC table
+    expect(await run(controls())).toMatchObject({ updated: 2, failed: 0, rows: 2 }); // the whole universe, not only the list (plan 1.1)
     expect(await tickers()).toEqual(['AAA', 'BBB']);
+    expect((await readIndex()).companies.map((c: any) => c.isMine)).toEqual([false, true]); // the "Mine" preset reads isMine
+    expect((await readIndex()).mineTickers).toEqual(['BBB', 'VOO']); // ETFs of the list come in mineTickers
+    expect((await readdir(join(dir, 'companies'))).sort()).toEqual(['AAA', 'BBB']);
+    // a bounded run refreshes the owner's stocks first and leaves the rotation cursor where it was
+    const cursor = async () => JSON.parse(await readText('update-state.json')).cursor;
+    await writeFile(join(dir, 'update-state.json'), JSON.stringify({ cursor: null }));
+    expect(await run(controls({ MAX_FETCHES: '1' }))).toMatchObject({ updated: 1, rows: 2 });
+    expect(await cursor()).toBeNull(); // BBB went first; refreshing AAA would have moved the cursor to AAA
+    expect(await run(controls({ MAX_FETCHES: '2' }))).toMatchObject({ updated: 2 });
+    expect(await cursor()).toBe('AAA'); // the rotation part goes on after AAA next time
+    expect(await run(controls({ TICKERS: 'AAA' }))).toMatchObject({ updated: 1, rows: 2 }); // TICKERS outside the list run too
+    await writeFile(join(dir, 'All.txt'), ' \n\n');
+    await writeFile(join(dir, 'All.csv'), 'Symbol\nAAA\n'); // an empty All.txt falls through to All.csv
+    await run(controls());
+    expect((await readIndex()).companies.map((c: any) => [c.ticker, c.isMine])).toEqual([['AAA', true], ['BBB', false]]);
   });
 
   test('the SEC layer: arrays by field and schemaVersion in meta.json; a revenue far from Yahoo\'s withholds the new SEC values', async () => {
