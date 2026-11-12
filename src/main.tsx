@@ -2,8 +2,8 @@
 import { getLocale, pick, setLocale, t } from './core/i18n';
 import { groupMetrics, isNumericMetric, MetricDef, REGISTRY } from './core/metrics';
 import {
-  canonicalPreset, changedConditions, Condition as ScreenerCondition, createUniverse, decodePresetHash, encodePresetHash, ETF_BRANDS, EtfBrand, etfFeedUrl, etfMetrics, etfRow,
-  evaluateExpression, evaluatePreset, evaluatePresets, Expression, FunnelStep, HISTORY_METRICS, mergeOwnPresets, Missing, normalizeTicker, Op, ownCopy,
+  canonicalPreset, changedConditions, Condition as ScreenerCondition, createUniverse, decodePresetHash, encodePresetHash, ETF_BRANDS_URL, EtfBrand, etfFeedUrl, etfMetrics, etfRow,
+  evaluateExpression, evaluatePreset, evaluatePresets, Expression, parseEtfBrands, FunnelStep, HISTORY_METRICS, mergeOwnPresets, Missing, normalizeTicker, Op, ownCopy,
   OwnEntry, parsePresetText, PeerGroups, Preset, PRESET_SCHEMA_VERSION, presetFileName, presetFileText, presetKey, PresetResult, RELATIVE_SCOPES,
   samePreset, Scope, SCOPES, stockRow, uniqueId, Universe, validatePreset,
   changedGroups, cleanTickers, deleteGroup, groupName, groupsOf, importGroups, mergePeers, parsePeersText, PEERS_FILE_NAME, peersExported, peersFileText,
@@ -1363,7 +1363,7 @@ async function loadCatalog(): Promise<void> {
 
 function renderLoadProgress(): void {
   if (state.loading) el.loadProgress.textContent = `Loading the stock feed…${store ? ` ${store.n.toLocaleString('en-US')} stocks from cache` : ''}`;
-  else if (etfState === 'loading') el.loadProgress.textContent = t('screener.loadingEtfs', { done: etfDone, total: ETF_BRANDS.length });
+  else if (etfState === 'loading') el.loadProgress.textContent = t('screener.loadingEtfs', { done: etfDone, total: etfBrands.length });
   else el.loadProgress.textContent = usingRemote ? 'remote (github.io)' : '';
   el.loadProgress.hidden = !el.loadProgress.textContent;
 }
@@ -3073,7 +3073,7 @@ function renderCatalogTable(): void {
       ? 'Loading the stock catalog…'
       : store.n === 0
         ? 'The stock feed is empty. Run ./scripts/update-data.ts first.'
-        : etfState === 'loading' && scr.type === 'etf' ? t('screener.loadingEtfs', { done: etfDone, total: ETF_BRANDS.length })
+        : etfState === 'loading' && scr.type === 'etf' ? t('screener.loadingEtfs', { done: etfDone, total: etfBrands.length })
           : state.activeTab === 'watchlist' ? 'No selected stocks match your search and filters.' : `No ${scr.type === 'stock' ? 'stocks' : scr.type === 'etf' ? 'ETFs' : 'stocks or ETFs'} match your search${Object.keys(scr.chips).length ? ', screener presets' : ''} and filters.`;
     el.tableBody.innerHTML = `<tr><td colspan="${catalogColspan()}" class="py-12 text-center text-slate-400 dark:text-slate-500">${escapeHtml(message)}</td></tr>`;
   } else {
@@ -4370,6 +4370,8 @@ let etfRows: any[] = [];
 let etfState: 'idle' | 'loading' | 'done' = 'idle';
 let etfDone = 0;
 let etfFailed: string[] = [];
+let etfBrands: EtfBrand[] = []; // the hub's brands.json (owner answer N5), loaded with the first ETF view
+let etfListError = ''; // why brands.json could not be read; the stocks stay usable
 let screenUniverse: { version: number; universe: Universe } | null = null;
 let scoringConfig: ScoringConfig | null = null; // src/core/scoring/config.json as dist/scoring.json, null until loaded or when invalid
 let scoringResult: ScoringResult | null = null; // one entry per store row, rebuilt with the universe
@@ -4727,15 +4729,27 @@ async function ensureEtfs(): Promise<void> {
   etfState = 'loading';
   etfDone = 0;
   etfFailed = [];
+  etfListError = '';
   renderScreener();
   render();
-  const perBrand: any[][] = ETF_BRANDS.map(() => []);
-  const queue = ETF_BRANDS.map((_, i) => i);
+  try {
+    const parsed = parseEtfBrands(await fetchJson(ETF_BRANDS_URL, INDEX_TIMEOUT_MS));
+    if (parsed.errors.length) console.warn(`ETF brands.json: ${parsed.errors.join('; ')}`);
+    if (!parsed.brands.length) throw new Error(parsed.errors[0] || 'no brands');
+    etfBrands = parsed.brands;
+  } catch (error) {
+    etfBrands = [];
+    etfListError = error instanceof Error ? error.message : String(error);
+    console.warn('ETF brand list unavailable:', etfListError);
+  }
+  const brands = etfBrands;
+  const perBrand: any[][] = brands.map(() => []);
+  const queue = brands.map((_, i) => i);
   const worker = async (): Promise<void> => {
     for (;;) {
       const i = queue.shift();
       if (i === undefined) return;
-      const brand = ETF_BRANDS[i];
+      const brand = brands[i];
       try {
         const data = await fetchJson(etfFeedUrl(brand), INDEX_TIMEOUT_MS);
         if (!data || !Array.isArray(data.funds)) throw new Error('malformed index.json');
@@ -5022,8 +5036,9 @@ function chipHtml(p: Preset, results: Record<string, PresetResult>, own: OwnEntr
 
 function screenerStatusText(): string {
   const parts: string[] = [];
-  if (etfState === 'loading') parts.push(t('screener.loadingEtfs', { done: etfDone, total: ETF_BRANDS.length }));
-  else if (etfState === 'done') parts.push(t('screener.etfsLoaded', { count: etfRows.length.toLocaleString('en-US'), brands: ETF_BRANDS.length - etfFailed.length }));
+  if (etfState === 'loading') parts.push(t('screener.loadingEtfs', { done: etfDone, total: etfBrands.length }));
+  else if (etfState === 'done') parts.push(t('screener.etfsLoaded', { count: etfRows.length.toLocaleString('en-US'), brands: etfBrands.length - etfFailed.length }));
+  if (etfListError) parts.push(t('screener.etfListFailed', { error: etfListError }));
   if (etfFailed.length) parts.push(t('screener.etfFailed', { count: etfFailed.length, brands: etfFailed.join(', ') }));
   if (scr.message) parts.push(scr.message);
   return parts.join(' · ');

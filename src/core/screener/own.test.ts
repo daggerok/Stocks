@@ -4,8 +4,8 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
-  canonicalPreset, changedConditions, decodePresetHash, encodePresetHash, ETF_BRANDS, etfFeedUrl, mergeOwnPresets, ownCopy, parsePresetText,
-  Preset, presetFileName, presetFileText, presetKey, presetRepoPath, samePreset, uniqueId,
+  canonicalPreset, changedConditions, decodePresetHash, encodePresetHash, ETF_BRANDS_URL, etfFeedUrl, mergeOwnPresets, ownCopy, parsePresetText,
+  Preset, presetFileName, presetFileText, parseEtfBrands, presetKey, presetRepoPath, samePreset, uniqueId,
 } from '.';
 import { BASE_PRESET_DIR, loadPresets, PRESET_INDEX, presetFiles } from './load-presets';
 
@@ -77,9 +77,25 @@ describe('own presets', () => {
 });
 
 describe('etf brands', () => {
-  test('29 brands, the same list as the ETFs hub, feed URLs on GitHub Pages', () => {
-    expect(ETF_BRANDS.length).toBe(29);
-    expect(new Set(ETF_BRANDS.map((b) => b.slug)).size).toBe(29);
-    expect(etfFeedUrl(ETF_BRANDS[0])).toBe('https://daggerok.github.io/AAM/api/aam/index.json');
+  test('the brand list of the ETFs hub brands.json, feed URLs on GitHub Pages', () => {
+    expect(ETF_BRANDS_URL).toBe('https://daggerok.github.io/ETFs/brands.json');
+    const { brands, errors } = parseEtfBrands([
+      { repo: 'AAM', brand: 'AAM', slug: 'aam', issuerLabel: 'aamlive.com', issuerUrl: 'https://www.aamlive.com/ETF' },
+      { repo: 'First-Trust', brand: 'First Trust', slug: 'firsttrust', issuerLabel: 'ftportfolios.com', issuerUrl: 'https://www.ftportfolios.com/' },
+    ]);
+    expect(errors).toEqual([]);
+    expect(brands.map((b) => [b.repo, b.slug, b.brand])).toEqual([['AAM', 'aam', 'AAM'], ['First-Trust', 'firsttrust', 'First Trust']]);
+    expect(etfFeedUrl(brands[0])).toBe('https://daggerok.github.io/AAM/api/aam/index.json');
+    expect(etfFeedUrl(brands[1], 'http://localhost:1234/')).toBe('http://localhost:1234/First-Trust/api/firsttrust/index.json');
+  });
+
+  test('bad entries are left out and named, a payload that is not an array gives no brands', () => {
+    const { brands, errors } = parseEtfBrands([
+      { repo: 'Schwab', slug: 'schwab' }, null, { repo: '../x', slug: 'x' }, { repo: 'Y', slug: 'Bad Slug' }, { repo: 'Schwab', slug: 'schwab2' }, { repo: 'Z', slug: 'schwab' }, 'SPDR',
+    ]);
+    expect(brands).toEqual([{ repo: 'Schwab', slug: 'schwab', brand: 'Schwab', issuerLabel: '', issuerUrl: '' }]);
+    expect(errors.length).toBe(6);
+    expect(parseEtfBrands({ funds: [] })).toEqual({ brands: [], errors: ['brands.json is not an array'] });
+    expect(parseEtfBrands([]).brands).toEqual([]);
   });
 });

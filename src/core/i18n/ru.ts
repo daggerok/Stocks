@@ -61,6 +61,7 @@ export const ru: Record<string, string> = {
   'screener.loadingEtfs': 'Загрузка фидов ETF: {done} из {total}…',
   'screener.etfsLoaded': '{count} ETF из {brands} брендов',
   'screener.etfFailed': 'Не загрузились фиды ETF ({count}): {brands}',
+  'screener.etfListFailed': 'Список брендов ETF (brands.json хаба ETFs) не загрузился: {error}',
   'screener.shown': 'Показано: {count}',
   'screener.metric': 'Метрика',
   'screener.op': 'Оператор',
