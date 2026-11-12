@@ -35,11 +35,25 @@ export const isFinancial = (industry: string | null) => isBank(industry) || isIn
  */
 export const ALTMAN_CLASSIC_SECTORS = ['Industrials', 'Basic Materials', 'Consumer Cyclical', 'Consumer Defensive', 'Energy', 'Technology', 'Healthcare'];
 
+/** Absolute TTM amounts in USD published in the index row (owner answer N38): the peers table reads them instead of deriving them */
+export const TTM_AMOUNT_KEYS = ['revenueTtm', 'netIncomeTtm', 'fcfTtm'] as const;
+
+/**
+ * Revenue, net income and free cash flow (operating cash flow - capex) of the TTM, in USD: `usd` is the layer in USD (the SEC
+ * layer itself for a USD filer, its USD view for a foreign one). null without a layer or a value
+ */
+export function ttmAmounts(usd: SecFundamentals | null): Record<(typeof TTM_AMOUNT_KEYS)[number], Num> {
+  if (!usd) return { revenueTtm: null, netIncomeTtm: null, fcfTtm: null };
+  const v = view(usd);
+  const whole = (x: Num): Num => (fin(x) ? Math.round(x) : null);
+  return { revenueTtm: whole(v.ttm('revenue')), netIncomeTtm: whole(v.ttm('netIncome')), fcfTtm: whole(fcfOf(v.ttm('cfo'), v.ttm('capex'))) };
+}
+
 /** Metrics left empty for banks and insurers (plan 1.7): no EBITDA, current ratio or free cash flow in a meaningful sense */
 export const FINANCIALS_NULL_KEYS = [
   'netDebtToEbitda', 'evEbitda', 'quickRatio', 'currentRatio', 'pFcf', 'fcfToEbitda', 'fcfPayout', 'fcfMargin', 'fcfMarginDelta', 'fcfMarginDelta3y',
   'fcfGrowth', 'fcfGrowth3y', 'fcfGrowth5y', 'fcfToNi', 'fcfVolatility5y', 'cashRunwayMonths', 'altmanZ', 'altmanVariant', 'piotroskiF',
-  'interestCoverage', 'interestCoverageNote', 'pFcfPct5y', 'fcfNegativeYears',
+  'interestCoverage', 'interestCoverageNote', 'pFcfPct5y', 'fcfNegativeYears', 'fcfTtm',
 ];
 
 const DAY = 86_400_000;

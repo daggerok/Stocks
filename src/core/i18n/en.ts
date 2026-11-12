@@ -259,7 +259,7 @@ export const en: Record<string, string> = {
   'tp.peers.basis.group': 'Peer group {name}',
   'tp.peers.basis.industry': 'No peer group: the largest stocks of the industry {industry}',
   'tp.peers.basis.none': 'No peer group and no industry',
-  'tp.peers.note': 'Absolutes in USD: revenue = market cap / P/S, net income and free cash flow = that revenue × the net and FCF margins',
+  'tp.peers.note': 'Absolutes in USD: revenue, net income and free cash flow of the trailing twelve months from the SEC filings; a row without them shows revenue = market cap / P/S and net income and free cash flow = that revenue × the net and FCF margins',
   'tp.peers.revenue': 'Revenue',
   'tp.peers.ni': 'Net income',
   'tp.peers.fcf': 'FCF',

@@ -893,6 +893,37 @@ const SEC_DERIVED: MetricDef[] = [
     },
   })),
   ttm({
+    id: 'revenueTtm', name: { en: 'Revenue (TTM)', ru: 'Выручка (TTM)' }, formula: 'revenue of the trailing twelve months, SEC layer in USD (a foreign issuer: its USD view at the period average rates)',
+    unit: 'usd', basis: 'ttm', source: 'sec', direction: 'neutral',
+    nullWhen: { en: 'no SEC layer (the Yahoo fallback, a failed or stale 20-F) or revenue is not tagged', ru: 'нет слоя SEC (запасной вариант Yahoo, неудачный или устаревший 20-F) или выручка не размечена' },
+    short: { en: 'Sales of the last twelve months in USD', ru: 'Продажи за последние двенадцать месяцев в USD' },
+    guide: {
+      en: 'The revenue of the trailing twelve months as an amount in US dollars, from the same SEC layer as the margins and EV/EBITDA. It sizes the business by sales rather than by market value, which helps when comparing peers: the peers table on the ticker page reads it directly (before, it derived revenue as market cap / P/S). Banks tag revenue net of interest expense or not, so compare them with care',
+      ru: 'Выручка за последние двенадцать месяцев суммой в долларах США, из того же слоя SEC, что маржи и EV/EBITDA. Она показывает размер бизнеса по продажам, а не по рыночной стоимости, и помогает сравнивать пиров: таблица пиров на странице тикера берёт её напрямую (раньше выручка выводилась как капитализация / P/S). Банки размечают выручку то за вычетом процентных расходов, то без, поэтому их сравнивают осторожно',
+    },
+  }),
+  ttm({
+    id: 'netIncomeTtm', name: { en: 'Net income (TTM)', ru: 'Чистая прибыль (TTM)' }, formula: 'net income of the trailing twelve months, SEC layer in USD (a foreign issuer: its USD view at the period average rates)',
+    unit: 'usd', basis: 'ttm', source: 'sec', direction: 'higher-is-better',
+    nullWhen: { en: 'no SEC layer or net income is not tagged; a loss is a negative amount, not empty', ru: 'нет слоя SEC или чистая прибыль не размечена; убыток - отрицательная сумма, а не пусто' },
+    short: { en: 'Profit of the last twelve months in USD', ru: 'Прибыль за последние двенадцать месяцев в USD' },
+    guide: {
+      en: 'Net income of the trailing twelve months in US dollars, from the SEC quarters (last fiscal year + year-to-date - the same year-to-date a year earlier). The peers table shows it next to market cap, so a loss stays visible as a negative number. It includes one-off and non-operating gains (Alphabet\'s TTM held about $130B of investment gains), which a margin over a fiscal year can hide; compare it with operating income and free cash flow',
+      ru: 'Чистая прибыль за последние двенадцать месяцев в долларах США, из кварталов SEC (последний финансовый год + период с начала года - тот же период годом раньше). Таблица пиров показывает её рядом с капитализацией, поэтому убыток виден как отрицательное число. В неё входят разовые и неоперационные доходы (в TTM Alphabet было около $130 млрд доходов от вложений), которые маржа за финансовый год может скрыть; сравнивайте её с операционной прибылью и свободным потоком',
+    },
+  }),
+  ttm({
+    id: 'fcfTtm', name: { en: 'Free cash flow (TTM)', ru: 'Свободный денежный поток (TTM)' }, formula: 'operating cash flow - capital expenditures of the trailing twelve months, SEC layer in USD',
+    unit: 'usd', basis: 'ttm', source: 'sec', direction: 'higher-is-better',
+    nullWhen: { en: 'no SEC layer, operating cash flow or capex is not tagged, or a bank or insurer (plan 1.7)', ru: 'нет слоя SEC, операционный поток или capex не размечены, либо это банк или страховая (план 1.7)' },
+    sectorNotes: { en: FIN_EMPTY.en, ru: FIN_EMPTY.ru },
+    short: { en: 'Cash left after investment, last twelve months, USD', ru: 'Деньги после инвестиций за последние двенадцать месяцев, USD' },
+    guide: {
+      en: 'Operating cash flow minus capital expenditures over the trailing twelve months, in US dollars. It is the cash the business could return to owners without shrinking, the base of the FCF flow of the DCF and of P/FCF. The peers table reads it directly instead of revenue × FCF margin of a fiscal year. A company in a heavy build-out can show a negative amount while its profits grow',
+      ru: 'Операционный денежный поток минус капитальные затраты за последние двенадцать месяцев в долларах США. Это деньги, которые бизнес может вернуть владельцам, не сокращаясь, - основа потока FCF в DCF и P/FCF. Таблица пиров берёт его напрямую вместо выручки × маржа FCF финансового года. Компания в фазе большой стройки может показать отрицательную сумму при растущей прибыли',
+    },
+  }),
+  ttm({
     id: 'ffoApprox', name: { en: 'Approximate FFO', ru: 'Приблизительный FFO' }, formula: 'REITs only: net income + depreciation and amortization - gains on sale of property, TTM (a missing gain line counts 0)',
     unit: 'usd', basis: 'ttm', source: 'sec', direction: 'higher-is-better', appliesTo: STOCK,
     nullWhen: { en: 'not a REIT (Yahoo industry starting with REIT) or net income or D&A is missing', ru: 'не REIT (отрасль Yahoo не начинается с REIT) или нет чистой прибыли либо амортизации' },
