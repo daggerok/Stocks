@@ -6,15 +6,15 @@ The owner's own screener data. Everything here is public: it is committed to thi
 | --- | --- |
 | `presets/<id>.json` | Own screener presets, the same schema as the base presets in `src/core/screener/presets/` (`schemaVersion` 1), each listed in `presets/index.json` (the site has no directory listing; a test checks the list) |
 | `peers.json` | Peer groups: `{"schemaVersion": 1, "groups": {"<name>": ["TICKER", ...]}}`, U.S.-listed tickers only (foreign companies through their ADRs) |
-| `notes/<TICKER>.md` | Thesis and research notes |
-| `tam/<TICKER>.json` | TAM scenarios |
-| `promises/<TICKER>.json` | Management promises tracker |
+| `notes/<TICKER>.md` | Dated thesis, the nine-question checklist and other notes (Markdown with fixed headings), listed in `notes/index.json` |
+| `tam/<TICKER>.json` | TAM: market, size in USD, growth, horizon and the low, mid and high market shares, listed in `tam/index.json` |
+| `promises/<TICKER>.json` | Management promises: kind (guidance, buyback, capex, other), text, announced, deadline, amount in USD, status, listed in `promises/index.json` |
 
 ## How data gets here
 
 1. Edit presets, peers, notes, TAM and promises in the app: they are saved in the browser
 2. Export them from the app: the exported file names already match the paths above
-3. Copy the files into this folder (a preset also goes into `presets/index.json`) and commit them like any other change (a pull request)
+3. Copy the files into this folder (a preset, TAM, note or promises file also goes into the `index.json` of its folder) and commit them like any other change (a pull request)
 4. After the next deploy the site reads them as the starting state; when the browser holds a newer copy, the browser copy wins and is marked as not exported
 
 The app never writes to the repository: no token, no GitHub API calls from the browser
