@@ -61,6 +61,7 @@ export const en: Record<string, string> = {
   'screener.loadingEtfs': 'Loading ETF feeds {done} of {total}…',
   'screener.etfsLoaded': '{count} ETFs from {brands} brands',
   'screener.etfFailed': '{count} ETF feeds failed: {brands}',
+  'screener.etfListFailed': 'ETF brand list (ETFs hub brands.json) failed: {error}',
   'screener.shown': 'Shown: {count}',
   'screener.metric': 'Metric',
   'screener.op': 'Operator',
