@@ -10,8 +10,9 @@ import {
   annualSeries, buildAnnualRows, compactIndexText, completeMetrics, CONTROL_NAMES, dividendMetrics, fundamentalsMetrics, installSystemCa, isCertError, mergeAnnual,
   isOperatingTicker, minusMonths, normalizeTicker, parseChart, periodEve, parseRange, parseRanges, parseRetryAfter, parseSecTickers, parseSummary, parseYahooAnnual, priceReturns, readConfig, resolveControls,
   indexDocument, parseWatchlist, range52wPosition, pruneCompanies, resolveWatchlist, run, runtimeControls, sampleHistory, useApiRoot, useWatchlistDir, valuationMetrics, withMetricKeys, type ChartDay, type Snapshot,
-  coverageMarkdown, metaText, scaleCheck, FEED_SCHEMA_VERSION,
+  coverageMarkdown, metaText, scaleCheck, FEED_SCHEMA_VERSION, adrCoverage, adrFlag, annualRowsFromSec, FUNDAMENTALS_BASIS, SCALE_TOLERANCE_ANNUAL_PCT, staleForeignLayer,
 } from './update-data.ts';
+import { parseCompanyFacts } from './sec/companyfacts';
 
 // ---------------------------------------------------------------------------
 // tiny inline samples (no network, no fixtures)
@@ -47,6 +48,25 @@ function syntheticFacts(): any {
       },
     },
   };
+}
+
+/** The synthetic company as a foreign issuer: ifrs-full synonyms, EUR, the annual 20-F, values in millions */
+const IFRS_NAMES: Record<string, string> = {
+  RevenueFromContractWithCustomerExcludingAssessedTax: 'Revenue', OperatingIncomeLoss: 'ProfitLossFromOperatingActivities', DepreciationDepletionAndAmortization: 'DepreciationAndAmortisationExpense',
+  NetIncomeLoss: 'ProfitLossAttributableToOwnersOfParent', NetCashProvidedByUsedInOperatingActivities: 'CashFlowsFromUsedInOperatingActivities',
+  PaymentsToAcquirePropertyPlantAndEquipment: 'PurchaseOfPropertyPlantAndEquipmentClassifiedAsInvestingActivities', PaymentsOfDividends: 'DividendsPaidClassifiedAsFinancingActivities',
+  EarningsPerShareDiluted: 'DilutedEarningsLossPerShare', Assets: 'Assets', AssetsCurrent: 'CurrentAssets', LiabilitiesCurrent: 'CurrentLiabilities',
+  CashAndCashEquivalentsAtCarryingValue: 'CashAndCashEquivalents', LongTermDebtNoncurrent: 'LongtermBorrowings', StockholdersEquity: 'EquityAttributableToOwnersOfParent',
+};
+function ifrsFacts(): any {
+  const ifrs: Record<string, unknown> = {};
+  const usGaap = syntheticFacts().facts['us-gaap'];
+  Object.keys(IFRS_NAMES).forEach((tag) => {
+    const [unit, rows] = Object.entries<any[]>(usGaap[tag].units)[0];
+    const perShare = unit === 'USD/shares';
+    ifrs[IFRS_NAMES[tag]] = { units: { [perShare ? 'EUR/shares' : 'EUR']: rows.map((r) => ({ ...r, form: '20-F', val: perShare ? r.val : r.val * 1e6 })) } };
+  });
+  return { facts: { 'ifrs-full': ifrs } };
 }
 
 /** Every USD value multiplied (a filing tagged in thousands by mistake) */
@@ -219,6 +239,37 @@ describe('parsing', () => {
   });
 });
 
+describe('parsing 2', () => {
+  test('foreign issuer (plan 1.3): annual rows from the 20-F layer in its currency, Yahoo points of another currency dropped', () => {
+    const sec = parseCompanyFacts(ifrsFacts());
+    if (!sec) throw new Error('no SEC layer');
+    expect([sec.currency, sec.taxonomy, sec.annualForm, sec.ttmIsAnnual]).toEqual(['EUR', 'ifrs-full', '20-F', true]);
+    expect(buildAnnualRows(ifrsFacts())).toEqual([]); // the 10-K reader sees nothing
+    const rows = annualRowsFromSec(sec);
+    expect(rows.map((r) => r.end)).toEqual(['2026-12-31', '2025-12-31', '2024-12-31', '2023-12-31', '2022-12-31', '2021-12-31']);
+    expect(rows[0]).toMatchObject({ revenue: 161051000, netIncome: 24157650, ebitda: 32210200 + 8052550, operatingCashFlow: 40262750, capex: 8052550, fcf: 40262750 - 8052550, cash: 30000000, debt: 60000000 });
+    expect(fundamentalsMetrics(rows).revenueGrowth).toBe(10); // growth in EUR
+    const yahoo = { timeseries: { result: [{ meta: { type: ['annualTotalRevenue'] }, annualTotalRevenue: [
+      { asOfDate: '2025-12-31', currencyCode: 'EUR', reportedValue: { raw: 5 } }, { asOfDate: '2024-12-31', currencyCode: 'USD', reportedValue: { raw: 6 } }, { asOfDate: '2023-12-31', reportedValue: { raw: 7 } },
+    ] }] } };
+    expect(Array.from(parseYahooAnnual(yahoo, 'EUR').keys())).toEqual(['2025-12-31', '2023-12-31']);
+    expect(parseYahooAnnual(yahoo).size).toBe(3);
+  });
+
+  test('ADR flag, a stale foreign layer, the wider scale tolerance of an annual TTM and the ADR coverage count', () => {
+    expect([adrFlag('Taiwan', '20-F'), adrFlag('Canada', '40-F'), adrFlag('United States', '20-F'), adrFlag('Germany', '10-K'), adrFlag(null, '20-F')]).toEqual([true, false, false, false, null]);
+    const sec = parseCompanyFacts(ifrsFacts());
+    if (!sec) throw new Error('no SEC layer');
+    expect([staleForeignLayer(sec, '2028-03-31'), staleForeignLayer(sec, '2028-04-01')]).toEqual([false, true]); // 15 months = 456 days after 2026-12-31
+    expect(scaleCheck(130, 100)).toEqual({ ok: false, diffPct: 30 });
+    expect(scaleCheck(130, 100, SCALE_TOLERANCE_ANNUAL_PCT)).toEqual({ ok: true, diffPct: 30 });
+    expect(scaleCheck(130000, 100, SCALE_TOLERANCE_ANNUAL_PCT)?.ok).toBe(false); // a ×1000 error still fails
+    const row = (isAdr: boolean | null, basis: string) => ({ metrics: { isAdr }, fundamentalsBasis: basis });
+    expect(adrCoverage([row(true, FUNDAMENTALS_BASIS['sec-ifrs']), row(true, FUNDAMENTALS_BASIS['sec-foreign+yahoo']), row(true, FUNDAMENTALS_BASIS.yahoo), row(true, 'no annual fundamentals available'), row(false, FUNDAMENTALS_BASIS.yahoo), row(null, FUNDAMENTALS_BASIS.sec)]))
+      .toEqual({ adr: 4, secIfrs: 1, secUsGaap: 1, yahoo: 1, none: 1 });
+  });
+});
+
 // ---------------------------------------------------------------------------
 
 describe('metrics', () => {
@@ -351,6 +402,7 @@ describe('pipeline', () => {
   let chartSkip = 0; // candles missing at the start: a truncated Yahoo answer
   let yahooRevenue = 0; // financialData.totalRevenue of the snapshot (0: not reported)
   let secScale = 1; // a tagging error that multiplies every SEC value
+  let foreignBbb = false; // BBB as a German 20-F filer in EUR (plan 1.3)
 
   const chartPayload = () => {
     const start = Date.parse('2020-01-02T00:00:00Z') / 1000;
@@ -372,11 +424,21 @@ describe('pipeline', () => {
       const body = summary(url.includes('/CCC') ? 'ETF' : 'EQUITY');
       if (url.includes('/EEE')) delete (body.quoteSummary.result[0].price as any).marketCap; // a warrant has no market cap
       if (yahooRevenue) (body.quoteSummary.result[0].financialData as any).totalRevenue = { raw: yahooRevenue };
+      if (foreignBbb && url.includes('/BBB?')) {
+        (body.quoteSummary.result[0].financialData as any).financialCurrency = 'EUR';
+        (body.quoteSummary.result[0].assetProfile as any).country = 'Germany';
+      }
       return json(body);
+    }
+    if (url.includes('/v8/finance/chart/EURUSD%3DX')) { // EURUSD 1.1 every day from 2019 on
+      const from = Date.parse('2019-01-01T00:00:00Z') / 1000;
+      const timestamp = Array.from({ length: 3300 }, (_, i) => from + i * 86_400);
+      return json({ chart: { result: [{ meta: { currency: 'USD' }, timestamp, indicators: { quote: [{ close: timestamp.map(() => 1.1) }] } }] } });
     }
     if (url.includes('/v8/finance/chart/')) return failChartFor && url.includes(`/${failChartFor}?`) ? new Response('boom', { status: 500 }) : json(chartPayload());
     if (url.includes('fundamentals-timeseries')) return json({ timeseries: { result: [] } });
     if (url.includes('companyfacts') && failSecFor && url.includes(failSecFor)) return new Response('boom', { status: 500 });
+    if (url.includes('companyfacts') && foreignBbb && url.includes('CIK0000000002')) return json(ifrsFacts());
     if (url.includes('companyfacts')) return url.includes('CIK0000000006') ? new Response('nope', { status: 404 }) : json(scaled(syntheticFacts(), secScale)); // FFF has no XBRL facts
     return new Response('not found', { status: 404 });
   }) as typeof fetch;
@@ -393,6 +455,7 @@ describe('pipeline', () => {
     chartSkip = 0;
     yahooRevenue = 0;
     secScale = 1;
+    foreignBbb = false;
   });
   afterEach(async () => {
     globalThis.fetch = realFetch;
@@ -544,6 +607,21 @@ describe('pipeline', () => {
     secScale = 1;
     expect(await run(controls({ TICKERS: 'AAA' }))).toMatchObject({ updated: 1 });
     expect(JSON.parse(await readText('companies/AAA/meta.json')).fundamentals.checks.scale).toEqual({ ok: true, diffPct: 0.03 }); // SEC stores whole dollars: 161
+  });
+
+  test('a foreign issuer: ifrs-full 20-F in EUR, growth in EUR, P/E over market cap in USD, isAdr and country', async () => {
+    foreignBbb = true;
+    expect(await run(controls())).toMatchObject({ updated: 2, failed: 0 });
+    const row = (await readIndex()).companies.find((c: any) => c.ticker === 'BBB');
+    const meta = JSON.parse(await readText('companies/BBB/meta.json'));
+    expect([meta.fundamentals.sec.currency, meta.fundamentals.sec.taxonomy, meta.fundamentals.usd.pair, meta.fundamentals.usd.rates.ttm]).toEqual(['EUR', 'ifrs-full', 'EURUSD=X', { flow: 1.1, balance: 1.1 }]);
+    expect(row.fundamentalsBasis).toBe(FUNDAMENTALS_BASIS['sec-ifrs']);
+    expect([row.metrics.isAdr, row.metrics.country, row.metrics.ttmIsAnnual]).toEqual([true, 'Germany', true]);
+    expect(row.metrics.pe).toBe(Math.round((2e9 / (24157650 * 1.1)) * 100) / 100); // market cap / NI in USD (75.26), not Yahoo's 15
+    expect(row.metrics.pb).toBe(Math.round((2e9 / (120e6 * 1.1)) * 100) / 100);
+    expect([row.metrics.revenueGrowth, row.metrics.niGrowth3y, row.metrics.pePct5y]).toEqual([10, 10, null]); // EUR growth; no own-history P/E for an ADR
+    const aaa = (await readIndex()).companies.find((c: any) => c.ticker === 'AAA');
+    expect([aaa.metrics.pe, aaa.metrics.isAdr, aaa.metrics.ttmIsAnnual, aaa.fundamentalsBasis]).toEqual([15, null, true, FUNDAMENTALS_BASIS.sec]); // a US filer keeps Yahoo's P/E; the mock has no country
   });
 
   test('a failed source keeps the stock exactly as published', async () => {

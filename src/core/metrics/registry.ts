@@ -17,6 +17,11 @@ const ADR_NULL: Text = {
   en: 'the multiple is not positive, Yahoo has no value, or the price currency differs from the reporting currency (ADRs)',
   ru: 'мультипликатор не положителен, у Yahoo нет значения или валюта цены отличается от валюты отчётности (ADR)',
 };
+/** pe, ps, pFcf, pb, enterpriseValue of a foreign issuer (plan 1.3): market cap over its SEC amounts in USD */
+const FOREIGN_NULL: Text = {
+  en: 'the multiple is not positive or Yahoo has no value; a foreign issuer (20-F or 40-F, or amounts in another currency) instead takes market cap over its SEC amount converted to USD, empty without a fresh SEC layer',
+  ru: 'мультипликатор не положителен или у Yahoo нет значения; у иностранного эмитента (20-F или 40-F либо суммы в другой валюте) вместо этого берётся капитализация к сумме из SEC в USD, без свежего слоя SEC пусто',
+};
 const FIN_NOTE: Text = {
   en: 'Banks and insurers have no meaningful EBITDA, current ratio or free cash flow; compare them on P/B and ROE-type measures instead',
   ru: 'У банков и страховых EBITDA, текущая ликвидность и свободный денежный поток не имеют смысла: их сравнивают по P/B и доходности капитала',
@@ -39,8 +44,8 @@ const MARKET: MetricDef[] = [
     },
   }),
   def({
-    id: 'enterpriseValue', name: { en: 'Enterprise value', ru: 'Стоимость компании (EV)' }, formula: 'market cap + debt - cash (Yahoo quoteSummary enterpriseValue)',
-    unit: 'usd', basis: 'snapshot', source: 'yahoo-summary', direction: 'neutral', nullWhen: ADR_NULL,
+    id: 'enterpriseValue', name: { en: 'Enterprise value', ru: 'Стоимость компании (EV)' }, formula: 'market cap + debt - cash (Yahoo quoteSummary enterpriseValue); foreign issuers: market cap + debt + minority interest + preferred - cash - short-term investments of the SEC layer in USD',
+    unit: 'usd', basis: 'snapshot', source: 'yahoo-summary', direction: 'neutral', nullWhen: FOREIGN_NULL,
     short: { en: 'Price of the whole business: equity plus net debt', ru: 'Цена всего бизнеса: капитал плюс чистый долг' },
     guide: {
       en: 'Enterprise value is what a buyer would pay for the whole business: market cap plus debt minus cash, as reported by Yahoo. Unlike market cap it does not reward a company for borrowing, so it is the numerator of EV/EBITDA. A value far above market cap means heavy debt; below it means a cash pile',
@@ -109,8 +114,8 @@ const MARKET: MetricDef[] = [
 
 const VALUATION: MetricDef[] = [
   def({
-    id: 'pe', name: { en: 'P/E (TTM)', ru: 'P/E (TTM)' }, formula: 'price / diluted EPS of the trailing twelve months (Yahoo trailingPE)',
-    unit: 'ratio', basis: 'ttm', source: 'yahoo-summary', direction: 'lower-is-better', thresholds: { good: 15, bad: 30 }, nullWhen: { en: 'the company has a loss (EPS not positive) or ' + ADR_NULL.en, ru: 'у компании убыток (EPS не положителен) или ' + ADR_NULL.ru },
+    id: 'pe', name: { en: 'P/E (TTM)', ru: 'P/E (TTM)' }, formula: 'price / diluted EPS of the trailing twelve months (Yahoo trailingPE); foreign issuers: market cap / TTM net income of the SEC layer in USD',
+    unit: 'ratio', basis: 'ttm', source: 'yahoo-summary', direction: 'lower-is-better', thresholds: { good: 15, bad: 30 }, nullWhen: { en: 'the company has a loss (EPS not positive) or ' + FOREIGN_NULL.en, ru: 'у компании убыток (EPS не положителен) или ' + FOREIGN_NULL.ru },
     sectorNotes: { en: 'Cyclicals look cheapest at the peak of profits; fast growers carry high P/E for years', ru: 'Циклические компании выглядят дешевле всего на пике прибыли, у быстрорастущих P/E годами высокий' },
     short: { en: 'Years of current earnings the price pays for', ru: 'Сколько лет текущей прибыли стоит цена' },
     guide: {
@@ -128,8 +133,8 @@ const VALUATION: MetricDef[] = [
     },
   }),
   def({
-    id: 'ps', name: { en: 'P/S (TTM)', ru: 'P/S (TTM)' }, formula: 'market cap / revenue of the trailing twelve months (Yahoo priceToSalesTrailing12Months)',
-    unit: 'ratio', basis: 'ttm', source: 'yahoo-summary', direction: 'lower-is-better', thresholds: { good: 2, bad: 10 }, nullWhen: ADR_NULL,
+    id: 'ps', name: { en: 'P/S (TTM)', ru: 'P/S (TTM)' }, formula: 'market cap / revenue of the trailing twelve months (Yahoo priceToSalesTrailing12Months); foreign issuers: over the SEC TTM revenue in USD',
+    unit: 'ratio', basis: 'ttm', source: 'yahoo-summary', direction: 'lower-is-better', thresholds: { good: 2, bad: 10 }, nullWhen: FOREIGN_NULL,
     short: { en: 'Price over a year of sales', ru: 'Цена к годовой выручке' },
     guide: {
       en: 'P/S divides the market cap by the revenue of the last twelve months. It works for companies without profits, where P/E is empty, which makes it the main yardstick for growth stocks. Low-margin businesses (retail, distributors) trade below 1, high-margin software at 10 and more, so compare within a sector',
@@ -146,8 +151,8 @@ const VALUATION: MetricDef[] = [
     },
   }),
   def({
-    id: 'pFcf', name: { en: 'P/FCF', ru: 'P/FCF' }, formula: 'market cap / free cash flow of the trailing twelve months (Yahoo financialData.freeCashflow)',
-    unit: 'ratio', basis: 'ttm', source: 'computed', direction: 'lower-is-better', thresholds: { good: 15, bad: 30 }, nullWhen: { en: 'free cash flow is not positive or ' + ADR_NULL.en, ru: 'свободный денежный поток не положителен или ' + ADR_NULL.ru }, sectorNotes: FIN_NOTE,
+    id: 'pFcf', name: { en: 'P/FCF', ru: 'P/FCF' }, formula: 'market cap / free cash flow of the trailing twelve months (Yahoo financialData.freeCashflow); foreign issuers: over SEC TTM CFO - capex in USD',
+    unit: 'ratio', basis: 'ttm', source: 'computed', direction: 'lower-is-better', thresholds: { good: 15, bad: 30 }, nullWhen: { en: 'free cash flow is not positive or ' + FOREIGN_NULL.en, ru: 'свободный денежный поток не положителен или ' + FOREIGN_NULL.ru }, sectorNotes: FIN_NOTE,
     short: { en: 'Price over a year of free cash flow', ru: 'Цена к годовому свободному денежному потоку' },
     guide: {
       en: 'P/FCF divides the market cap by the free cash flow of the last twelve months (Yahoo). Cash is harder to dress up than earnings, so a low P/FCF next to a high P/E often means accounting charges, and the reverse means heavy investment. Below 15 is cheap, above 30 expensive for a mature company. Empty when FCF is zero or negative',
@@ -173,8 +178,8 @@ const VALUATION: MetricDef[] = [
     },
   }),
   def({
-    id: 'pb', name: { en: 'P/B', ru: 'P/B' }, formula: 'price / book value per share (Yahoo priceToBook)',
-    unit: 'ratio', basis: 'snapshot', source: 'yahoo-summary', direction: 'lower-is-better', thresholds: { good: 1.5, bad: 5 }, nullWhen: { en: 'book value is not positive or ' + ADR_NULL.en, ru: 'балансовый капитал не положителен или ' + ADR_NULL.ru },
+    id: 'pb', name: { en: 'P/B', ru: 'P/B' }, formula: 'price / book value per share (Yahoo priceToBook); foreign issuers: market cap / SEC equity in USD',
+    unit: 'ratio', basis: 'snapshot', source: 'yahoo-summary', direction: 'lower-is-better', thresholds: { good: 1.5, bad: 5 }, nullWhen: { en: 'book value is not positive or ' + FOREIGN_NULL.en, ru: 'балансовый капитал не положителен или ' + FOREIGN_NULL.ru },
     sectorNotes: { en: 'Central for banks and insurers; weak for asset-light companies whose value is in brands and software', ru: 'Главный мультипликатор для банков и страховых; слабый для компаний, чья ценность в брендах и софте, а не в активах' },
     short: { en: 'Price over book equity', ru: 'Цена к балансовому капиталу' },
     guide: {
@@ -705,8 +710,8 @@ const SWINGS: MetricDef[] = [
 // balance lines at the TTM date are the last quarter. ttmAsOf on the row is the end of that quarter
 
 const TTM_NOTE: Text = {
-  en: 'TTM is the last fiscal year plus the current year-to-date minus the same year-to-date a year earlier, from the 10-K and 10-Q facts of SEC EDGAR; balance sheet lines are those of the last quarter, whose end is ttmAsOf',
-  ru: 'TTM - последний финансовый год плюс текущий период с начала года минус тот же период годом раньше, по фактам 10-K и 10-Q из SEC EDGAR; строки баланса берутся на последний квартал, его дата - ttmAsOf',
+  en: 'TTM is the last fiscal year plus the current year-to-date minus the same year-to-date a year earlier, from the 10-K and 10-Q facts of SEC EDGAR; balance sheet lines are those of the last quarter, whose end is ttmAsOf. A foreign issuer without quarterly XBRL (most 20-F filers) uses its last fiscal year (ttmIsAnnual), in its reporting currency',
+  ru: 'TTM - последний финансовый год плюс текущий период с начала года минус тот же период годом раньше, по фактам 10-K и 10-Q из SEC EDGAR; строки баланса берутся на последний квартал, его дата - ttmAsOf. Иностранный эмитент без квартального XBRL (большинство подающих 20-F) берёт последний финансовый год (ttmIsAnnual) в валюте своей отчётности',
 };
 const FIN_EMPTY: Text = {
   en: 'Empty for banks and insurers (Yahoo industry Banks or Insurance), plan 1.7: their EBITDA, current ratio and free cash flow carry no meaning',
@@ -1007,6 +1012,42 @@ const PLANNED: MetricDef[] = [
 ];
 
 // ---------------------------------------------------------------------------
+// foreign issuers (plan 1.1 and 1.3; scripts/update-data.ts, scripts/sec/fx.ts): Yahoo country, the ADR flag, an annual-only TTM
+
+const FOREIGN: MetricDef[] = [
+  def({
+    id: 'isAdr', name: { en: 'ADR', ru: 'ADR' }, formula: 'the issuer is outside the United States (Yahoo assetProfile.country) and its latest annual SEC report is a 20-F',
+    unit: 'flag', basis: 'meta', source: 'computed', direction: 'neutral',
+    nullWhen: { en: 'Yahoo has no country for the company', ru: 'у Yahoo нет страны компании' },
+    short: { en: 'Foreign company listed in the US through a 20-F', ru: 'Иностранная компания с листингом в США через 20-F' },
+    guide: {
+      en: 'True for a company from outside the United States that files the annual 20-F with the SEC: an ADR such as TSM or TM, or a similar US listing of foreign shares (the New York registry shares of ASML). Neither SEC nor Yahoo marks an ADR as such, so the flag is built from the Yahoo country and the SEC form; Canadian issuers on the 40-F and foreign companies filing a 10-K are false. For these rows multiples come from market cap over the SEC amounts converted to USD (P/E = market cap / net income), not from price over EPS: EPS in a 20-F is per ordinary share while the price is per ADR, and the ADR ratio is not in the SEC data',
+      ru: 'True для компании не из США, которая подаёт в SEC годовой отчёт 20-F: ADR, например TSM или TM, или похожий листинг иностранных акций в США (нью-йоркские регистрационные акции ASML). Ни SEC, ни Yahoo не помечают ADR явно, поэтому флаг строится из страны по Yahoo и формы отчёта SEC; канадские эмитенты с 40-F и иностранные компании с 10-K дают false. У таких строк мультипликаторы считаются через капитализацию и суммы SEC в USD (P/E = капитализация / чистая прибыль), а не через цену и EPS: EPS в 20-F дан на обыкновенную акцию, цена - на ADR, а коэффициента ADR в данных SEC нет',
+    },
+  }),
+  def({
+    id: 'country', name: { en: 'Country', ru: 'Страна' }, formula: 'Yahoo quoteSummary assetProfile.country of the issuer',
+    unit: 'category', basis: 'meta', source: 'yahoo-summary', direction: 'neutral',
+    nullWhen: { en: 'Yahoo has no profile for the company', ru: 'у Yahoo нет профиля компании' },
+    short: { en: 'Country of the issuer by Yahoo', ru: 'Страна эмитента по Yahoo' },
+    guide: {
+      en: 'The country of the company\'s address in the Yahoo profile: United States, Taiwan, Denmark, Netherlands. Use it with the in operator to keep or drop foreign issuers, or with the sector scope to compare a company with its home market peers. It is the issuer\'s country, not the exchange: every stock in the feed trades in the US',
+      ru: 'Страна адреса компании в профиле Yahoo: United States, Taiwan, Denmark, Netherlands. С оператором in она оставляет или убирает иностранных эмитентов, вместе со scope sector помогает сравнивать компанию с бумагами её рынка. Это страна эмитента, а не биржи: все бумаги фида торгуются в США',
+    },
+  }),
+  def({
+    id: 'ttmIsAnnual', name: { en: 'TTM is the fiscal year', ru: 'TTM - финансовый год' }, formula: 'true when the issuer files no quarterly XBRL and TTM equals the last fiscal year',
+    unit: 'flag', basis: 'ttm', source: 'sec', direction: 'neutral',
+    nullWhen: { en: 'no SEC layer (the Yahoo fallback or a stale 20-F)', ru: 'нет слоя SEC (запасной вариант Yahoo или устаревший 20-F)' },
+    short: { en: 'TTM values are the last annual report', ru: 'Значения TTM - последний годовой отчёт' },
+    guide: {
+      en: 'Most foreign issuers publish interim results in 6-K reports without XBRL, so the SEC has only their annual 20-F or 40-F facts. Their TTM is then the last fiscal year and can be up to 15 months old; ttmAsOf shows the year end. Compare such rows with US companies with care: a fast grower looks more expensive on a year-old TTM. A foreign layer older than 15 months is not used at all, the row keeps the Yahoo fallback',
+      ru: 'Большинство иностранных эмитентов публикуют промежуточные результаты в отчётах 6-K без XBRL, поэтому в SEC есть только факты их годовых 20-F или 40-F. Тогда TTM - последний финансовый год, ему может быть до 15 месяцев, дату конца года показывает ttmAsOf. Такие строки сравнивают с американскими осторожно: быстрорастущая компания на годовом TTM выглядит дороже. Иностранный слой старше 15 месяцев не используется, строка остаётся на данных Yahoo',
+    },
+  }),
+];
+
+// ---------------------------------------------------------------------------
 // row fields of the screener (not inside `metrics`): categories, the owner's watchlist flag and the common size
 
 const FIELDS: MetricDef[] = [
@@ -1249,7 +1290,7 @@ const SCORE_INPUTS: MetricDef[] = [
   }),
 ];
 
-const BASE: MetricDef[] = [...MARKET, ...VALUATION, ...DIVIDENDS, ...BALANCE, ...GROWTH, ...MARGINS, ...PERFORMANCE, ...TOTAL_RETURN, ...META, ...SWINGS, ...SEC_DERIVED, ...PLANNED, ...SCORE_INPUTS, ...FIELDS, ...SCORE_OUTPUTS];
+const BASE: MetricDef[] = [...MARKET, ...VALUATION, ...DIVIDENDS, ...BALANCE, ...GROWTH, ...MARGINS, ...PERFORMANCE, ...TOTAL_RETURN, ...META, ...SWINGS, ...SEC_DERIVED, ...FOREIGN, ...PLANNED, ...SCORE_INPUTS, ...FIELDS, ...SCORE_OUTPUTS];
 
 const textCompanion = (base: MetricDef): MetricDef => def({
   id: `${base.id}Text`, name: { en: `${base.name.en} (text)`, ru: `${base.name.ru} (текст)` }, formula: `issuer display text of ${base.id}`,

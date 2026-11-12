@@ -3,7 +3,13 @@
  * SEC XBRL companyfacts -> fiscal years, discrete quarters and TTM (screener plan 1.2, data principles of section 3).
  * Pure functions: no IO, no Bun or Node APIs.
  *
- * - forms 10-K, 10-K/A, 10-KT, 10-Q, 10-Q/A; taxonomy `us-gaap` (the `taxonomies` option is the hook for `ifrs-full`, plan 1.3)
+ * - forms 10-K, 10-K/A, 10-KT, 10-Q, 10-Q/A and for foreign private issuers 20-F, 40-F and 6-K (with their /A); taxonomies
+ *   `us-gaap`, then `ifrs-full` (plan 1.3): per period a us-gaap tag wins over an ifrs-full synonym
+ * - the reporting currency is the majority monetary unit of the revenue, net income and assets facts of the latest annual filing
+ *   (TSM tags TWD and a USD convenience translation of one year: TWD wins); every amount is read in that unit only, per-share
+ *   values in <currency>/shares. Conversion to USD is scripts/sec/fx.ts, growth and margins stay in the reporting currency
+ * - an issuer without quarterly XBRL (most 20-F filers: their 6-K interim reports carry none) gets TTM = the last fiscal year
+ *   and `ttmIsAnnual: true`
  * - periods come from the start and end dates and the duration of each fact, never from its `fy` and `fp` (they describe the
  *   filing, not the period); the same period in several filings takes the value of the latest `filed`
  * - a fiscal year starts the day after the previous one ends, so the fiscal year starts are the starts of the 52/53-week facts
@@ -14,9 +20,9 @@
  *   the last quarter; per-share values the same formula on the per-share facts, share counts those of the last quarter
  * - the fiscal year label is the year of the end date (a 52/53-week year ending in the first days of January belongs to the
  *   year before); share counts and per-share values filed before a stock split are restated with the split ratio
- * - values are stored in the SEC unit of the field with scale 1 (USD, USD/shares, shares)
+ * - values are stored in the SEC unit of the field with scale 1 (currency, currency/shares, shares)
  */
-import { HELPER_TAGS, KIND_UNITS, SEC_FIELDS, type FieldKind } from './tags';
+import { HELPER_IFRS, HELPER_TAGS, kindUnit, SEC_FIELDS, type FieldKind } from './tags';
 
 type Json = Record<string, any>;
 export type Split = { date: string; ratio: number };
@@ -26,7 +32,14 @@ export type CheckResult = { ok: boolean; diffPct: number } | null;
 export type SecChecks = { balance: CheckResult; grossProfit: CheckResult; quarterSum: CheckResult };
 /** The SEC layer stored in meta.json `fundamentals.sec`: arrays by field, newest period first */
 export type SecFundamentals = {
+  /** reporting currency of every amount (ISO code of the XBRL unit) */
   currency: string;
+  /** us-gaap or ifrs-full: the taxonomy of the latest annual filing's core facts */
+  taxonomy?: string;
+  /** base form of the latest annual filing: 10-K, 20-F or 40-F */
+  annualForm?: string | null;
+  /** true when TTM is the last fiscal year because the issuer files no quarterly XBRL (plan 1.3) */
+  ttmIsAnnual?: boolean;
   units: Record<string, string>;
   fy: Columns;
   quarters: Columns;
@@ -34,7 +47,10 @@ export type SecFundamentals = {
   checks: SecChecks;
 };
 
-export const SEC_FORMS = ['10-K', '10-K/A', '10-KT', '10-Q', '10-Q/A'];
+export const SEC_FORMS = ['10-K', '10-K/A', '10-KT', '10-Q', '10-Q/A', '20-F', '20-F/A', '40-F', '40-F/A', '6-K', '6-K/A'];
+/** Annual report forms: the reporting currency, taxonomy and annual form come from the latest of them */
+export const ANNUAL_FORMS = ['10-K', '10-K/A', '10-KT', '20-F', '20-F/A', '40-F', '40-F/A'];
+export const TAXONOMIES = ['us-gaap', 'ifrs-full'];
 const ANNUAL = { min: 340, max: 380 };
 const QUARTER = { min: 70, max: 120 };
 const QUARTER_DAYS = 365.25 / 4;
@@ -54,39 +70,46 @@ export function fiscalYearOf(end: string): number {
 type Fact = { start: string | null; end: string; val: number; filed: string };
 type Value = { val: number; filed: string };
 
-/** Facts of one tag in one unit, split-restated, forms filtered; duplicates resolved later */
-function tagFacts(facts: Json, taxonomies: string[], tag: string, unit: string, splits: Split[]): Fact[] {
+/** Facts of one tag of one taxonomy in one unit, split-restated, forms filtered; duplicates resolved later */
+function tagFacts(facts: Json, taxonomy: string, tag: string, unit: string, splits: Split[]): Fact[] {
   const out: Fact[] = [];
-  for (let t = 0; t < taxonomies.length; t += 1) {
-    const rows = facts?.facts?.[taxonomies[t]]?.[tag]?.units?.[unit];
-    if (!Array.isArray(rows)) continue;
-    for (const row of rows) {
-      if (SEC_FORMS.indexOf(String(row?.form)) < 0 || typeof row?.val !== 'number' || !Number.isFinite(row.val) || !row.end) continue;
-      const filed = String(row.filed ?? '');
-      let val = row.val;
-      if (unit === 'shares' || unit === 'USD/shares') {
-        // a split after the filing date: the filing still shows the old share basis
-        for (let i = 0; i < splits.length; i += 1) {
-          if (splits[i].date > filed && splits[i].ratio > 0) val = unit === 'shares' ? val * splits[i].ratio : val / splits[i].ratio;
-        }
+  const rows = facts?.facts?.[taxonomy]?.[tag]?.units?.[unit];
+  if (!Array.isArray(rows)) return out;
+  for (const row of rows) {
+    if (SEC_FORMS.indexOf(String(row?.form)) < 0 || typeof row?.val !== 'number' || !Number.isFinite(row.val) || !row.end) continue;
+    const filed = String(row.filed ?? '');
+    let val = row.val;
+    if (unit === 'shares' || /\/shares$/.test(unit)) {
+      // a split after the filing date: the filing still shows the old share basis
+      for (let i = 0; i < splits.length; i += 1) {
+        if (splits[i].date > filed && splits[i].ratio > 0) val = unit === 'shares' ? val * splits[i].ratio : val / splits[i].ratio;
       }
-      out.push({ start: row.start ? String(row.start) : null, end: String(row.end), val, filed });
     }
-    if (out.length) break; // the first taxonomy that has the tag wins (us-gaap before ifrs-full)
+    out.push({ start: row.start ? String(row.start) : null, end: String(row.end), val, filed });
   }
+  return out;
+}
+
+/** A tag of one taxonomy */
+export type TagSource = { taxonomy: string; tag: string };
+/** The us-gaap tags of a field first, then its ifrs-full synonyms, limited to the taxonomies read */
+export function tagSources(us: string[], ifrs: string[] | undefined, taxonomies: string[]): TagSource[] {
+  const out: TagSource[] = [];
+  if (taxonomies.indexOf('us-gaap') >= 0) us.forEach((tag) => out.push({ taxonomy: 'us-gaap', tag }));
+  if (taxonomies.indexOf('ifrs-full') >= 0) (ifrs ?? []).forEach((tag) => out.push({ taxonomy: 'ifrs-full', tag }));
   return out;
 }
 
 /** Durations: `start|end` -> value, instants: `end` -> value; per key the latest filed wins inside a tag, the first tag wins across tags */
 type Series = { dur: Map<string, Value>; inst: Map<string, Value>; any: boolean };
-function series(facts: Json, taxonomies: string[], tags: string[], unit: string, splits: Split[], abs = false): Series {
+function series(facts: Json, sources: TagSource[], unit: string, splits: Split[], abs = false): Series {
   const dur = new Map<string, Value>();
   const inst = new Map<string, Value>();
   let any = false;
-  for (let t = 0; t < tags.length; t += 1) {
+  for (let t = 0; t < sources.length; t += 1) {
     const ownDur = new Map<string, Value>();
     const ownInst = new Map<string, Value>();
-    for (const f of tagFacts(facts, taxonomies, tags[t], unit, splits)) {
+    for (const f of tagFacts(facts, sources[t].taxonomy, sources[t].tag, unit, splits)) {
       const map = f.start ? ownDur : ownInst;
       const key = f.start ? `${f.start}|${f.end}` : f.end;
       const seen = map.get(key);
@@ -228,23 +251,66 @@ function checkPct(a: number | null, b: number | null, tolerancePct = 1): CheckRe
   return { ok: diffPct <= tolerancePct, diffPct };
 }
 
+export type ReportingBasis = { currency: string; taxonomy: string; annualForm: string | null };
+
+/**
+ * Currency, taxonomy and form of the latest annual filing: the facts of revenue, net income and assets filed on the latest date
+ * of an annual form vote with their unit (an ISO currency) and taxonomy; a tie goes to USD and to us-gaap. Without any annual
+ * filing the latest filing of any read form decides. null when no such fact exists
+ */
+export function reportingBasis(facts: Json, taxonomies: string[] = TAXONOMIES): ReportingBasis | null {
+  const sources = [
+    ...tagSources(SEC_FIELDS.revenue.tags, SEC_FIELDS.revenue.ifrs, taxonomies),
+    ...tagSources(SEC_FIELDS.netIncome.tags, SEC_FIELDS.netIncome.ifrs, taxonomies),
+    ...tagSources(SEC_FIELDS.assets.tags, SEC_FIELDS.assets.ifrs, taxonomies),
+  ];
+  type Row = { taxonomy: string; unit: string; form: string; filed: string };
+  const rows: Row[] = [];
+  for (const src of sources) {
+    const units = facts?.facts?.[src.taxonomy]?.[src.tag]?.units ?? {};
+    Object.keys(units).forEach((unit) => {
+      if (!/^[A-Z]{3}$/.test(unit) || !Array.isArray(units[unit])) return;
+      for (const row of units[unit]) {
+        if (SEC_FORMS.indexOf(String(row?.form)) < 0 || typeof row?.val !== 'number') continue;
+        rows.push({ taxonomy: src.taxonomy, unit, form: String(row.form), filed: String(row.filed ?? '') });
+      }
+    });
+  }
+  if (!rows.length) return null;
+  const annual = rows.filter((r) => ANNUAL_FORMS.indexOf(r.form) >= 0);
+  const pool = annual.length ? annual : rows;
+  let latest = '';
+  pool.forEach((r) => { if (r.filed > latest) latest = r.filed; });
+  const last = pool.filter((r) => r.filed === latest);
+  const vote = (key: (r: Row) => string, prefer: string): string => {
+    const count: Record<string, number> = {};
+    last.forEach((r) => { count[key(r)] = (count[key(r)] ?? 0) + 1; });
+    return Object.keys(count).sort((a, b) => count[b] - count[a] || (a === prefer ? -1 : b === prefer ? 1 : a.localeCompare(b)))[0];
+  };
+  return { currency: vote((r) => r.unit, 'USD'), taxonomy: vote((r) => r.taxonomy, 'us-gaap'), annualForm: annual.length ? last[0].form.replace(/\/A$/, '').replace('10-KT', '10-K') : null };
+}
+
 export type ParseOptions = { splits?: Split[]; taxonomies?: string[] };
 
 /** The SEC layer of one company, or null when the response has no usable facts in the taxonomies */
 export function parseCompanyFacts(facts: Json, options: ParseOptions = {}): SecFundamentals | null {
-  const taxonomies = options.taxonomies ?? ['us-gaap'];
+  const taxonomies = options.taxonomies ?? TAXONOMIES;
   const splits = (options.splits ?? []).slice().sort((a, b) => a.date.localeCompare(b.date));
   if (!taxonomies.some((t) => facts?.facts?.[t])) return null;
+  const basis = reportingBasis(facts, taxonomies);
+  if (!basis) return null;
+  const currency = basis.currency;
   const keys = Object.keys(SEC_FIELDS);
   const data: Record<string, FieldData> = {};
-  const read = (tags: string[], kind: FieldKind, abs = false): FieldData => {
-    const s = series(facts, taxonomies, tags, KIND_UNITS[kind], splits, abs);
+  const read = (sources: TagSource[], kind: FieldKind, abs = false): FieldData => {
+    const s = series(facts, sources, kindUnit(kind, currency), splits, abs);
     return { kind, series: s, ends: byEnd(s) };
   };
-  for (const key of keys) data[key] = read(SEC_FIELDS[key].tags, SEC_FIELDS[key].kind, SEC_FIELDS[key].abs);
+  for (const key of keys) data[key] = read(tagSources(SEC_FIELDS[key].tags, SEC_FIELDS[key].ifrs, taxonomies), SEC_FIELDS[key].kind, SEC_FIELDS[key].abs);
   const helper: Record<string, FieldData> = {};
-  (Object.keys(HELPER_TAGS) as Array<keyof typeof HELPER_TAGS>).forEach((k) => {
-    helper[k] = read(HELPER_TAGS[k], k === 'depreciation' || k === 'amortization' ? 'flow' : 'instant');
+  const helperTags: Record<string, string[]> = HELPER_TAGS;
+  Array.from(new Set([...Object.keys(HELPER_TAGS), ...Object.keys(HELPER_IFRS)])).forEach((k) => {
+    helper[k] = read(tagSources(helperTags[k] ?? [], HELPER_IFRS[k], taxonomies), k === 'depreciation' || k === 'amortization' ? 'flow' : 'instant');
   });
   const years = fiscalYears(keys.map((k) => data[k]).filter((d) => d.kind === 'flow'));
   if (!years.length) return null;
@@ -285,6 +351,7 @@ export function parseCompanyFacts(facts: Json, options: ParseOptions = {}): SecF
       const parts = [h('notesPayable'), h('securedDebt'), h('lineOfCredit'), cp].filter((v): v is number => v !== null);
       if (parts.length) values.debt = parts.reduce((s, v) => s + v, 0);
     }
+    if (values.debt === null) values.debt = ifrsDebt(h);
     for (const k of keys) if (values[k] !== null) values[k] = round(values[k] as number, SEC_FIELDS[k].kind);
     return { values, filed, reported };
   };
@@ -334,6 +401,7 @@ export function parseCompanyFacts(facts: Json, options: ParseOptions = {}): SecF
     ? { y: latestYear, n: 4 }
     : latestQuarter;
   let ttmReported: Record<string, boolean> = {};
+  let ttmIsAnnual = false;
   if (latest) {
     const y = latest.y;
     const n = latest.n;
@@ -353,6 +421,8 @@ export function parseCompanyFacts(facts: Json, options: ParseOptions = {}): SecF
     ttm.start = addDays(q.end, -364);
     ttm.fiscalYear = y.label;
     ttm.basis = n === 4 ? 'fy' : `fy${prevLinked ? prevLinked.label : ''}+ytd-q${n}`;
+    // no interim quarter in the latest fiscal year: an annual-only filer, its TTM is the fiscal year itself (plan 1.3)
+    ttmIsAnnual = n === 4 && !quarterPeriods.some((qp) => qp.y === y && qp.n < 4);
     ttm.filed = p.filed || null;
     ttmReported = p.reported;
     keys.forEach((k) => { ttm[k] = p.values[k]; });
@@ -375,8 +445,17 @@ export function parseCompanyFacts(facts: Json, options: ParseOptions = {}): SecF
   }
 
   const units: Record<string, string> = {};
-  keys.forEach((k) => { units[k] = KIND_UNITS[SEC_FIELDS[k].kind]; });
-  return { currency: 'USD', units, fy, quarters, ttm, checks: { balance, grossProfit: gross, quarterSum } };
+  keys.forEach((k) => { units[k] = kindUnit(SEC_FIELDS[k].kind, currency); });
+  return { currency, taxonomy: basis.taxonomy, annualForm: basis.annualForm, ttmIsAnnual, units, fy, quarters, ttm, checks: { balance, grossProfit: gross, quarterSum } };
+}
+
+/** IFRS debt of one period from the helper lines (see HELPER_IFRS); null when none of them is tagged */
+export function ifrsDebt(h: (k: string) => number | null): number | null {
+  const total = h('borrowings');
+  if (total !== null) return total;
+  const current = h('borrowingsCurrentCombined') ?? (h('borrowingsCurrentPortion') === null && h('borrowingsShortTerm') === null ? null : (h('borrowingsCurrentPortion') ?? 0) + (h('borrowingsShortTerm') ?? 0));
+  const parts = [h('borrowingsNoncurrent'), current, h('bondsNoncurrent'), h('bondsCurrent')].filter((v): v is number => v !== null);
+  return parts.length ? parts.reduce((s, v) => s + v, 0) : null;
 }
 
 /** Field `key` of the columns as numbers (null for missing) */

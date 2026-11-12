@@ -11,7 +11,7 @@ export type Unit = 'percent' | 'pp' | 'ratio' | 'usd' | 'count' | 'text' | 'date
 export type Basis = 'fy' | 'ttm' | 'forward' | 'price' | 'snapshot' | 'calendar-year' | 'issuer' | 'history' | 'meta';
 
 export type Source =
-  | 'sec' // SEC EDGAR XBRL annual 10-K facts (Yahoo fundamentals-timeseries fills gaps, see fundamentalsBasis)
+  | 'sec' // SEC EDGAR XBRL facts: 10-K and 10-Q, the 20-F and 40-F of foreign issuers (Yahoo fundamentals-timeseries fills gaps, see fundamentalsBasis)
   | 'yahoo-summary' // Yahoo quoteSummary snapshot
   | 'yahoo-chart' // Yahoo chart: closes and dividends
   | 'issuer' // ETF issuer pages and files, as published by the 29 brand updaters
