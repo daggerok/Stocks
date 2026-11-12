@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "id": "high-debt",
+  "title": {
+    "en": "High debt",
+    "ru": "Высокий долг"
+  },
+  "description": {
+    "en": "Heavily indebted companies: debt above twice the equity or net debt above three years of EBITDA. Meant for exclusion with NOT in an expression",
+    "ru": "Компании с большим долгом: долг больше двух капиталов или чистый долг больше трёх годовых EBITDA. Предназначен для исключения через НЕ в выражении"
+  },
+  "appliesTo": [
+    "stock"
+  ],
+  "match": 1,
+  "conditions": [
+    {
+      "metric": "debtToEquity",
+      "op": ">",
+      "value": 2,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "netDebtToEbitda",
+      "op": ">",
+      "value": 3,
+      "scope": "absolute",
+      "missing": "fail"
+    }
+  ]
+}

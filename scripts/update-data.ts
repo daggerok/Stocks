@@ -794,6 +794,9 @@ const METRIC_KEYS = [
   'perfYtd', 'perf1y', 'perf3y', 'perf5y', 'perf10y', 'ytd', 'tr1y', 'tr3y', 'tr5y', 'tr10y', 'cagr3y', 'cagr5y', 'cagr10y', 'siAnn',
 ] as const;
 
+/** Every key of a published `metrics` object, in order: the screener registry must describe each one (src/core/metrics). */
+export const STOCK_METRIC_KEYS: readonly string[] = [...METRIC_KEYS, 'returnsBasis', 'performanceAsOf'];
+
 export const RETURNS_BASIS = 'Yahoo chart API: performance from unadjusted closes (D windows, 1W (5 daily candles) and 2W (10) count daily candles; 1M and 1Q take the candle closest to the same day 1 and 3 months earlier; WTD, MTD, QTD and YTD start at the last close before the current calendar week, month, quarter or year; 4M, 6M and 52W are calendar windows anchored on the last close on or before the target date), total return and CAGR from dividend- and split-adjusted closes';
 export const FUNDAMENTALS_BASIS = {
   sec: 'SEC EDGAR XBRL annual 10-K facts; valuation multiples from the Yahoo quoteSummary TTM snapshot',

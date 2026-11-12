@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "id": "cheap-earnings",
+  "title": {
+    "en": "Cheap by earnings",
+    "ru": "Дёшево по прибыли"
+  },
+  "description": {
+    "en": "Forward P/E in the cheaper part of every comparison group: at most the 40th percentile of the market, the 30th of its sector and the 50th of its peer group. Stocks without a peer group skip the peers condition",
+    "ru": "Форвардный P/E в дешёвой части каждой группы сравнения: не выше 40-го перцентиля рынка, 30-го перцентиля своего сектора и 50-го перцентиля своей группы пиров. У бумаг без группы пиров условие по пирам пропускается"
+  },
+  "appliesTo": [
+    "stock"
+  ],
+  "match": "all",
+  "conditions": [
+    {
+      "metric": "forwardPe",
+      "op": "<=",
+      "value": 40,
+      "scope": "market",
+      "missing": "fail"
+    },
+    {
+      "metric": "forwardPe",
+      "op": "<=",
+      "value": 30,
+      "scope": "sector",
+      "missing": "fail"
+    },
+    {
+      "metric": "forwardPe",
+      "op": "<=",
+      "value": 50,
+      "scope": "peers",
+      "missing": "skip"
+    }
+  ]
+}
