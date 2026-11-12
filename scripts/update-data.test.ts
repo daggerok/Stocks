@@ -216,8 +216,13 @@ describe('parsing', () => {
     expect(parseSummary({ quoteSummary: { result: [{ financialData: { totalRevenue: { raw: 4.2e11 } } }] } }).totalRevenue).toBe(4.2e11);
     const trend = { earningsTrend: { trend: [{ period: '+1y', growth: { raw: 0.1 }, earningsEstimate: { avg: { raw: 10.5 } }, epsTrend: { current: { raw: 10.5 }, '30daysAgo': { raw: 10 } } }] } };
     expect(parseSummary({ quoteSummary: { result: [trend] } }).estimates).toMatchObject({ epsNextYear: 10.5, growthNextYear: 10, growth5y: null, trendNextYear: { current: 10.5, d30: 10 } });
-    expect(scaleCheck(416e9, 400e9)).toEqual({ ok: true, diffPct: 4 });
-    expect(scaleCheck(416e12, 400e9)?.ok).toBe(false); // a ×1000 tagging error
+    expect(scaleCheck(416e9, 400e9)).toEqual({ ok: true, diffPct: 4, scaleError: false });
+    // a definition difference (COF: SEC revenue 78% above Yahoo's) is reported, never withheld; only a scale error withholds
+    expect(scaleCheck(178, 100)).toEqual({ ok: false, diffPct: 78, scaleError: false });
+    expect(scaleCheck(60, 100)).toEqual({ ok: false, diffPct: 40, scaleError: false });
+    expect(scaleCheck(416e12, 400e9)).toMatchObject({ ok: false, scaleError: true }); // a ×1000 tagging error
+    expect(scaleCheck(416e6, 400e9)).toMatchObject({ ok: false, scaleError: true }); // values in thousands
+    expect([scaleCheck(500, 100)?.scaleError, scaleCheck(501, 100)?.scaleError, scaleCheck(20, 100)?.scaleError, scaleCheck(19.9, 100)?.scaleError]).toEqual([false, true, false, true]); // SCALE_ERROR_RATIO 5
     expect([scaleCheck(null, 1), scaleCheck(-1, 1), scaleCheck(1, 0)]).toEqual([null, null, null]);
     const text = metaText({ a: 1, list: [1, null, 'x'], rows: [{ b: [] }], skip: undefined, empty: {} });
     expect(text).toBe('{\n  "a": 1,\n  "list": [1,null,"x"],\n  "rows": [\n    {\n      "b": []\n    }\n  ],\n  "empty": {}\n}\n');
@@ -262,9 +267,9 @@ describe('parsing 2', () => {
     const sec = parseCompanyFacts(ifrsFacts());
     if (!sec) throw new Error('no SEC layer');
     expect([staleForeignLayer(sec, '2028-03-31'), staleForeignLayer(sec, '2028-04-01')]).toEqual([false, true]); // 15 months = 456 days after 2026-12-31
-    expect(scaleCheck(130, 100)).toEqual({ ok: false, diffPct: 30 });
-    expect(scaleCheck(130, 100, SCALE_TOLERANCE_ANNUAL_PCT)).toEqual({ ok: true, diffPct: 30 });
-    expect(scaleCheck(130000, 100, SCALE_TOLERANCE_ANNUAL_PCT)?.ok).toBe(false); // a ×1000 error still fails
+    expect(scaleCheck(130, 100)).toEqual({ ok: false, diffPct: 30, scaleError: false });
+    expect(scaleCheck(130, 100, SCALE_TOLERANCE_ANNUAL_PCT)).toEqual({ ok: true, diffPct: 30, scaleError: false });
+    expect(scaleCheck(130000, 100, SCALE_TOLERANCE_ANNUAL_PCT)).toMatchObject({ ok: false, scaleError: true }); // a ×1000 error still fails
     const row = (isAdr: boolean | null, basis: string) => ({ metrics: { isAdr }, fundamentalsBasis: basis });
     expect(adrCoverage([row(true, FUNDAMENTALS_BASIS['sec-ifrs']), row(true, FUNDAMENTALS_BASIS['sec-foreign+yahoo']), row(true, FUNDAMENTALS_BASIS.yahoo), row(true, 'no annual fundamentals available'), row(false, FUNDAMENTALS_BASIS.yahoo), row(null, FUNDAMENTALS_BASIS.sec)]))
       .toEqual({ adr: 4, secIfrs: 1, secUsGaap: 1, yahoo: 1, none: 1 });
@@ -628,7 +633,7 @@ describe('pipeline', () => {
     expect((await readIndex()).companies.map((c: any) => [c.ticker, c.isMine])).toEqual([['AAA', true], ['BBB', false]]);
   });
 
-  test('the SEC layer: arrays by field and schemaVersion in meta.json; a revenue far from Yahoo\'s withholds the new SEC values', async () => {
+  test('the SEC layer: arrays by field and schemaVersion in meta.json; only a scale error against Yahoo\'s revenue withholds the new SEC values', async () => {
     await run(controls());
     const index = await readIndex();
     expect([index.schemaVersion, index.companies[0].ttmAsOf, index.companies[0].fundamentalsAsOf]).toEqual([FEED_SCHEMA_VERSION, '2026-12-31', '2026-12-31']);
@@ -647,10 +652,16 @@ describe('pipeline', () => {
     const after = JSON.parse(await readText('companies/AAA/meta.json'));
     expect(after.fundamentals.sec).toEqual(meta.fundamentals.sec);
     expect(after.fundamentals.annual).toEqual(meta.fundamentals.annual);
-    expect(after.fundamentals.checks.scale).toEqual({ ok: false, diffPct: 99900 });
+    expect(after.fundamentals.checks.scale).toEqual({ ok: false, diffPct: 99900, scaleError: true });
+    // a definition difference (SEC revenue 78% above Yahoo's, as COF in the 2026-11-12 full run) is only reported: the new SEC values are published
+    secScale = 1.78;
+    expect(await run(controls({ TICKERS: 'AAA' }))).toMatchObject({ updated: 1, failed: 0 });
+    const differs = JSON.parse(await readText('companies/AAA/meta.json'));
+    expect(differs.fundamentals.checks.scale).toMatchObject({ ok: false, scaleError: false });
+    expect(differs.fundamentals.sec.fy.revenue[0]).toBe(Math.round(161.051 * 1.78)); // not the published 161
     secScale = 1;
     expect(await run(controls({ TICKERS: 'AAA' }))).toMatchObject({ updated: 1 });
-    expect(JSON.parse(await readText('companies/AAA/meta.json')).fundamentals.checks.scale).toEqual({ ok: true, diffPct: 0.03 }); // SEC stores whole dollars: 161
+    expect(JSON.parse(await readText('companies/AAA/meta.json')).fundamentals.checks.scale).toEqual({ ok: true, diffPct: 0.03, scaleError: false }); // SEC stores whole dollars: 161
   });
 
   test('a foreign issuer: ifrs-full 20-F in EUR, growth in EUR, P/E over market cap in USD, isAdr and country', async () => {
