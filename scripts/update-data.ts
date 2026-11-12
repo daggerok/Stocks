@@ -3,6 +3,7 @@
 /// <reference types="bun" />
 import { appendFile, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { pctFrom52wHigh, swingMetrics } from './metrics/swing';
 
 // Stocks listed on Nasdaq, NYSE and Cboe: static ./api/stocks feed.
 //   universe      SEC company_tickers_exchange.json (ticker, CIK, exchange)
@@ -792,6 +793,8 @@ const METRIC_KEYS = [
   ...['netMargin', 'grossMargin', 'ebitdaMargin', 'fcfMargin'].flatMap((n) => [`${n}Delta`, `${n}Delta3y`]),
   'perf1d', 'perf3d', 'perf1w', 'perfWtd', 'perf2w', 'perf20d', 'perf1m', 'perfMtd', 'perf40d', 'perf60d', 'perf1q', 'perfQtd', 'perf4m', 'perf6m', 'perf52w',
   'perfYtd', 'perf1y', 'perf3y', 'perf5y', 'perf10y', 'ytd', 'tr1y', 'tr3y', 'tr5y', 'tr10y', 'cagr3y', 'cagr5y', 'cagr10y', 'siAnn',
+  // price and swing metrics (scripts/metrics/swing.ts): split-adjusted, not dividend-adjusted daily closes of the Yahoo chart
+  'pctFrom52wHigh', 'athPrice', 'athDate', 'athBasis', 'pctFromAth', 'volatility1y', 'sigmaFromMean60d', 'high60d', 'low60d',
 ] as const;
 
 /** Every key of a published `metrics` object, in order: the screener registry must describe each one (src/core/metrics). */
@@ -803,6 +806,16 @@ export const FUNDAMENTALS_BASIS = {
   'sec+yahoo': 'SEC EDGAR XBRL annual 10-K facts with gaps filled from Yahoo fundamentals-timeseries; valuation multiples from the Yahoo quoteSummary TTM snapshot',
   yahoo: 'Yahoo fundamentals-timeseries annual statements (no usable SEC history); valuation multiples from the Yahoo quoteSummary TTM snapshot',
 } as const;
+
+/** A kept row published before a metric key existed gets that key as null, in METRIC_KEYS order: every row has the same key set */
+export function withMetricKeys(row: JsonRecord): JsonRecord {
+  const m = row.metrics;
+  if (!m || typeof m !== 'object' || METRIC_KEYS.every((key) => key in m)) return row;
+  const metrics: JsonRecord = {};
+  for (const key of METRIC_KEYS) metrics[key] = m[key] === undefined ? null : m[key];
+  for (const key of Object.keys(m)) if (!(key in metrics)) metrics[key] = m[key];
+  return { ...row, metrics };
+}
 
 export function completeMetrics(parts: JsonRecord, performanceAsOf: string | null): JsonRecord {
   const out: JsonRecord = {};
@@ -979,6 +992,7 @@ export async function processCompany(listing: Listing, config: UpdaterConfig, pr
     market = {
       price, asOfDate: last.date, valuation, returns: priceReturns(chart.days), dividends: div.metrics, annualDps: div.annual,
       recentDividends: chart.dividends.slice(-12).reverse(), week52High: range.high, week52Low: range.low,
+      swing: swingMetrics(chart.days, price), // the full daily series: the published history keeps daily rows for 31 days only
     };
     ({ files: historyFiles, history } = buildHistory(ticker, chart.days, config.historyPageSize));
   } else {
@@ -988,7 +1002,7 @@ export async function processCompany(listing: Listing, config: UpdaterConfig, pr
   }
 
   const fundamentals = fundamentalsMetrics(rows);
-  const parts: JsonRecord = { ...fundamentals, ...(market.valuation ?? {}), ...(market.returns ?? {}), ...(market.dividends ?? {}), price: market.price, week52High: market.week52High, week52Low: market.week52Low, range52w: range52wPosition(market.price, market.week52Low, market.week52High) };
+  const parts: JsonRecord = { ...fundamentals, ...(market.valuation ?? {}), ...(market.returns ?? {}), ...(market.dividends ?? {}), ...(market.swing ?? {}), price: market.price, week52High: market.week52High, week52Low: market.week52Low, range52w: range52wPosition(market.price, market.week52Low, market.week52High), pctFrom52wHigh: pctFrom52wHigh(market.price, market.week52High) };
   if (parts.marketCap === undefined || parts.marketCap === null) parts.marketCap = null;
   const metrics = completeMetrics(parts, market.asOfDate ?? null);
   if (metrics.marketCap === null) return { skipped: 'no market cap (unit, warrant, preferred share or note)' };
@@ -1208,7 +1222,7 @@ export async function run(controls: Record<string, string | undefined>, options:
   const outsideWatchlist: string[] = [];
   if (allowed) for (const ticker of Array.from(byTicker.keys())) if (!allowed.has(ticker)) { byTicker.delete(ticker); outsideWatchlist.push(ticker); }
   // every row gets range52w from its own price and 52-week low and high, also the rows this run did not refresh
-  const companies = Array.from(byTicker.values()).sort((a, b) => String(a.ticker).localeCompare(String(b.ticker))).map(withRange52w).map((row) => withIsMine(row, allowed));
+  const companies = Array.from(byTicker.values()).sort((a, b) => String(a.ticker).localeCompare(String(b.ticker))).map(withMetricKeys).map(withRange52w).map((row) => withIsMine(row, allowed));
   await writeIfChanged(indexFile(), indexDocument(companies, allowed ? Array.from(allowed).sort() : undefined), compactIndexText);
   if (allowed && watchlist) {
     // folders go only after the index stops listing them; a folder of a listed stock is never touched

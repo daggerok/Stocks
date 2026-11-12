@@ -589,6 +589,117 @@ const META: MetricDef[] = [
 const TEXT_COMPANIONS = ['dividendYield', 'distributionYield', 'yield12M', 'secYield', 'secYieldUnsubsidized', 'indicatedDividendYield', 'ytd', 'tr1y', 'tr3y', 'tr5y', 'tr10y', 'cagr3y', 'cagr5y', 'cagr10y', 'siAnn'];
 
 // ---------------------------------------------------------------------------
+// price and swing metrics (plan 1.5 "Цена и свинги", scripts/metrics/swing.ts): stocks from the full daily Yahoo chart now,
+// ETFs from the same block in the 29 brand updaters later (plan 1.6); until then an ETF row has them empty
+
+const SWING_BASIS: Text = {
+  en: 'Daily closes of the Yahoo chart, split adjusted but not dividend adjusted (the close field, not adjclose), over the whole series the updater downloads (HISTORY_RANGE, max by default: from the listing)',
+  ru: 'Дневные закрытия графика Yahoo с поправкой на сплиты, но без поправки на дивиденды (поле close, не adjclose), по всему ряду, который загружает апдейтер (HISTORY_RANGE, по умолчанию max: с начала торгов)',
+};
+const ETF_LATER: Text = {
+  en: 'ETFs get the same values from the shared block of the brand updaters (plan 1.6); until a brand publishes them the ETF row is empty',
+  ru: 'ETF получат те же значения из общего блока брендовых апдейтеров (план 1.6); пока бренд их не публикует, у строки ETF значение пустое',
+};
+/** Every swing guide ends with the price basis and the ETF note, so each article stands on its own */
+const swing = (spec: Omit<Spec, 'basis' | 'source' | 'appliesTo'>): MetricDef => def({
+  ...spec, basis: 'price', source: 'yahoo-chart', appliesTo: BOTH,
+  guide: { en: `${spec.guide.en}\n\nPrices: ${SWING_BASIS.en}. ${ETF_LATER.en}`, ru: `${spec.guide.ru}\n\nЦены: ${SWING_BASIS.ru}. ${ETF_LATER.ru}` },
+});
+
+const SWINGS: MetricDef[] = [
+  swing({
+    id: 'pctFrom52wHigh', name: { en: 'Distance from 52-week high', ru: 'Отклонение от максимума за 52 недели' }, formula: '(price / week52High - 1) × 100',
+    unit: 'percent', direction: 'neutral', thresholds: { good: -20 },
+    nullWhen: { en: 'no price or no 52-week high', ru: 'нет цены или максимума за 52 недели' },
+    short: { en: 'How far below its 52-week high the price is', ru: 'Насколько цена ниже максимума за 52 недели' },
+    guide: {
+      en: 'The last price relative to the 52-week high in percent: 0 at the high, -20 means 20% below it. For stocks the high is the Yahoo intraday 52-week high (the highest close when the quoteSummary snapshot failed), so the value is usually a little below 0 even at a record close. A drawdown of 20% or more from the yearly high is the classic bear-market mark for a single stock; read it with range52w, which also knows the low',
+      ru: 'Последняя цена относительно максимума за 52 недели в процентах: 0 - на максимуме, -20 - на 20% ниже. У акций максимум внутридневной из Yahoo (самое высокое закрытие, если снимок quoteSummary не загрузился), поэтому даже на рекордном закрытии значение обычно чуть ниже 0. Просадка от 20% от годового максимума - классическая отметка медвежьего рынка для отдельной бумаги; её читают вместе с range52w, который знает и минимум',
+    },
+  }),
+  swing({
+    id: 'athPrice', name: { en: 'All-time high close', ru: 'Исторический максимум закрытия' }, formula: 'max(daily close) over the whole downloaded history, split adjusted, not dividend adjusted',
+    unit: 'usd', direction: 'neutral',
+    nullWhen: { en: 'no price history', ru: 'нет истории цен' },
+    short: { en: 'Highest daily close ever, split adjusted', ru: 'Самое высокое дневное закрытие за всю историю с поправкой на сплиты' },
+    guide: {
+      en: 'The highest daily close of the whole price history, adjusted for splits but not for dividends, so it is comparable with today\'s price. Intraday spikes are not counted: a close is what holders could actually sell at. athDate is its date and athBasis says which history it covers (daily closes since the first date of the series). A run with a shorter HISTORY_RANGE sees only that window, and athBasis then shows the later start',
+      ru: 'Самое высокое дневное закрытие за всю историю цен с поправкой на сплиты, но не на дивиденды, поэтому оно сравнимо с сегодняшней ценой. Внутридневные выбросы не учитываются: закрытие - это цена, по которой держатель действительно мог продать. athDate - его дата, athBasis - какую историю он покрывает (дневные закрытия с первой даты ряда). Прогон с коротким HISTORY_RANGE видит только это окно, и athBasis тогда показывает более позднее начало',
+    },
+  }),
+  swing({
+    id: 'athDate', name: { en: 'All-time high date', ru: 'Дата исторического максимума' }, formula: 'date of athPrice (the earliest one on a tie)',
+    unit: 'date', direction: 'neutral',
+    nullWhen: { en: 'no price history', ru: 'нет истории цен' },
+    short: { en: 'When the record close happened', ru: 'Когда было рекордное закрытие' },
+    guide: {
+      en: 'The trading day of the all-time high close, the earliest one when the record was matched later. A recent date means the stock is near its highs in a trend; a date many years back with a deep pctFromAth means a long recovery is still ahead, as with the 2000 tech peak',
+      ru: 'Торговый день исторического максимума закрытия, самый ранний, если рекорд потом повторялся. Недавняя дата - бумага у максимумов в тренде; дата много лет назад вместе с глубоким pctFromAth - впереди долгое восстановление, как после пика техкомпаний 2000 года',
+    },
+  }),
+  swing({
+    id: 'athBasis', name: { en: 'All-time high basis', ru: 'Основа исторического максимума' }, formula: '"daily closes since <first date of the series>"',
+    unit: 'text', direction: 'neutral',
+    nullWhen: { en: 'no price history', ru: 'нет истории цен' },
+    short: { en: 'Which history the all-time high covers', ru: 'Какую историю покрывает исторический максимум' },
+    guide: {
+      en: 'Says how deep the history behind athPrice is: daily closes since the first date of the Yahoo series. With the default HISTORY_RANGE of max that is the listing date (or the first date Yahoo has), so the value is a true all-time high; a shorter range makes it the high of that window only, and this text makes that visible',
+      ru: 'Говорит, насколько глубока история за athPrice: дневные закрытия с первой даты ряда Yahoo. При HISTORY_RANGE по умолчанию (max) это дата начала торгов (или первая дата, которая есть у Yahoo), и значение - настоящий исторический максимум; более короткий диапазон делает его максимумом только этого окна, и этот текст это показывает',
+    },
+  }),
+  swing({
+    id: 'pctFromAth', name: { en: 'Distance from all-time high', ru: 'Отклонение от исторического максимума' }, formula: '(price / athPrice - 1) × 100',
+    unit: 'percent', direction: 'neutral', thresholds: { good: -30 },
+    nullWhen: { en: 'no price history', ru: 'нет истории цен' },
+    short: { en: 'How far below its record close the price is', ru: 'Насколько цена ниже рекордного закрытия' },
+    guide: {
+      en: 'The last price relative to the highest close ever, split adjusted but not dividend adjusted, in percent: 0 at a record, -30 means 30% below it. Buy-low investors look for deep drawdowns in healthy businesses, and the all-time high is a natural exit target for the swing preset. A small positive value is possible when the live price is above the last record close',
+      ru: 'Последняя цена относительно самого высокого закрытия за всю историю с поправкой на сплиты, но не на дивиденды, в процентах: 0 - на рекорде, -30 - на 30% ниже. Кто добирает ниже, ищет глубокие просадки у здоровых компаний, а исторический максимум - естественная цель продажи для пресета свингов. Небольшое положительное значение возможно, когда текущая цена выше последнего рекордного закрытия',
+    },
+  }),
+  swing({
+    id: 'volatility1y', name: { en: 'Volatility 1Y', ru: 'Волатильность за год' }, formula: 'sample stdev of the last 252 daily log returns ln(close[t] / close[t-1]) × √252 × 100',
+    unit: 'percent', direction: 'neutral', thresholds: { good: 45 },
+    nullWhen: { en: 'fewer than 253 daily closes (252 returns) or no price movement at all', ru: 'меньше 253 дневных закрытий (252 доходностей) или цена совсем не двигалась' },
+    short: { en: 'Annualized size of daily price swings', ru: 'Размер дневных колебаний цены в годовом выражении' },
+    guide: {
+      en: 'The sample standard deviation of the last 252 daily log returns, annualized with √252, in percent. Broad index funds sit near 15%, large stable stocks at 20-30%, swing candidates at 45% and more. Higher volatility means wider swings to trade, and wider losses if the thesis is wrong. Dividends are not in the closes, so an ex-dividend day counts as a small drop',
+      ru: 'Выборочное стандартное отклонение последних 252 дневных логарифмических доходностей, приведённое к году через √252, в процентах. Широкие индексные фонды - около 15%, крупные стабильные акции - 20-30%, кандидаты для свинга - от 45%. Чем выше волатильность, тем шире размах для торговли и тем больше потери, если тезис неверен. Дивиденды в закрытиях не учтены, поэтому день отсечки считается небольшим падением',
+    },
+  }),
+  swing({
+    id: 'sigmaFromMean60d', name: { en: 'Sigma from 60-day mean', ru: 'Отклонение от 60-дневной средней в σ' }, formula: '(price - mean of the last 60 closes) / sample stdev of those 60 closes',
+    unit: 'ratio', direction: 'neutral',
+    nullWhen: { en: 'fewer than 60 daily closes or 60 equal closes', ru: 'меньше 60 дневных закрытий или 60 одинаковых закрытий' },
+    short: { en: 'How stretched the price is versus its 60-day average', ru: 'Насколько цена отклонилась от средней за 60 дней' },
+    guide: {
+      en: 'The distance of the last price from the average of the last 60 daily closes, in sample standard deviations of those closes. Around -2 the price is stretched to the downside, a buy zone for swing trading; around +2 it is stretched up, a zone to take profits. The average lives only inside this metric, there is no separate moving-average column',
+      ru: 'Расстояние последней цены от средней последних 60 дневных закрытий в выборочных стандартных отклонениях этих закрытий. Около -2 цена растянута вниз, зона покупки для свинга; около +2 - растянута вверх, зона фиксации прибыли. Средняя живёт только внутри этой метрики, отдельной колонки скользящей средней нет',
+    },
+  }),
+  swing({
+    id: 'high60d', name: { en: '60-day high', ru: 'Максимум за 60 дней' }, formula: 'max of the last 60 daily closes',
+    unit: 'usd', direction: 'neutral',
+    nullWhen: { en: 'fewer than 60 daily closes', ru: 'меньше 60 дневных закрытий' },
+    short: { en: 'Top of the latest swing: highest of 60 closes', ru: 'Верх последнего свинга: максимум 60 закрытий' },
+    guide: {
+      en: 'The highest of the last 60 daily closes, about three months of trading: the upper edge of the latest swing. A swing trader who bought near low60d sets a first profit target near this level; a close above it is a breakout of the range',
+      ru: 'Самое высокое из последних 60 дневных закрытий, примерно три месяца торгов: верхняя граница последнего свинга. Свинг-трейдер, купивший у low60d, ставит первую цель фиксации прибыли около этого уровня; закрытие выше - выход из диапазона вверх',
+    },
+  }),
+  swing({
+    id: 'low60d', name: { en: '60-day low', ru: 'Минимум за 60 дней' }, formula: 'min of the last 60 daily closes',
+    unit: 'usd', direction: 'neutral',
+    nullWhen: { en: 'fewer than 60 daily closes', ru: 'меньше 60 дневных закрытий' },
+    short: { en: 'Bottom of the latest swing: lowest of 60 closes', ru: 'Низ последнего свинга: минимум 60 закрытий' },
+    guide: {
+      en: 'The lowest of the last 60 daily closes: the lower edge of the latest swing. Buying close to it keeps the distance to a stop just below it short; a close under it breaks the range down and usually ends the swing idea',
+      ru: 'Самое низкое из последних 60 дневных закрытий: нижняя граница последнего свинга. Покупка рядом с ним держит расстояние до стопа чуть ниже короткой; закрытие под ним ломает диапазон вниз и обычно отменяет идею свинга',
+    },
+  }),
+];
+
+// ---------------------------------------------------------------------------
 // planned metrics (plan stage 1.5): presets reference them already; the engine reports them as unavailable until published
 
 const PLANNED: MetricDef[] = [
@@ -682,33 +793,6 @@ const PLANNED: MetricDef[] = [
       ru: 'Доля капзатрат в выручке сейчас минус та же доля три финансовых года назад, в процентных пунктах. Ноль и ниже - росту не нужно всё больше вложений, именно этого ждёт пресет «Кэшфлоу-машины». Растущая доля может быть сознательной стройкой; её читают вместе с ростом выручки',
     },
   }),
-  def({
-    id: 'volatility1y', name: { en: 'Volatility 1Y', ru: 'Волатильность за год' }, formula: 'standard deviation of daily log returns over one year × √252 × 100', unit: 'percent', basis: 'price', source: 'planned', direction: 'neutral', appliesTo: BOTH, thresholds: { good: 45 },
-    nullWhen: { en: 'less than a year of daily closes', ru: 'меньше года дневных закрытий' },
-    short: { en: 'Annualized size of daily price swings', ru: 'Размер дневных колебаний цены в годовом выражении' },
-    guide: {
-      en: 'The standard deviation of daily log returns over the last year, annualized with √252, in percent. Broad index funds sit near 15%, large stable stocks at 20-30%, swing candidates at 45% and more. Higher volatility means wider swings to trade, and wider losses if the thesis is wrong',
-      ru: 'Стандартное отклонение дневных логарифмических доходностей за последний год, приведённое к году через √252, в процентах. Широкие индексные фонды - около 15%, крупные стабильные акции - 20-30%, кандидаты для свинга - от 45%. Чем выше волатильность, тем шире размах для торговли и тем больше потери, если тезис неверен',
-    },
-  }),
-  def({
-    id: 'pctFromAth', name: { en: 'Distance from all-time high', ru: 'Отклонение от исторического максимума' }, formula: '(last close / highest split-adjusted close ever - 1) × 100', unit: 'percent', basis: 'price', source: 'planned', direction: 'neutral', appliesTo: BOTH, thresholds: { good: -30 },
-    nullWhen: { en: 'no price history', ru: 'нет истории цен' },
-    short: { en: 'How far below its record close the price is', ru: 'Насколько цена ниже рекордного закрытия' },
-    guide: {
-      en: 'The last close relative to the highest close ever, split adjusted but not dividend adjusted, in percent: 0 at a record, -30 means 30% below it. Buy-low investors look for deep drawdowns in healthy businesses, and the all-time high is a natural exit target for the swing preset',
-      ru: 'Последнее закрытие относительно самого высокого закрытия за всю историю с поправкой на сплиты, но не на дивиденды, в процентах: 0 - на рекорде, -30 - на 30% ниже. Кто добирает ниже, ищет глубокие просадки у здоровых компаний, а исторический максимум - естественная цель продажи для пресета свингов',
-    },
-  }),
-  def({
-    id: 'sigmaFromMean60d', name: { en: 'Sigma from 60-day mean', ru: 'Отклонение от 60-дневной средней в σ' }, formula: '(last close - 60-day mean close) / 60-day standard deviation of closes', unit: 'ratio', basis: 'price', source: 'planned', direction: 'neutral', appliesTo: BOTH,
-    nullWhen: { en: 'fewer than 60 daily closes', ru: 'меньше 60 дневных закрытий' },
-    short: { en: 'How stretched the price is versus its 60-day average', ru: 'Насколько цена отклонилась от средней за 60 дней' },
-    guide: {
-      en: 'The distance of the last close from its 60-day average in standard deviations. Around -2 the price is stretched to the downside, a buy zone for swing trading; around +2 it is stretched up, a zone to take profits. The average lives only inside this metric, there is no separate moving-average column',
-      ru: 'Расстояние последнего закрытия от средней за 60 дней в стандартных отклонениях. Около -2 цена растянута вниз, зона покупки для свинга; около +2 - растянута вверх, зона фиксации прибыли. Средняя живёт только внутри этой метрики, отдельной колонки скользящей средней нет',
-    },
-  }),
 ];
 
 // ---------------------------------------------------------------------------
@@ -768,7 +852,7 @@ const FIELDS: MetricDef[] = [
   }),
 ];
 
-const BASE: MetricDef[] = [...MARKET, ...VALUATION, ...DIVIDENDS, ...BALANCE, ...GROWTH, ...MARGINS, ...PERFORMANCE, ...TOTAL_RETURN, ...META, ...PLANNED, ...FIELDS];
+const BASE: MetricDef[] = [...MARKET, ...VALUATION, ...DIVIDENDS, ...BALANCE, ...GROWTH, ...MARGINS, ...PERFORMANCE, ...TOTAL_RETURN, ...META, ...SWINGS, ...PLANNED, ...FIELDS];
 
 const textCompanion = (base: MetricDef): MetricDef => def({
   id: `${base.id}Text`, name: { en: `${base.name.en} (text)`, ru: `${base.name.ru} (текст)` }, formula: `issuer display text of ${base.id}`,
