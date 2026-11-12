@@ -3,7 +3,9 @@
 /// <reference types="bun" />
 import { appendFile, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { epsCagr3y, ESTIMATE_METRIC_KEYS, estimateMetrics, parseEstimates, type Estimates } from './metrics/estimates';
 import { FUNDAMENTAL_METRIC_KEYS, fundamentalMetrics, isFinancial, ownEbitdaMetrics, withSectorExceptions } from './metrics/fundamentals';
+import { HISTORY_METRIC_KEYS, historyMetrics } from './metrics/history';
 import { pctFrom52wHigh, swingMetrics } from './metrics/swing';
 import { parseCompanyFacts, type SecFundamentals, type Split } from './sec/companyfacts';
 import { TAGS } from './sec/tags';
@@ -665,6 +667,7 @@ export type Snapshot = {
   pe: number | null; forwardPe: number | null; ps: number | null; forwardRevenue: number | null; evEbitda: number | null; pb: number | null;
   freeCashflow: number | null; ebitda: number | null; week52High: number | null; week52Low: number | null;
   totalRevenue?: number | null; // TTM revenue (financialData.totalRevenue): the scale check of the SEC layer
+  estimates?: Estimates | null; // earningsTrend: EPS consensus, expected growth and revisions (plan 1.4)
 };
 
 export function parseSummary(payload: JsonRecord): Snapshot {
@@ -686,6 +689,7 @@ export function parseSummary(payload: JsonRecord): Snapshot {
     freeCashflow: numberOrNull(fd.freeCashflow), ebitda: numberOrNull(fd.ebitda),
     week52High: numberOrNull(sd.fiftyTwoWeekHigh), week52Low: numberOrNull(sd.fiftyTwoWeekLow),
     totalRevenue: numberOrNull(fd.totalRevenue),
+    estimates: parseEstimates(r),
   };
 }
 
@@ -807,6 +811,8 @@ const METRIC_KEYS = [
   'pctFrom52wHigh', 'athPrice', 'athDate', 'athBasis', 'pctFromAth', 'volatility1y', 'sigmaFromMean60d', 'high60d', 'low60d',
   // SEC quarters and TTM (scripts/metrics/fundamentals.ts, plan 1.5 and 1.7)
   ...FUNDAMENTAL_METRIC_KEYS,
+  // Yahoo earningsTrend and the two PEGs (scripts/metrics/estimates.ts), own 5-year history (scripts/metrics/history.ts)
+  ...ESTIMATE_METRIC_KEYS, ...HISTORY_METRIC_KEYS,
 ] as const;
 
 /** Every key of a published `metrics` object, in order: the screener registry must describe each one (src/core/metrics). */
@@ -1030,6 +1036,7 @@ export async function processCompany(listing: Listing, config: UpdaterConfig, pr
       price, asOfDate: last.date, valuation, returns: priceReturns(chart.days), dividends: div.metrics, annualDps: div.annual,
       recentDividends: chart.dividends.slice(-12).reverse(), week52High: range.high, week52Low: range.low,
       swing: swingMetrics(chart.days, price), // the full daily series: the published history keeps daily rows for 31 days only
+      estimates: snapshot ? snapshot.estimates ?? null : prevMarket?.estimates ?? null, // a failed snapshot keeps the published estimates
     };
     ({ files: historyFiles, history } = buildHistory(ticker, chart.days, config.historyPageSize));
   } else {
@@ -1042,7 +1049,12 @@ export async function processCompany(listing: Listing, config: UpdaterConfig, pr
   const secLayer = sec ? (secStored as SecFundamentals) : null;
   const marketCap = numberOrNull(market.valuation?.marketCap);
   const derived = fundamentalMetrics(secLayer, { marketCap, sector: snapshot?.sector ?? prevMeta?.sector ?? null, industry });
-  const parts: JsonRecord = { ...fundamentals, ...(market.valuation ?? {}), ...(market.returns ?? {}), ...(market.dividends ?? {}), ...(market.swing ?? {}), ...derived, ...ownEbitdaMetrics(secLayer, marketCap), price: market.price, week52High: market.week52High, week52Low: market.week52Low, range52w: range52wPosition(market.price, market.week52Low, market.week52High), pctFrom52wHigh: pctFrom52wHigh(market.price, market.week52High) };
+  const estimates = estimateMetrics(market.estimates ?? null, numberOrNull(market.valuation?.pe), numberOrNull(market.valuation?.forwardPe), epsCagr3y(secLayer?.fy) ?? numberOrNull(fundamentals.epsGrowth3y));
+  // own 5-year history needs the full daily chart: without a fresh one (SKIP_YAHOO) the published values stay
+  const history5y: JsonRecord = chart
+    ? historyMetrics(chart.days, numberOrNull(market.price), secLayer, chart.dividends, numberOrNull(market.dividends?.dividendYield))
+    : Object.fromEntries(HISTORY_METRIC_KEYS.map((k) => [k, prevMeta?.metrics?.[k] ?? null]));
+  const parts: JsonRecord = { ...fundamentals, ...(market.valuation ?? {}), ...(market.returns ?? {}), ...(market.dividends ?? {}), ...(market.swing ?? {}), ...derived, ...ownEbitdaMetrics(secLayer, marketCap), ...estimates, ...history5y, price: market.price, week52High: market.week52High, week52Low: market.week52Low, range52w: range52wPosition(market.price, market.week52Low, market.week52High), pctFrom52wHigh: pctFrom52wHigh(market.price, market.week52High) };
   if (parts.marketCap === undefined || parts.marketCap === null) parts.marketCap = null;
   const metrics = withSectorExceptions(completeMetrics(parts, market.asOfDate ?? null), industry) as JsonRecord;
   if (metrics.marketCap === null) return { skipped: 'no market cap (unit, warrant, preferred share or note)' };

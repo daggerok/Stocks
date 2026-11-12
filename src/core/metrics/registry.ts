@@ -1,7 +1,7 @@
 /// <reference lib="esnext" />
 /**
  * The metric registry: one entry for every key of `metrics` in the Stocks feed and the 29 ETF brand feeds, the screener's
- * row fields and the metrics presets already reference before the updater publishes them (`source: 'planned'`).
+ * row fields and, with `source: 'planned'`, any metric a preset references before the updater publishes it (none at the moment).
  * Formulas follow scripts/update-data.ts (Stocks) and the brand updaters (ETFs). Families (growth, margins, performance
  * windows, issuer text companions) are generated from small tables so every entry gets a full name, short text and guide
  */
@@ -906,52 +906,102 @@ const SEC_DERIVED: MetricDef[] = [
 ];
 
 // ---------------------------------------------------------------------------
-// planned metrics (plan stage 1.5): presets reference them already; the engine reports them as unavailable until published
+// estimates and own history (plan 1.4 and 1.5): Yahoo quoteSummary earningsTrend, the two PEGs (owner decision В7) and the
+// percentiles of the company's own 5-year monthly series, computed by the updater (scripts/metrics/estimates.ts, history.ts)
+
+const OWN_HISTORY: Text = {
+  en: 'The monthly series takes the month-end closes of the last 5 years (split adjusted), the diluted weighted shares and the TTM of 4 consecutive SEC quarters known at each month end (a quarter counts from 60 days after its end, so no value uses numbers that were not yet filed); a month with a loss or negative cash flow has no value, and at least 48 of the 60 months must have one',
+  ru: 'Месячный ряд берёт закрытия на конец месяца за последние 5 лет (с поправкой на сплиты), средневзвешенное разводнённое число акций и TTM из 4 подряд кварталов SEC, известных на конец каждого месяца (квартал учитывается через 60 дней после окончания, поэтому значения не используют ещё не поданную отчётность); месяц с убытком или отрицательным денежным потоком значения не имеет, и значение должно быть хотя бы у 48 из 60 месяцев',
+};
 
 const PLANNED: MetricDef[] = [
   def({
-    id: 'peg', name: { en: 'PEG ratio', ru: 'PEG' }, formula: 'forward P/E / consensus EPS growth for 5 years in % (fallback: next-year growth)', unit: 'ratio', basis: 'forward', source: 'planned', direction: 'lower-is-better', thresholds: { good: 1 },
-    nullWhen: { en: 'a loss or expected growth of zero or less', ru: 'убыток или ожидаемый рост не больше нуля' },
+    id: 'peg', name: { en: 'PEG ratio', ru: 'PEG' }, formula: 'forwardPe / expected yearly EPS growth in %: the 5-year consensus (earningsTrend +5y), else the next fiscal year growth (+1y); the source in pegGrowthSource', unit: 'ratio', basis: 'forward', source: 'computed', direction: 'lower-is-better', thresholds: { good: 1 },
+    nullWhen: { en: 'forward P/E is empty (a loss, ADR currency mismatch) or expected growth is zero or less in both sources', ru: 'форвардный P/E пуст (убыток, разные валюты ADR) или ожидаемый рост в обоих источниках не больше нуля' },
     short: { en: 'Forward P/E per point of expected growth', ru: 'Форвардный P/E на процент ожидаемого роста' },
     guide: {
-      en: 'PEG divides the forward P/E by the expected yearly EPS growth in percent: the analysts\' 5-year consensus, or the next-year growth when the 5-year figure is missing (the source will be shown in the tooltip). Around 1 or below means the growth is not overpriced, above 2 is expensive. Forecasts are optimistic on average, so pegHist on historical growth is the cross-check',
-      ru: 'PEG делит форвардный P/E на ожидаемый годовой рост EPS в процентах: консенсус аналитиков на 5 лет, а если его нет - рост следующего года (источник будет в подсказке). Около 1 и ниже - рост не переоценён, выше 2 - дорого. Прогнозы в среднем оптимистичны, поэтому для проверки служит pegHist на историческом росте',
+      en: 'PEG divides the forward P/E by the expected yearly EPS growth in percent: the analysts\' 5-year consensus from Yahoo earningsTrend, or the growth of the next fiscal year when the 5-year figure is missing, which is often the case; pegGrowthSource says which one was used and the tooltip shows it. Around 1 or below means the growth is not overpriced, above 2 is expensive. One year of growth is noisier than five, and forecasts are optimistic on average, so pegHist on historical growth is the cross-check',
+      ru: 'PEG делит форвардный P/E на ожидаемый годовой рост EPS в процентах: консенсус аналитиков на 5 лет из Yahoo earningsTrend, а если его нет (так бывает часто) - рост следующего финансового года; pegGrowthSource говорит, какой источник взят, подсказка его показывает. Около 1 и ниже - рост не переоценён, выше 2 - дорого. Рост одного года шумнее пятилетнего, а прогнозы в среднем оптимистичны, поэтому для проверки служит pegHist на историческом росте',
     },
   }),
   def({
-    id: 'forwardToTtmPe', name: { en: 'Forward to TTM P/E', ru: 'Форвардный P/E к P/E TTM' }, formula: 'forwardPe / pe', unit: 'ratio', basis: 'forward', source: 'planned', direction: 'lower-is-better', thresholds: { good: 1 },
+    id: 'pegGrowthSource', name: { en: 'PEG growth source', ru: 'Источник роста для PEG' }, formula: '"5y" (earningsTrend +5y consensus) or "next-year" (growth of the next fiscal year, +1y); empty without a growth estimate or forward P/E', unit: 'category', basis: 'meta', source: 'computed', direction: 'neutral',
+    short: { en: 'Which growth estimate the PEG divides by', ru: 'На какой прогноз роста делится PEG' },
+    guide: {
+      en: 'Names the growth behind peg: "5y" is the analysts\' consensus for yearly EPS growth over five years, "next-year" the expected EPS growth of the next fiscal year, used when Yahoo has no 5-year figure. A next-year PEG swings with one year of recovery or decline, so compare PEGs of the same source',
+      ru: 'Называет рост, на который делится peg: «5y» - консенсус аналитиков по годовому росту EPS на пять лет, «next-year» - ожидаемый рост EPS следующего финансового года, он берётся, когда у Yahoo нет пятилетней цифры. PEG на росте одного года скачет вместе с восстановлением или спадом этого года, поэтому сравнивают PEG одного источника',
+    },
+  }),
+  def({
+    id: 'pegHist', name: { en: 'Historical PEG', ru: 'Исторический PEG' }, formula: 'pe / CAGR of diluted EPS over the latest 3 fiscal years in % (SEC 10-K, split restated; else epsGrowth3y)', unit: 'ratio', basis: 'fy', source: 'computed', direction: 'lower-is-better', thresholds: { good: 1 },
+    nullWhen: { en: 'P/E is empty (a loss) or the 3-year EPS CAGR is not positive or cannot be computed', ru: 'P/E пуст (убыток) или CAGR EPS за 3 года не положителен либо не считается' },
+    short: { en: 'TTM P/E per point of past EPS growth', ru: 'P/E TTM на процент прошлого роста EPS' },
+    guide: {
+      en: 'The trailing P/E divided by the compound yearly growth of diluted EPS over the latest three fiscal years from the 10-K (share counts restated for splits). It needs no forecast, so it checks the forward PEG: a low forward PEG with a high historical one means the market expects growth the company has not shown yet',
+      ru: 'P/E TTM, делённый на среднегодовой рост разводнённой EPS за три последних финансовых года по 10-K (с поправкой на сплиты). Он не зависит от прогнозов и поэтому проверяет форвардный PEG: низкий форвардный PEG при высоком историческом значит, что рынок ждёт роста, которого компания ещё не показывала',
+    },
+  }),
+  def({
+    id: 'forwardToTtmPe', name: { en: 'Forward to TTM P/E', ru: 'Форвардный P/E к P/E TTM' }, formula: 'forwardPe / pe', unit: 'ratio', basis: 'forward', source: 'computed', direction: 'lower-is-better', thresholds: { good: 1 },
     nullWhen: { en: 'either P/E is empty', ru: 'один из P/E пуст' },
     short: { en: 'Below 1 when earnings are expected to grow', ru: 'Ниже 1, когда ждут роста прибыли' },
     guide: {
-      en: 'The forward P/E divided by the trailing P/E. Below 1 the market expects higher earnings next year, above 1 lower ones. It turns the comparison of two metrics into one metric, which is how the screener expresses "forward P/E below TTM P/E"',
-      ru: 'Форвардный P/E, делённый на P/E TTM. Ниже 1 - рынок ждёт роста прибыли в следующем году, выше 1 - снижения. Метрика превращает сравнение двух метрик в одну, так скринер выражает условие «форвардный P/E ниже P/E TTM»',
+      en: 'The forward P/E divided by the trailing P/E, both from the Yahoo snapshot. Below 1 the market expects higher earnings next year, above 1 lower ones. It turns the comparison of two metrics into one metric, which is how the screener expresses "forward P/E below TTM P/E"',
+      ru: 'Форвардный P/E, делённый на P/E TTM, оба из снимка Yahoo. Ниже 1 - рынок ждёт роста прибыли в следующем году, выше 1 - снижения. Метрика превращает сравнение двух метрик в одну, так скринер выражает условие «форвардный P/E ниже P/E TTM»',
     },
   }),
   def({
-    id: 'pePct5y', name: { en: 'P/E percentile in 5 years', ru: 'Перцентиль P/E за 5 лет' }, formula: 'share of monthly P/E values of the last 5 years below the current one × 100', unit: 'percent', basis: 'history', source: 'planned', direction: 'lower-is-better', thresholds: { good: 50 },
-    nullWhen: { en: 'less than 5 years of history or a loss', ru: 'меньше 5 лет истории или убыток' },
+    id: 'epsGrowthNextYearEst', name: { en: 'Expected EPS growth next year', ru: 'Ожидаемый рост EPS в следующем году' }, formula: 'Yahoo earningsTrend +1y growth × 100: consensus EPS of the next fiscal year over the current one', unit: 'percent', basis: 'forward', source: 'yahoo-summary', direction: 'higher-is-better',
+    nullWhen: { en: 'no analyst estimates', ru: 'нет прогнозов аналитиков' },
+    short: { en: 'Consensus EPS growth of the next fiscal year', ru: 'Консенсус роста EPS следующего финансового года' },
+    guide: {
+      en: 'How much analysts expect EPS to grow in the next fiscal year compared with the current one, from Yahoo earningsTrend. It is the fallback growth of peg. After a bad year it can be very high (recovery), so read it next to the 3 and 5-year history of EPS growth',
+      ru: 'На сколько аналитики ждут роста EPS в следующем финансовом году по сравнению с текущим, из Yahoo earningsTrend. Это запасной рост для peg. После плохого года он бывает очень высоким (восстановление), поэтому его читают рядом с историей роста EPS за 3 и 5 лет',
+    },
+  }),
+  def({
+    id: 'epsGrowth5yEst', name: { en: 'Expected EPS growth 5Y', ru: 'Ожидаемый рост EPS за 5 лет' }, formula: 'Yahoo earningsTrend +5y growth × 100: consensus yearly EPS growth over five years', unit: 'percent', basis: 'forward', source: 'yahoo-summary', direction: 'higher-is-better',
+    nullWhen: { en: 'Yahoo has no 5-year estimate (frequent)', ru: 'у Yahoo нет пятилетнего прогноза (бывает часто)' },
+    short: { en: 'Consensus yearly EPS growth over five years', ru: 'Консенсус годового роста EPS на пять лет' },
+    guide: {
+      en: 'The analysts\' consensus for the yearly EPS growth over the next five years, from Yahoo earningsTrend. It is the preferred growth of peg, but Yahoo often leaves it empty; then peg uses the next-year growth and pegGrowthSource says so. Long-term forecasts are optimistic on average',
+      ru: 'Консенсус аналитиков по годовому росту EPS на пять лет вперёд, из Yahoo earningsTrend. Это основной рост для peg, но Yahoo часто его не даёт; тогда peg берёт рост следующего года и pegGrowthSource это показывает. Долгосрочные прогнозы в среднем оптимистичны',
+    },
+  }),
+  def({
+    id: 'epsRevision30d', name: { en: 'EPS estimate revision 30D', ru: 'Пересмотр прогноза EPS за 30 дней' }, formula: '(current-year consensus EPS now / the same 30 days ago - 1) × 100 (Yahoo earningsTrend 0y epsTrend)', unit: 'percent', basis: 'forward', source: 'yahoo-summary', direction: 'higher-is-better',
+    nullWhen: { en: 'no estimate, or the estimate now or 30 days ago is zero or negative', ru: 'нет прогноза или прогноз сейчас или 30 дней назад не положителен' },
+    short: { en: 'How analysts moved this year\'s EPS estimate in a month', ru: 'Как аналитики сдвинули прогноз EPS этого года за месяц' },
+    guide: {
+      en: 'The change of the consensus EPS estimate for the current fiscal year against its value 30 days ago, in percent. Rising estimates tend to lift the price, falling ones lower the entry score (plan stage 5). The 7, 60 and 90-day values are kept in meta.json market.estimates',
+      ru: 'Изменение консенсус-прогноза EPS на текущий финансовый год относительно значения 30 дней назад, в процентах. Растущие прогнозы обычно тянут цену вверх, падающие снижают оценку «Точка входа» (этап 5 плана). Значения 7, 60 и 90 дней назад хранятся в meta.json market.estimates',
+    },
+  }),
+  def({
+    id: 'pePct5y', name: { en: 'P/E percentile in 5 years', ru: 'Перцентиль P/E за 5 лет' }, formula: 'share of the monthly P/E values of the last 5 years below today\'s × 100; P/E = close × diluted weighted shares / TTM net income', unit: 'percent', basis: 'history', source: 'computed', direction: 'lower-is-better', thresholds: { good: 50 },
+    nullWhen: { en: 'less than 5 years of prices, fewer than 48 monthly values, or a loss today', ru: 'меньше 5 лет цен, меньше 48 месячных значений или убыток сейчас' },
     short: { en: 'Where today\'s P/E sits in its own 5-year history', ru: 'Где текущий P/E в собственной истории за 5 лет' },
     guide: {
-      en: 'The percentile of the current P/E within the company\'s own monthly P/E series of the last five years (monthly prices over the TTM earnings of each date), computed by the updater. 0 is the cheapest in five years, 100 the most expensive. Below 50 means cheaper than usual for this company, whatever its sector. Presets read it with scope history',
-      ru: 'Перцентиль текущего P/E в собственном месячном ряду P/E компании за пять лет (месячные цены к TTM-прибыли на каждую дату), считается апдейтером. 0 - дешевле всего за пять лет, 100 - дороже всего. Ниже 50 - дешевле обычного для этой компании, независимо от сектора. Пресеты читают его со scope history',
+      en: `The percentile of the current P/E within the company's own monthly P/E series of the last five years, computed by the updater: 0 is the cheapest in five years, 100 the most expensive. Below 50 means cheaper than usual for this company, whatever its sector. Presets read it with scope history. ${OWN_HISTORY.en}`,
+      ru: `Перцентиль текущего P/E в собственном месячном ряду P/E компании за пять лет, считается апдейтером: 0 - дешевле всего за пять лет, 100 - дороже всего. Ниже 50 - дешевле обычного для этой компании, независимо от сектора. Пресеты читают его со scope history. ${OWN_HISTORY.ru}`,
     },
   }),
   def({
-    id: 'pFcfPct5y', name: { en: 'P/FCF percentile in 5 years', ru: 'Перцентиль P/FCF за 5 лет' }, formula: 'share of monthly P/FCF values of the last 5 years below the current one × 100', unit: 'percent', basis: 'history', source: 'planned', direction: 'lower-is-better', thresholds: { good: 50 },
-    nullWhen: { en: 'less than 5 years of history or FCF not positive', ru: 'меньше 5 лет истории или FCF не положителен' },
+    id: 'pFcfPct5y', name: { en: 'P/FCF percentile in 5 years', ru: 'Перцентиль P/FCF за 5 лет' }, formula: 'share of the monthly P/FCF values of the last 5 years below today\'s × 100; P/FCF = close × diluted weighted shares / TTM (CFO - capex)', unit: 'percent', basis: 'history', source: 'computed', direction: 'lower-is-better', thresholds: { good: 50 },
+    nullWhen: { en: 'less than 5 years of prices, fewer than 48 monthly values, FCF not positive today; banks and insurers', ru: 'меньше 5 лет цен, меньше 48 месячных значений, FCF сейчас не положителен; банки и страховые' },
     short: { en: 'Where today\'s P/FCF sits in its own 5-year history', ru: 'Где текущий P/FCF в собственной истории за 5 лет' },
     guide: {
-      en: 'Like pePct5y, but for price to free cash flow: the percentile of today\'s P/FCF within the company\'s own monthly series of five years. It helps with companies whose earnings are distorted by non-cash charges. Low values mean the cash flow is cheap by the company\'s own standards',
-      ru: 'Как pePct5y, но для цены к свободному денежному потоку: перцентиль текущего P/FCF в собственном месячном ряду компании за пять лет. Помогает там, где прибыль искажена неденежными списаниями. Низкие значения - денежный поток дёшев по меркам самой компании',
+      en: `Like pePct5y, but for price to free cash flow: the percentile of today's P/FCF within the company's own monthly series of five years. It helps with companies whose earnings are distorted by non-cash charges. Low values mean the cash flow is cheap by the company's own standards. ${OWN_HISTORY.en}`,
+      ru: `Как pePct5y, но для цены к свободному денежному потоку: перцентиль текущего P/FCF в собственном месячном ряду компании за пять лет. Помогает там, где прибыль искажена неденежными списаниями. Низкие значения - денежный поток дёшев по меркам самой компании. ${OWN_HISTORY.ru}`,
     },
   }),
   def({
-    id: 'yieldVsAvg5y', name: { en: 'Yield vs 5-year average', ru: 'Доходность к средней за 5 лет' }, formula: 'dividend yield / its 5-year average yield', unit: 'ratio', basis: 'history', source: 'planned', direction: 'higher-is-better',
-    nullWhen: { en: 'no dividend or less than 5 years of history', ru: 'нет дивиденда или меньше 5 лет истории' },
+    id: 'yieldVsAvg5y', name: { en: 'Yield vs 5-year average', ru: 'Доходность к средней за 5 лет' }, formula: 'dividendYield / mean of the month-end trailing-12-month dividend yields of the last 5 years', unit: 'ratio', basis: 'history', source: 'computed', direction: 'higher-is-better',
+    nullWhen: { en: 'no dividend now, less than 5 years of prices or fewer than 48 monthly values', ru: 'нет дивиденда сейчас, меньше 5 лет цен или меньше 48 месячных значений' },
     short: { en: 'Above 1 when the yield is higher than usual', ru: 'Выше 1, когда доходность выше обычной' },
     guide: {
-      en: 'The current dividend yield divided by the average yield of the last five years, computed by the updater. Above 1 the stock pays more than usual for its price, a classic buy signal for stable dividend payers; check that the dividend itself is safe, since a yield spike can precede a cut',
-      ru: 'Текущая дивидендная доходность, делённая на среднюю доходность за пять лет, считается апдейтером. Выше 1 - бумага платит больше обычного относительно цены, классический сигнал покупки для стабильных плательщиков; при этом проверяют надёжность дивиденда, потому что всплеск доходности может предшествовать сокращению',
+      en: 'The current dividend yield divided by the average of the month-end yields of the last five years (dividends of the 12 months before each month end over that month-end close, Yahoo chart), computed by the updater. Above 1 the stock pays more than usual for its price, a classic buy signal for stable dividend payers; check that the dividend itself is safe, since a yield spike can precede a cut',
+      ru: 'Текущая дивидендная доходность, делённая на среднюю месячную доходность за пять лет (дивиденды за 12 месяцев до конца каждого месяца к закрытию на конец этого месяца, график Yahoo), считается апдейтером. Выше 1 - бумага платит больше обычного относительно цены, классический сигнал покупки для стабильных плательщиков; при этом проверяют надёжность дивиденда, потому что всплеск доходности может предшествовать сокращению',
     },
   }),
 ];
