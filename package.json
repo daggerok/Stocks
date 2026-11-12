@@ -5,7 +5,7 @@
   "source": "src/index.html",
   "scripts": {
     "clean": "rimraf -rf dist",
-    "ncp": "ncp api dist/api",
+    "ncp": "ncp api dist/api && ncp src/core/screener/presets dist/presets && ncp user-data dist/user-data",
     "build-github-pages": "npm run build -- --public-url=/Stocks/",
     "preserve": "npm run ncp",
     "serve": "parcel --no-cache --no-source-maps --dist-dir ./dist",

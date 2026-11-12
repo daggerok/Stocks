@@ -59,10 +59,15 @@ describe('scopes', () => {
     expect(pick(SECTOR_ROWS, { metric: 'forwardPe', op: '<', value: 50, scope: 'sector', missing: 'skip' })).toEqual(['T0', 'T1', 'T2', 'U0', 'U1', 'U2', 'N']);
   });
 
-  test('peers use the passed groups; a ticker without a group is missing', () => {
+  test('peers use the passed groups; a ticker without a group falls back to its industry', () => {
     const peers = { cards: ['T0', 'T1', 'T2', 'T3', 'T4'], other: ['U0'] };
+    // T5 has no group: its industry Software (6 values) puts it at P83, so it fails <= 25 even with skip; U1 and U2 fall back to
+    // Utilities, a group of 3, and behave as missing like U0 in its group of 1
     expect(pick(SECTOR_ROWS, { metric: 'forwardPe', op: '<=', value: 25, scope: 'peers' }, peers)).toEqual(['T0', 'T1', 'T2']);
-    expect(pick(SECTOR_ROWS, { metric: 'forwardPe', op: '<=', value: 25, scope: 'peers', missing: 'skip' }, peers)).toEqual(['T0', 'T1', 'T2', 'T5', 'U0', 'U1', 'U2', 'N']);
+    expect(pick(SECTOR_ROWS, { metric: 'forwardPe', op: '<=', value: 25, scope: 'peers', missing: 'skip' }, peers)).toEqual(['T0', 'T1', 'T2', 'U0', 'U1', 'U2', 'N']);
+    expect(pick(SECTOR_ROWS, { metric: 'forwardPe', op: '<=', value: 90, scope: 'peers' }, peers)).toEqual(['T0', 'T1', 'T2', 'T3', 'T4', 'T5']);
+    // without any peer groups every ticker is compared with its industry
+    expect(pick(SECTOR_ROWS, { metric: 'forwardPe', op: '>=', value: 80, scope: 'peers' })).toEqual(['T5']);
   });
 
   test('history reads only the own-history metrics; another metric is invalid, an absent one unavailable', () => {
@@ -116,8 +121,10 @@ const BY_ID: Record<string, Preset> = {};
 PRESETS.forEach((p) => { BY_ID[p.id] = p; });
 
 describe('presets', () => {
-  test('the 11 base presets validate against the registry; a broken preset does not', () => {
-    expect(PRESETS.map((p) => p.id)).toEqual(['cashflow-machines', 'cheap-earnings', 'dividend-growth', 'gold', 'growth-no-profit', 'high-debt', 'mine', 'quality-growth', 'stable-dividend', 'undervalued', 'volatile-swings']);
+  test('the 13 base presets (two of them refinements) validate against the registry; a broken preset does not', () => {
+    expect(PRESETS.map((p) => p.id)).toEqual(['cashflow-machines', 'cheap-earnings', 'dividend-growth', 'gold', 'growth-no-profit', 'high-debt', 'mine', 'pays-dividend', 'positive-1y', 'quality-growth', 'stable-dividend', 'undervalued', 'volatile-swings']);
+    expect(PRESETS.filter((p) => p.refine).map((p) => p.id)).toEqual(['pays-dividend', 'positive-1y']);
+    expect(validatePreset({ ...BY_ID['pays-dividend'], refine: 'yes' } as unknown as Preset)).toEqual(['pays-dividend: refine must be true or false']);
     expect(PRESETS.flatMap((p) => validatePreset(p))).toEqual([]);
     const broken = preset([
       { metric: 'nope', op: '>', value: 1 }, { metric: 'pe', op: 'range', value: [10, 5] }, { metric: 'pe', op: '<', value: 120, scope: 'market' },
@@ -175,7 +182,11 @@ describe('expressions and intersections', () => {
 describe('rows', () => {
   test('stock and ETF rows: size from marketCap or aumValue, isMine from the row flag or the owner list, no metrics -> empty', () => {
     expect(stockRow({ ticker: 'brk.b', sector: 'Financial Services', industry: '', metrics: { marketCap: 1e12, pe: 20 } }, ['BRK-B'])).toEqual({ ticker: 'BRK-B', type: 'stock', sector: 'Financial Services', industry: null, isMine: true, size: 1e12, metrics: { marketCap: 1e12, pe: 20 } });
-    expect(etfRow({ ticker: 'GLD', aumValue: 9e10, metrics: { tr1y: 30 } })).toEqual({ ticker: 'GLD', type: 'etf', sector: null, industry: null, isMine: false, size: 9e10, metrics: { tr1y: 30 } });
+    // an ETF reads tr1y as perf1y until the brand feeds publish a price perf1y (plan N2); its own perf1y wins
+    expect(etfRow({ ticker: 'GLD', aumValue: 9e10, metrics: { tr1y: 30 } })).toEqual({ ticker: 'GLD', type: 'etf', sector: null, industry: null, isMine: false, size: 9e10, metrics: { tr1y: 30, perf1y: 30 } });
+    expect(etfRow({ ticker: 'IAU', metrics: { tr1y: 30, perf1y: 28 } }).metrics.perf1y).toBe(28);
+    expect(etfRow({ ticker: 'IAU', metrics: { tr1y: null } }).metrics).toEqual({ tr1y: null });
+    expect(etfRow({ ticker: 'brk.b' }, new Set(['BRK-B'])).isMine).toBe(true);
     expect(etfRow({ ticker: 'X', isMine: true, aumValue: null })).toEqual({ ticker: 'X', type: 'etf', sector: null, industry: null, isMine: true, size: null, metrics: {} });
     const all = universeRows({ companies: [{ ticker: 'AAPL', metrics: {} }] }, [{ funds: [{ ticker: 'SPY' }] }, { funds: [{ ticker: 'SPY' }, { ticker: 'GLD' }] }], ['gld']);
     expect(all.map((r) => `${r.type}:${r.ticker}:${r.isMine}`)).toEqual(['stock:AAPL:false', 'etf:SPY:false', 'etf:GLD:true']);

@@ -51,6 +51,8 @@
             <span id="app-summary" role="region" aria-label="Stock catalog information" hidden>
               Search every stock, select stocks via the “Use” checkbox, then open the Watchlist tab.
             </span>
+            <div id="lang-switch" class="lang-switch" role="group" aria-label="Language"><button type="button" data-lang="en" aria-pressed="true">EN</button><button type="button" data-lang="ru" aria-pressed="false">RU</button></div>
+            <button type="button" id="guide-btn" class="guide-btn" aria-expanded="false" aria-controls="guide-panel">Guide</button>
             <button id="theme-toggle" class="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700 transition text-base leading-none" title="Toggle Theme">🌙</button>
           </div>
         </nav>
@@ -114,6 +116,9 @@
         </div>
       </div>
 
+      <!-- Screener: presets as chips, Stocks / ETFs, the condition editor with the funnel (rendered by main.tsx) -->
+      <section id="screener-panel" class="scr-panel bg-white dark:bg-slate-800/80 px-3 py-3 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xs backdrop-blur-sm" aria-label="Screener"></section>
+
       <div id="blacklist-panel" class="bg-white dark:bg-slate-800/80 px-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xs backdrop-blur-sm">
         <div class="flex flex-col sm:flex-row sm:items-center gap-2.5">
           <input type="text" id="blacklist-input" placeholder="Add tickers to blacklist (e.g. BRK-B, GOOG)" class="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 w-full sm:w-80 focus:outline-hidden focus:border-blue-500 text-sm placeholder-slate-400 dark:placeholder-slate-500 transition" />
@@ -152,6 +157,17 @@
     <footer class="px-4 sm:px-8 h-4 sm:h-8 flex items-center justify-center text-center text-xs leading-none text-slate-500 dark:text-slate-400">
       <a href="https://github.com/daggerok/Stocks" target="_blank" rel="noopener noreferrer" class="transition-colors hover:text-slate-800 dark:hover:text-slate-100">daggerok &copy; <span id="footer-year">2026</span></a>
     </footer>
+    <!-- Guide and metric reference (rendered by main.tsx in the chosen language) -->
+    <div id="guide-panel" class="guide-overlay" hidden>
+      <div class="guide-card" role="dialog" aria-modal="true" aria-labelledby="guide-title">
+        <div class="guide-head">
+          <h2 id="guide-title">Guide</h2>
+          <input type="search" id="guide-search" class="guide-search" placeholder="Search metrics and sections…" autocomplete="off" />
+          <button type="button" id="guide-close" class="guide-close" title="Close" aria-label="Close">✕</button>
+        </div>
+        <div id="guide-body" class="guide-body themed-scroll"></div>
+      </div>
+    </div>
     <script>document.getElementById('footer-year').textContent = String(new Date().getFullYear());</script>
   </div>
 

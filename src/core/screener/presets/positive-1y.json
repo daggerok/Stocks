@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "id": "positive-1y",
+  "title": {
+    "en": "Up over 1 year",
+    "ru": "Рост за год"
+  },
+  "description": {
+    "en": "A refinement: 1-year return (perf1y) above 0, combined with AND on top of the chosen presets. ETFs publish only the total return tr1y for now, so an ETF reads tr1y here",
+    "ru": "Уточнение: доходность за год (perf1y) выше 0, добавляется через И поверх выбранных пресетов. ETF пока публикуют только полную доходность tr1y, поэтому у ETF здесь читается tr1y"
+  },
+  "appliesTo": [
+    "stock",
+    "etf"
+  ],
+  "match": "all",
+  "refine": true,
+  "conditions": [
+    {
+      "metric": "perf1y",
+      "op": ">",
+      "value": 0,
+      "scope": "absolute",
+      "missing": "fail"
+    }
+  ]
+}

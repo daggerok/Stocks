@@ -1,7 +1,7 @@
 /// <reference types="bun" />
 import { describe, expect, test } from 'bun:test';
 import { STOCK_METRIC_KEYS } from '../../../scripts/update-data';
-import { METRICS, MetricDef, REGISTRY, unregisteredKeys, validateRegistry } from '.';
+import { groupMetrics, METRIC_GROUPS, metricGroup, METRICS, MetricDef, REGISTRY, unregisteredKeys, validateRegistry } from '.';
 
 /** Every key of `metrics` in the 29 ETF brand feeds (2552 funds, 2026-11-11); `bun src/core/metrics/check-feeds.ts` checks the live feeds */
 const ETF_METRIC_KEYS = [
@@ -44,5 +44,16 @@ describe('metrics registry', () => {
     expect(REGISTRY.byId.range52w.appliesTo).toEqual(['stock', 'etf']);
     expect(ETF_METRIC_KEYS.filter((k) => REGISTRY.byId[k].appliesTo.indexOf('etf') < 0)).toEqual([]);
     expect(STOCK_METRIC_KEYS.filter((k) => REGISTRY.byId[k].appliesTo.indexOf('stock') < 0)).toEqual([]);
+    expect(REGISTRY.byId.perf1y.appliesTo).toEqual(['stock', 'etf']); // ETFs read tr1y as perf1y (plan N2)
+  });
+
+  test('every entry sits in exactly one guide group, in registry order', () => {
+    const groups = groupMetrics(METRICS);
+    expect(groups.map((g) => g.id)).toEqual(METRIC_GROUPS.map((g) => g.id));
+    expect(groups.reduce((n, g) => n + g.metrics.length, 0)).toBe(METRICS.length);
+    expect(groups.every((g) => g.metrics.length > 0)).toBe(true);
+    const of = (id: string) => metricGroup(REGISTRY.byId[id]);
+    expect(['pe', 'roic', 'grossMarginDelta3y', 'quickRatio', 'dividendGrowth5y', 'epsGrowth3y', 'perf1y', 'secYieldText', 'isMine'].map(of))
+      .toEqual(['valuation', 'quality', 'quality', 'safety', 'dividends', 'growth', 'price', 'etf', 'fields']);
   });
 });

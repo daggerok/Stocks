@@ -48,6 +48,7 @@ export function validatePreset(preset: Preset, registry: Registry = REGISTRY): s
   if (!hasText(preset.title)) errors.push(`${id}: title needs en and ru`);
   if (preset.description !== undefined && !hasText(preset.description)) errors.push(`${id}: description needs en and ru`);
   if (!Array.isArray(preset.appliesTo) || !preset.appliesTo.length || preset.appliesTo.some((t) => t !== 'stock' && t !== 'etf')) errors.push(`${id}: appliesTo must list stock and/or etf`);
+  if (preset.refine !== undefined && typeof preset.refine !== 'boolean') errors.push(`${id}: refine must be true or false`);
   const conditions = Array.isArray(preset.conditions) ? preset.conditions : [];
   if (!conditions.length) errors.push(`${id}: no conditions`);
   if (preset.match !== 'all' && !(typeof preset.match === 'number' && Math.floor(preset.match) === preset.match && preset.match >= 1 && preset.match <= conditions.length)) errors.push(`${id}: match must be "all" or a whole number from 1 to the number of conditions`);

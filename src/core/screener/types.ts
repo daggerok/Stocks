@@ -51,6 +51,8 @@ export type Preset = {
   appliesTo: AssetType[];
   /** all, or N for the soft mode "N of M conditions" */
   match: 'all' | number;
+  /** true: a refinement (pays a dividend, up over a year) the screener always combines with AND on top of the chosen presets */
+  refine?: boolean;
   conditions: Condition[];
 };
 

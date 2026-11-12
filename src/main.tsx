@@ -1,4 +1,12 @@
 /// <reference types="bun" />
+import { getLocale, pick, setLocale, t } from './core/i18n';
+import { groupMetrics, isNumericMetric, MetricDef, REGISTRY } from './core/metrics';
+import {
+  canonicalPreset, changedConditions, Condition as ScreenerCondition, createUniverse, decodePresetHash, encodePresetHash, ETF_BRANDS, EtfBrand, etfFeedUrl, etfMetrics, etfRow,
+  evaluateExpression, evaluatePreset, evaluatePresets, Expression, FunnelStep, HISTORY_METRICS, mergeOwnPresets, Missing, normalizeTicker, Op, ownCopy,
+  OwnEntry, parsePresetText, PeerGroups, Preset, PRESET_SCHEMA_VERSION, presetFileName, presetFileText, presetKey, PresetResult, RELATIVE_SCOPES,
+  samePreset, Scope, SCOPES, stockRow, uniqueId, Universe, validatePreset,
+} from './core/screener';
 
 /**
  * @file Stocks Application
@@ -39,6 +47,8 @@ const COLUMN_FILTERS_KEY = 'stocks-column-filters';
 const COLUMN_TYPES_KEY = 'stocks-column-types';
 const SHOW_FILTERS_KEY = 'stocks-show-filters';
 const STICKY_RANK_KEY = 'stocks-sticky-rank';
+const SCREENER_KEY = 'stocks-screener'; // chosen preset chips, edits, Stocks / ETFs (a setting: Clear resets it)
+const OWN_PRESETS_KEY = 'stocks-own-presets'; // own presets of this browser (data: Clear keeps them)
 const FILTER_DEBOUNCE_MS = 250;
 const SEARCH_DEBOUNCE_MS = 200;
 const FONT_WAIT_MS = 2500; // longest the first render waits for the web font
@@ -154,7 +164,7 @@ function buildColumns(): Col[] {
 
 const COLS: Col[] = buildColumns();
 const NUMERIC_KEYS = COLS.map(col => col.key).filter(key => key !== 'basisCls' && key !== 'fyTs' && key !== 'perfTs');
-const STRING_SORT_KEYS = ['ticker', 'name', 'exchange', 'sector', 'industry'];
+const STRING_SORT_KEYS = ['ticker', 'name', 'type', 'exchange', 'sector', 'industry'];
 const ASC_FIRST_KEYS = ['ticker', 'name', 'exchange', 'sector', 'industry', 'section', 'metric', 'kind'];
 
 // Hover explanations for table headers (custom tooltips, see initTooltips).
@@ -255,6 +265,14 @@ const el = {
   busyLabel: byId('busy-label'),
   staticLoadSentinel: byId('static-load-sentinel'),
   staticLoadStatus: byId('static-load-status'),
+  screenerPanel: byId('screener-panel'),
+  langSwitch: byId('lang-switch'),
+  guideBtn: byId('guide-btn'),
+  guidePanel: byId('guide-panel'),
+  guideTitle: byId('guide-title'),
+  guideSearch: byId('guide-search'),
+  guideClose: byId('guide-close'),
+  guideBody: byId('guide-body'),
 };
 
 type AppState = {
@@ -314,6 +332,8 @@ type Store = {
   exchanges: string[];
   sectorId: Uint16Array;
   sectors: string[];
+  assetType: Uint8Array; // 0 stock, 1 ETF (from the brand feeds)
+  typeText: string[];
   num: Record<string, Float64Array>;
   ticker: string[];
   name: string[];
@@ -1078,6 +1098,8 @@ function buildStore(rows: any[]): Store {
     exchanges: [],
     sectorId: new Uint16Array(n),
     sectors: [],
+    assetType: new Uint8Array(n),
+    typeText: new Array(n),
     num,
     ticker: new Array(n),
     name: new Array(n),
@@ -1106,6 +1128,8 @@ function buildStore(rows: any[]): Store {
     result.exchangeText[i] = exchange;
     result.sectorText[i] = sector;
     result.industryText[i] = String(row.industry || '');
+    result.assetType[i] = row.assetType === 'etf' ? 1 : 0;
+    result.typeText[i] = row.assetType === 'etf' ? 'ETF' : 'Stock';
     NUMERIC_KEYS.concat(['marketCap', 'price']).forEach(key => {
       const value = numberOrNull(metrics[key]);
       if (value !== null) num[key][i] = value;
@@ -1121,7 +1145,7 @@ function buildStore(rows: any[]): Store {
     result.fields.sector[i] = sector.toLowerCase();
     result.fields.industry[i] = result.industryText[i].toLowerCase();
     result.fields.basis[i] = `${BASIS_BADGES[Number.isFinite(num.basisCls[i]) ? String(num.basisCls[i]) : 'none'].label} ${basisWords}`.toLowerCase();
-    result.search[i] = [row.ticker, row.name, exchange, sector, row.industry, basisWords, row.cik].map(value => String(value ?? '').toLowerCase()).join(' ');
+    result.search[i] = [row.ticker, row.name, exchange, sector, row.industry, basisWords, row.cik, result.typeText[i], row.brand].map(value => String(value ?? '').toLowerCase()).join(' ');
     result.keyIndex.set(row.ticker, i);
   }
   return result;
@@ -1129,10 +1153,9 @@ function buildStore(rows: any[]): Store {
 
 function applyIndex(data: any): void {
   generatedAt = data.generatedAt || '';
-  store = buildStore(Array.isArray(data.companies) ? data.companies : []);
-  viewCache = null;
-  baselineCache = null;
-  onStoreChanged();
+  stockCompanies = Array.isArray(data.companies) ? data.companies : [];
+  mineTickers = Array.isArray(data.mineTickers) ? data.mineTickers.map(String) : null;
+  rebuildStore(); // with the ETF rows when they are loaded
 }
 
 function onStoreChanged(): void {
@@ -1294,6 +1317,7 @@ async function loadCatalog(): Promise<void> {
 
 function renderLoadProgress(): void {
   if (state.loading) el.loadProgress.textContent = `Loading the stock feed…${store ? ` ${store.n.toLocaleString('en-US')} stocks from cache` : ''}`;
+  else if (etfState === 'loading') el.loadProgress.textContent = t('screener.loadingEtfs', { done: etfDone, total: ETF_BRANDS.length });
   else el.loadProgress.textContent = usingRemote ? 'remote (github.io)' : '';
   el.loadProgress.hidden = !el.loadProgress.textContent;
 }
@@ -1467,11 +1491,13 @@ type CatalogColumn = { key: string; label: string; kind: 'text' | 'num' | 'basis
 const BASE_FILTER_COLUMNS: CatalogColumn[] = [
   { key: 'ticker', label: 'Ticker', kind: 'text', fmt: 'text' },
   { key: 'name', label: 'Company', kind: 'text', fmt: 'text' },
+  { key: 'type', label: 'Type', kind: 'text', fmt: 'text' },
   { key: 'exchange', label: 'Exchange', kind: 'text', fmt: 'text' },
   { key: 'sector', label: 'Sector', kind: 'text', fmt: 'text' },
   { key: 'industry', label: 'Industry', kind: 'text', fmt: 'text' },
   { key: 'price', label: 'Price', kind: 'num', fmt: 'price' },
   { key: 'marketCap', label: 'Market Cap', kind: 'num', fmt: 'money' },
+  { key: 'presets', label: 'Presets', kind: 'text', fmt: 'text' },
 ];
 
 /** Ticker (and the # and Use cells in front of it) can never be hidden; every other column is optional. */
@@ -1498,6 +1524,8 @@ function catalogFilterColumns(): CatalogColumn[] {
 function catalogCellText(col: CatalogColumn, id: number): string {
   const s = store;
   if (!s) return '';
+  if (col.key === 'type') return s.typeText[id].toLowerCase();
+  if (col.key === 'presets') return passedPresets(id).map(p => pick(p.title)).join(' ').toLowerCase();
   if (col.kind === 'text') return col.key === 'ticker' ? s.fields.ticker[id] : col.key === 'name' ? s.fields.name[id] : col.key === 'exchange' ? s.fields.exchange[id] : col.key === 'sector' ? s.fields.sector[id] : s.fields.industry[id];
   if (col.kind === 'basis') { const cls = s.num.basisCls[id]; return BASIS_BADGES[Number.isFinite(cls) ? String(cls) : 'none'].label.toLowerCase(); }
   if (col.kind === 'date') return String(col.key === 'perfTs' ? (s.raw[id].metrics ? s.raw[id].metrics.performanceAsOf || '' : '') : s.raw[id].fundamentalsAsOf || '').toLowerCase();
@@ -1569,8 +1597,10 @@ function filterCatalogIds(): number[] {
   const terms = parseSearchTerms(catalogQuery());
   const watchlist = state.activeTab === 'watchlist';
   const staleCut = Date.now() - state.staleDays * DAY_MS;
+  const mask = screenMask();
   const out: number[] = [];
   for (let i = 0; i < s.n; i++) {
+    if (!passesScreener(i, mask)) continue; // security type and screener chips
     if (watchlist && !state.selected.has(s.ticker[i])) continue;
     if (state.hiddenExchanges.has(s.exchangeText[i])) continue;
     if (state.blacklist.has(s.ticker[i])) continue;
@@ -1606,10 +1636,11 @@ function sortArrayFor(key: string): Float64Array | null {
   if (!store) return null;
   const s = store;
   if (s.num[key]) return s.num[key];
+  if (key === 'presets') return presetCountArray(); // number of presets passed, moves with every screener edit (never in rankCache)
   if (!STRING_SORT_KEYS.includes(key)) return null;
   const cached = s.rankCache[key];
   if (cached) return cached;
-  const texts = key === 'ticker' ? s.ticker : key === 'name' ? s.name : key === 'exchange' ? s.exchangeText : key === 'sector' ? s.sectorText : s.industryText;
+  const texts = key === 'ticker' ? s.ticker : key === 'name' ? s.name : key === 'type' ? s.typeText : key === 'exchange' ? s.exchangeText : key === 'sector' ? s.sectorText : s.industryText;
   const order = Array.from({ length: s.n }, (_, i) => i).sort((a, b) => collator.compare(texts[a], texts[b]) || a - b);
   const ranks = new Float64Array(s.n).fill(NaN);
   let rank = -1;
@@ -1653,6 +1684,7 @@ function catalogBaseline(): { ids: number[]; rank: Int32Array } {
     state.hideStale ? state.staleDays : 'off', state.sortKey, state.sortDir,
     state.activeTab === 'watchlist' ? Array.from(state.selected).sort().join(',') : '',
     state.hideStale ? Math.floor(Date.now() / DAY_MS) : '',
+    screenerSig(), scr.type,
   ].join('|');
   if (baselineCache && baselineCache.sig === sig) return baselineCache;
   const ids = sortIds(filterCatalogIds(), state.sortKey, state.sortDir);
@@ -2644,11 +2676,11 @@ function sortRows(rows: any[]): any[] {
   });
 }
 
-function sortHeader(label: string, key: string, numeric = false, extraClass = '', badge = ''): string {
+function sortHeader(label: string, key: string, numeric = false, extraClass = '', badge = '', tip = ''): string {
   const active = state.sortKey === key;
   const arrow = active ? (state.sortDir === 'asc' ? ' ↑' : ' ↓') : '';
   const align = numeric ? ' text-right' : '';
-  const tooltip = getHeaderTooltip(label);
+  const tooltip = tip || getHeaderTooltip(label);
   return `<th class="py-3.5 px-4${align}${extraClass ? ' ' + extraClass : ''}" title="${escapeHtml(tooltip)}"><div class="flex items-center gap-1.5${numeric ? ' justify-end' : ''}"><button data-sort="${escapeHtml(key)}" title="${escapeHtml(tooltip)}" class="uppercase tracking-wider hover:text-blue-600 dark:hover:text-blue-400 focus:outline-hidden focus:text-blue-600 dark:focus:text-blue-400">${escapeHtml(label)}${arrow}</button>${badge}</div></th>`;
 }
 
@@ -2750,6 +2782,7 @@ function cellHtml(col: Col, id: number): string {
     const m = s.raw[id].metrics || {};
     return range52wCellHtml({ range52w: m.range52w, week52Low: m.week52Low, week52High: m.week52High, range52wClose: m.price, range52wAsOf: m.performanceAsOf || s.raw[id].asOfDate, range52wBasis: 'High and Low' }, numCls);
   }
+  if (col.key === 'perf1y' && s.raw[id].perf1yBasis === 'tr1y') return `<td class="${numCls}" title="${escapeHtml(t('etf.perf1y.tip'))}">${formatByFmt(col.fmt, s.num[col.key][id])}</td>`;
   return `<td class="${numCls}">${formatByFmt(col.fmt, s.num[col.key][id])}</td>`;
 }
 
@@ -2770,11 +2803,13 @@ function stockRowHtml(id: number, index: number, cols: Col[]): string {
           </td>
           <td class="catalog-sticky-col catalog-sticky-ticker py-2.5 px-4 font-mono font-semibold text-blue-600 dark:text-blue-400">${escapeHtml(key)}</td>
           ${state.hiddenCols.has('name') ? '' : `<td class="py-2.5 px-4 text-slate-700 dark:text-slate-300 font-medium" title="${escapeHtml(s.name[id])}">${escapeHtml(s.name[id])}</td>`}
+          ${state.hiddenCols.has('type') ? '' : `<td class="py-2.5 px-4 text-slate-600 dark:text-slate-300"${s.raw[id].brand ? ` title="${escapeHtml(s.raw[id].brand)}"` : ''}>${escapeHtml(s.typeText[id])}</td>`}
           ${state.hiddenCols.has('exchange') ? '' : `<td class="py-2.5 px-4 text-slate-600 dark:text-slate-300">${escapeHtml(s.exchangeText[id] || DASH)}</td>`}
           ${state.hiddenCols.has('sector') ? '' : `<td class="py-2.5 px-4 text-slate-600 dark:text-slate-300">${escapeHtml(s.sectorText[id] || DASH)}</td>`}
           ${state.hiddenCols.has('industry') ? '' : `<td class="py-2.5 px-4 text-slate-600 dark:text-slate-300" title="${escapeHtml(s.industryText[id])}">${escapeHtml(s.industryText[id] || DASH)}</td>`}
           ${state.hiddenCols.has('price') ? '' : `<td class="${numCls}">${formatPrice(s.num.price[id])}</td>`}
           ${state.hiddenCols.has('marketCap') ? '' : `<td class="${numCls}">${formatMoney(s.num.marketCap[id])}</td>`}
+          ${state.hiddenCols.has('presets') ? '' : `<td class="py-2 px-4 scr-badges">${presetBadgesHtml(id)}</td>`}
           ${cols.map(col => cellHtml(col, id)).join('')}
         </tr>
       `;
@@ -2945,7 +2980,7 @@ function renderCatalogTable(): void {
   const ids = catalogIds();
   catalogVisibleIds = ids;
   const cols = visibleCols();
-  const sig = [state.activeTab, state.sortKey, state.sortDir, catalogQuery(), hiddenSectorsSig(), hiddenExchangesSig(), hiddenColsSig(), state.hideStale, state.staleDays, store ? store.version : 0, blacklistVersion, catalogFilterSig()].join('|');
+  const sig = [state.activeTab, state.sortKey, state.sortDir, catalogQuery(), hiddenSectorsSig(), hiddenExchangesSig(), hiddenColsSig(), state.hideStale, state.staleDays, store ? store.version : 0, blacklistVersion, catalogFilterSig(), screenerSig(), scr.type].join('|');
   if (sig !== catalogChunkSig) {
     catalogChunkSig = sig;
     catalogRenderedFrom = 0;
@@ -2962,7 +2997,8 @@ function renderCatalogTable(): void {
       ${filterColumns.map(col => {
         const base = BASE_FILTER_COLUMNS.some(item => item.key === col.key);
         const numeric = col.kind === 'num';
-        return sortHeader(col.label, col.key, numeric, col.key === 'ticker' ? 'catalog-sticky-col catalog-sticky-ticker' : '', badgeFor(col));
+        const label = col.key === 'presets' ? t('screener.badges') : col.key === 'type' ? t('screener.type.column') : col.label;
+        return sortHeader(label, col.key, numeric, col.key === 'ticker' ? 'catalog-sticky-col catalog-sticky-ticker' : '', badgeFor(col), catalogHeaderTip(col.key, col.label));
       }).join('')}
     </tr>`;
   const filterLeading = `<th class="filter-cell"></th><th class="filter-cell catalog-sticky-col catalog-sticky-use"><div class="flex items-center justify-center gap-1 text-slate-400 dark:text-slate-500 text-[0.65rem] uppercase tracking-wider"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4h18l-7 8v6l-4 2v-8z"/></svg>filter</div></th>`;
@@ -2979,7 +3015,8 @@ function renderCatalogTable(): void {
       ? 'Loading the stock catalog…'
       : store.n === 0
         ? 'The stock feed is empty. Run ./scripts/update-data.ts first.'
-        : state.activeTab === 'watchlist' ? 'No selected stocks match your search and filters.' : 'No stocks match your search and filters.';
+        : etfState === 'loading' && scr.type === 'etf' ? t('screener.loadingEtfs', { done: etfDone, total: ETF_BRANDS.length })
+          : state.activeTab === 'watchlist' ? 'No selected stocks match your search and filters.' : `No ${scr.type === 'stock' ? 'stocks' : scr.type === 'etf' ? 'ETFs' : 'stocks or ETFs'} match your search${Object.keys(scr.chips).length ? ', screener presets' : ''} and filters.`;
     el.tableBody.innerHTML = `<tr><td colspan="${catalogColspan()}" class="py-12 text-center text-slate-400 dark:text-slate-500">${escapeHtml(message)}</td></tr>`;
   } else {
     el.tableBody.innerHTML = catalogWindowHtml(mountedFrom, mounted, cols);
@@ -2996,7 +3033,7 @@ function renderCatalogStatus(ids: number[]): void {
   const queryText = catalogQuery() ? ` matching “${catalogQuery()}”` : '';
   const rankText = state.stickyRank && ids.length ? ` # = rank among ${catalogBaseline().ids.length.toLocaleString('en-US')} before the column filters.` : '';
   setStatus(`Showing ${ids.length} stock${ids.length === 1 ? '' : 's'}${queryText}.${selected ? ` ${selected} selected.` : ' No stocks selected yet.'}${rankText}`, selected ? 'success' : 'info');
-  el.tickerCount.textContent = `${ids.length.toLocaleString('en-US')} stocks`;
+  el.tickerCount.textContent = `${ids.length.toLocaleString('en-US')} ${scr.type === 'stock' ? 'stocks' : scr.type === 'etf' ? 'ETFs' : 'rows'}`;
 }
 
 /**
@@ -3609,6 +3646,7 @@ const RESET_ITEMS: ResetItem[] = [
   { id: 'sticky-rank', label: 'Sticky #', keys: [STICKY_RANK_KEY], reset: () => { state.stickyRank = false; } },
   { id: 'views', label: 'Scroll positions (remembered table views)', keys: [VIEW_KEY], reset: () => { savedViews = {}; settledViewTabs.clear(); restoringViewTabs.clear(); clearTimeout(saveViewTimer); } },
   { id: 'blacklist', label: 'Blacklist', keys: [BLACKLIST_KEY], reset: () => { state.blacklist.clear(); blacklistVersion += 1; } },
+  { id: 'screener', label: 'Screener: chosen presets, edits and Stocks / ETFs (own presets are kept)', keys: [SCREENER_KEY], reset: () => resetScreener() },
 ];
 
 /** The three items that live in one saved key: removing the key for one of them would also forget the others. */
@@ -3833,17 +3871,19 @@ function currentExportRows(): { headers: string[]; rows: string[][]; scope: stri
   const s = store;
   const ids = catalogIds();
   return {
-    headers: ['#', 'Selected', 'Ticker', 'Company', 'Exchange', 'Sector', 'Industry', 'Price ($)', 'Market Cap ($)', ...COLS.map(col => (col.fmt === 'pct' ? `${col.label} (%)` : col.fmt === 'pp' ? `${col.label} (pp)` : col.label))],
+    headers: ['#', 'Selected', 'Ticker', 'Company', 'Type', 'Exchange', 'Sector', 'Industry', 'Price ($)', 'Market Cap ($)', 'Presets', ...COLS.map(col => (col.fmt === 'pct' ? `${col.label} (%)` : col.fmt === 'pp' ? `${col.label} (pp)` : col.label))],
     rows: s ? ids.map((id, index) => [
       String(catalogRowNumber(id, index)),
       state.selected.has(s.ticker[id]) ? 'yes' : 'no',
       s.ticker[id],
       s.name[id],
+      s.typeText[id],
       s.exchangeText[id],
       s.sectorText[id],
       s.industryText[id],
       numberCell(nanToNull(s.num.price[id])),
       numberCell(nanToNull(s.num.marketCap[id])),
+      passedPresets(id).map(p => pick(p.title)).join('; '),
       ...COLS.map(col => exportCell(col, id)),
     ]) : [],
     scope: state.activeTab === 'watchlist' ? 'watchlist' : 'stocks',
@@ -4220,6 +4260,832 @@ function bindEvents(): void {
   }
 }
 
+// =========================================================================
+// 14. Screener, ETF rows, language switch and guide (plan stages 2 and 4; engine, presets and texts live in src/core)
+// =========================================================================
+
+type ChipMode = 'in' | 'out';
+type TypeFilter = 'stock' | 'etf' | 'all';
+type ScreenerState = {
+  type: TypeFilter;
+  any: boolean; // the chosen (non-refinement) presets combine with OR instead of AND
+  chips: Record<string, ChipMode>;
+  drafts: Record<string, Preset>; // edited copies by preset id; Reset drops one
+  expanded: string | null; // the preset whose conditions are open in the editor
+  base: Preset[];
+  repoOwn: Preset[]; // user-data/presets of the repo, the starting state
+  browserOwn: Preset[]; // own presets saved in this browser (they win over the repo copies)
+  lastExported: Record<string, string>; // id -> presetKey of the last export or import
+  peers: PeerGroups;
+  status: 'loading' | 'ready' | 'failed';
+  error: string;
+  message: string;
+  version: number; // moves with every change: part of the table caches' signatures
+};
+
+const ETF_CONCURRENCY = 6;
+const TYPE_FILTERS: TypeFilter[] = ['stock', 'etf', 'all'];
+const SCREENER_OPS: Op[] = ['>', '>=', '<', '<=', '=', 'range', 'in'];
+const MISSING_MODES: Missing[] = ['fail', 'skip'];
+const GUIDE_SECTIONS = ['presets', 'scopes', 'missing', 'own'];
+
+const scr: ScreenerState = {
+  type: 'stock', any: false, chips: {}, drafts: {}, expanded: null, base: [], repoOwn: [], browserOwn: [], lastExported: {}, peers: {},
+  status: 'loading', error: '', message: '', version: 0,
+};
+
+let stockCompanies: any[] = []; // rows of api/stocks/index.json
+let mineTickers: string[] | null = null; // the owner's list as the feed publishes it (index.json mineTickers), null before the feed has it
+let etfRows: any[] = [];
+let etfState: 'idle' | 'loading' | 'done' = 'idle';
+let etfDone = 0;
+let etfFailed: string[] = [];
+let screenUniverse: { version: number; universe: Universe } | null = null;
+let resultsCache: { sig: string; results: Record<string, PresetResult> } | null = null;
+let maskCache: { sig: string; mask: Uint8Array | null } | null = null;
+let presetCountCache: { sig: string; counts: Float64Array } | null = null;
+let guideOpen = false;
+let metricOptionsHtml = '';
+let metricOptionsLocale = '';
+
+/** An ETF fund row of a brand feed in the shape of a stock row of the store; stock-only fields stay empty, perf1y falls back to tr1y */
+function etfStoreRow(fund: any, brand: EtfBrand): any {
+  const metrics = etfMetrics(fund);
+  const own = fund.metrics && typeof fund.metrics === 'object' ? fund.metrics : {};
+  return {
+    ...fund, ticker: normalizeTicker(fund.ticker), assetType: 'etf', brand: brand.repo, exchange: typeof fund.exchange === 'string' ? fund.exchange : '',
+    sector: null, industry: null, cik: null, dataFile: null, fundamentalsAsOf: null, fundamentalsBasis: null,
+    price: numberOrNull(metrics.range52wClose) ?? numberOrNull(fund.navValue), metrics,
+    perf1yBasis: numberOrNull(own.perf1y) === null && numberOrNull(own.tr1y) !== null ? 'tr1y' : null,
+  };
+}
+
+function rebuildStore(): void {
+  store = buildStore(stockCompanies.concat(etfRows)); // stocks first: a ticker that is both keeps its stock row
+  viewCache = null;
+  baselineCache = null;
+  renderScreener(); // chip counts and the funnel read the new rows (before the table, whose Presets column needs the results)
+  onStoreChanged();
+}
+
+/** The engine's universe over the store rows (same order, so a result index is a store id); rebuilt when the store changes */
+function screenerUniverse(): Universe | null {
+  const s = store;
+  if (!s) return null;
+  if (screenUniverse && screenUniverse.version === s.version) return screenUniverse.universe;
+  // Mine: the feed's isMine flags and mineTickers once the updater publishes them; before that the stock feed IS the owner's list
+  const flagged = stockCompanies.some(row => typeof row.isMine === 'boolean');
+  const mine = new Set((mineTickers ? mineTickers : flagged ? [] : stockCompanies.map(row => String(row.ticker))).map(normalizeTicker));
+  const rows = s.raw.map((raw: any) => (raw.assetType === 'etf' ? etfRow(raw, mine) : stockRow(raw, mine)));
+  screenUniverse = { version: s.version, universe: createUniverse(rows, { peers: scr.peers }) };
+  return screenUniverse.universe;
+}
+
+function ownEntries(): OwnEntry[] {
+  const baseIds = scr.base.map(p => p.id);
+  return mergeOwnPresets(scr.repoOwn.filter(p => baseIds.indexOf(p.id) < 0), scr.browserOwn.filter(p => baseIds.indexOf(p.id) < 0), scr.lastExported);
+}
+
+function ownEntry(id: string): OwnEntry | null {
+  return ownEntries().filter(entry => entry.preset.id === id)[0] || null;
+}
+
+/** The preset as published (base) or saved (own), without the draft */
+function originalPreset(id: string): Preset | null {
+  const base = scr.base.filter(p => p.id === id)[0];
+  if (base) return base;
+  const own = ownEntry(id);
+  return own ? own.preset : null;
+}
+
+function effectivePreset(id: string): Preset | null {
+  return scr.drafts[id] || originalPreset(id);
+}
+
+function allPresets(): Preset[] {
+  return scr.base.concat(ownEntries().map(entry => entry.preset)).map(p => scr.drafts[p.id] || p);
+}
+
+function screenerSig(): string {
+  return `${store ? store.version : 0}|${scr.version}`;
+}
+
+function presetResults(): Record<string, PresetResult> {
+  const universe = screenerUniverse();
+  if (!universe) return {};
+  const sig = screenerSig();
+  if (resultsCache && resultsCache.sig === sig) return resultsCache.results;
+  resultsCache = { sig, results: evaluatePresets(universe, allPresets()) };
+  return resultsCache.results;
+}
+
+/** 1 for a store id the chosen chips keep, null when no chip is chosen: (all of | any of the chosen) and every refinement and not each excluded */
+function screenMask(): Uint8Array | null {
+  const sig = screenerSig();
+  if (maskCache && maskCache.sig === sig) return maskCache.mask;
+  const universe = screenerUniverse();
+  const presets: Record<string, Preset> = {};
+  allPresets().forEach(p => { presets[p.id] = p; });
+  const chosen = Object.keys(scr.chips).filter(id => presets[id]);
+  let mask: Uint8Array | null = null;
+  if (universe && chosen.length) {
+    const included = chosen.filter(id => scr.chips[id] === 'in' && !presets[id].refine);
+    const parts: Expression[] = chosen.filter(id => scr.chips[id] === 'in' && presets[id].refine);
+    chosen.filter(id => scr.chips[id] === 'out').forEach(id => parts.push({ not: id }));
+    if (included.length) parts.unshift(scr.any ? { or: included } : { and: included });
+    mask = evaluateExpression(universe, { and: parts }, presets, presetResults());
+  }
+  maskCache = { sig, mask };
+  return mask;
+}
+
+/** The chosen security type and screener chips keep this store id */
+function passesScreener(id: number, mask: Uint8Array | null): boolean {
+  const s = store;
+  if (!s) return false;
+  if (scr.type !== 'all' && s.assetType[id] !== (scr.type === 'etf' ? 1 : 0)) return false;
+  return !mask || mask[id] === 1;
+}
+
+/** Presets a row passes, refinements left out (the Presets column) */
+function passedPresets(id: number): Preset[] {
+  const results = presetResults();
+  return allPresets().filter(p => !p.refine && results[p.id] && results[p.id].pass[id] === 1);
+}
+
+function presetCountArray(): Float64Array {
+  const sig = screenerSig();
+  if (presetCountCache && presetCountCache.sig === sig) return presetCountCache.counts;
+  const n = store ? store.n : 0;
+  const counts = new Float64Array(n);
+  const results = presetResults();
+  allPresets().filter(p => !p.refine && results[p.id]).forEach(p => { const pass = results[p.id].pass; for (let i = 0; i < n; i++) counts[i] += pass[i]; });
+  presetCountCache = { sig, counts };
+  return counts;
+}
+
+function presetBadgesHtml(id: number): string {
+  return passedPresets(id).map(p => `<span class="scr-badge">${escapeHtml(pick(p.title))}</span>`).join('') || DASH;
+}
+
+/** Header tooltip of a catalog column: the registry name and short text in the current language, else the built-in English text */
+function catalogHeaderTip(key: string, label: string): string {
+  if (key === 'presets') return t('screener.badges.tip');
+  if (key === 'type') return t('screener.type.column.tip');
+  const def = REGISTRY.byId[key];
+  return def ? `${pick(def.name)}: ${pick(def.short)}` : getHeaderTooltip(label);
+}
+
+// ---- persistence: the screener choice (a setting, reset by Clear) and own presets (data, never reset by Clear) ----
+
+function validPresetLike(value: any): boolean {
+  return !!value && typeof value === 'object' && typeof value.id === 'string' && Array.isArray(value.conditions) && Array.isArray(value.appliesTo) && !!value.title;
+}
+
+function persistScreener(): void {
+  lsSet(SCREENER_KEY, JSON.stringify({ type: scr.type, any: scr.any, chips: scr.chips, drafts: scr.drafts, expanded: scr.expanded }));
+}
+
+function restoreScreener(): void {
+  const saved = lsGetJson(SCREENER_KEY, null);
+  if (saved && typeof saved === 'object') {
+    if (TYPE_FILTERS.indexOf(saved.type) >= 0) scr.type = saved.type;
+    scr.any = saved.any === true;
+    if (saved.chips && typeof saved.chips === 'object') Object.keys(saved.chips).forEach(id => { if (saved.chips[id] === 'in' || saved.chips[id] === 'out') scr.chips[id] = saved.chips[id]; });
+    if (saved.drafts && typeof saved.drafts === 'object') Object.keys(saved.drafts).forEach(id => { if (validPresetLike(saved.drafts[id])) scr.drafts[id] = saved.drafts[id]; });
+    scr.expanded = typeof saved.expanded === 'string' ? saved.expanded : null;
+  }
+  const own = lsGetJson(OWN_PRESETS_KEY, null);
+  if (own && typeof own === 'object') {
+    scr.browserOwn = Array.isArray(own.presets) ? own.presets.filter(validPresetLike) : [];
+    scr.lastExported = own.exported && typeof own.exported === 'object' ? own.exported : {};
+  }
+}
+
+function persistOwn(): void {
+  lsSet(OWN_PRESETS_KEY, JSON.stringify({ schemaVersion: PRESET_SCHEMA_VERSION, presets: scr.browserOwn, exported: scr.lastExported }));
+}
+
+function resetScreener(): void {
+  scr.type = 'stock';
+  scr.any = false;
+  scr.chips = {};
+  scr.drafts = {};
+  scr.expanded = null;
+  scr.message = '';
+  scr.version += 1;
+  renderScreener();
+}
+
+/** Every screener change: caches move with the version, the choice is saved, panel and table render at once (synchronously) */
+function screenerChanged(message = ''): void {
+  scr.version += 1;
+  scr.message = message;
+  persistScreener();
+  renderScreener();
+  render();
+}
+
+// ---- loading: base presets, own presets and peers are static files next to the page; ETFs come from the brand feeds ----
+
+async function fetchPresetFolder(base: string): Promise<Preset[]> {
+  const index = await fetchJson(`${base}index.json`);
+  const files: string[] = index && Array.isArray(index.files) ? index.files.filter((file: unknown) => typeof file === 'string') : [];
+  const loaded = await Promise.all(files.map(file => fetchJson(`${base}${encodeURIComponent(file)}`).catch((error: unknown) => {
+    console.warn(`Preset ${base}${file} unavailable:`, error);
+    return null;
+  })));
+  const out: Preset[] = [];
+  loaded.forEach((preset, i) => {
+    if (!preset) return;
+    const problems = validatePreset(preset);
+    if (problems.length) console.warn(`Preset ${base}${files[i]} skipped: ${problems.join('; ')}`);
+    else out.push(preset);
+  });
+  return out;
+}
+
+async function loadScreenerData(): Promise<void> {
+  try {
+    scr.base = await fetchPresetFolder('./presets/');
+    scr.status = 'ready';
+  } catch (error) {
+    scr.status = 'failed';
+    scr.error = error instanceof Error ? error.message : String(error);
+    console.warn(`Base presets unavailable: ${scr.error}`);
+  }
+  try { scr.repoOwn = await fetchPresetFolder('./user-data/presets/'); } catch (error) { console.warn('user-data/presets unavailable:', error); }
+  try {
+    const peers = await fetchJson('./user-data/peers.json');
+    scr.peers = peers && peers.groups && typeof peers.groups === 'object' ? peers.groups : {};
+    screenUniverse = null;
+  } catch (error) { console.warn('user-data/peers.json unavailable:', error); }
+  const message = applyHashPreset();
+  if (scr.type !== 'stock') void ensureEtfs();
+  screenerChanged(message);
+}
+
+async function ensureEtfs(): Promise<void> {
+  if (etfState !== 'idle') return;
+  etfState = 'loading';
+  etfDone = 0;
+  etfFailed = [];
+  renderScreener();
+  render();
+  const perBrand: any[][] = ETF_BRANDS.map(() => []);
+  const queue = ETF_BRANDS.map((_, i) => i);
+  const worker = async (): Promise<void> => {
+    for (;;) {
+      const i = queue.shift();
+      if (i === undefined) return;
+      const brand = ETF_BRANDS[i];
+      try {
+        const data = await fetchJson(etfFeedUrl(brand), INDEX_TIMEOUT_MS);
+        if (!data || !Array.isArray(data.funds)) throw new Error('malformed index.json');
+        data.funds.forEach((fund: any) => { if (fund && typeof fund.ticker === 'string' && fund.ticker.trim()) perBrand[i].push(etfStoreRow(fund, brand)); });
+      } catch (error) {
+        etfFailed.push(brand.repo);
+        console.warn(`ETF feed ${brand.repo} unavailable:`, error instanceof Error ? error.message : error);
+      }
+      etfDone += 1;
+      renderScreenerStatus();
+      renderLoadProgress();
+    }
+  };
+  await Promise.all(Array.from({ length: ETF_CONCURRENCY }, () => worker()));
+  etfRows = perBrand.reduce((all: any[], rows) => all.concat(rows), []); // brand order: the first brand of a duplicate ticker always wins
+  etfState = 'done';
+  rebuildStore();
+  renderScreener();
+  renderLoadProgress();
+}
+
+// ---- actions ----
+
+function setType(type: TypeFilter): void {
+  scr.type = type;
+  if (type !== 'stock') void ensureEtfs();
+  screenerChanged();
+}
+
+function toggleChip(id: string, mode: ChipMode): void {
+  if (scr.chips[id] === mode) delete scr.chips[id];
+  else scr.chips[id] = mode;
+  const p = effectivePreset(id);
+  // a preset that also selects ETFs (Gold, Mine) brings them in: the table switches from Stocks to All
+  if (scr.chips[id] === 'in' && p && !p.refine && p.appliesTo.indexOf('etf') >= 0 && scr.type === 'stock') {
+    scr.type = 'all';
+    void ensureEtfs();
+  }
+  screenerChanged();
+}
+
+function draftFor(id: string): Preset | null {
+  const current = effectivePreset(id);
+  return current ? JSON.parse(JSON.stringify(current)) : null;
+}
+
+function commitDraft(id: string, draft: Preset): void {
+  if (samePreset(draft, originalPreset(id))) delete scr.drafts[id];
+  else scr.drafts[id] = draft;
+  screenerChanged();
+}
+
+function editCondition(id: string, index: number, edit: (c: ScreenerCondition) => void): void {
+  const draft = draftFor(id);
+  if (!draft || !draft.conditions[index]) return;
+  edit(draft.conditions[index]);
+  commitDraft(id, draft);
+}
+
+function resetPreset(id: string): void {
+  delete scr.drafts[id];
+  screenerChanged();
+}
+
+function takenIds(): string[] {
+  return scr.base.map(p => p.id).concat(ownEntries().map(entry => entry.preset.id));
+}
+
+function invalidMessage(p: Preset): string {
+  const problems = validatePreset(p);
+  return problems.length ? t('screener.invalid', { errors: problems.join('; ') }) : '';
+}
+
+/** Base preset: a new own copy; own preset: its browser copy takes the draft */
+function savePreset(id: string): void {
+  const current = effectivePreset(id);
+  if (!current) return;
+  const invalid = invalidMessage(current);
+  if (invalid) { scr.message = invalid; renderScreener(); return; }
+  const isBase = scr.base.some(p => p.id === id);
+  const saved = isBase ? ownCopy(current, takenIds()) : canonicalPreset(current);
+  scr.browserOwn = scr.browserOwn.filter(p => p.id !== saved.id).concat([saved]);
+  delete scr.drafts[id];
+  if (isBase) {
+    if (scr.chips[id]) { scr.chips[saved.id] = scr.chips[id]; delete scr.chips[id]; }
+    if (scr.expanded === id) scr.expanded = saved.id;
+  }
+  persistOwn();
+  screenerChanged(t('screener.saved', { title: pick(saved.title) }));
+}
+
+function deleteOwnPreset(id: string): void {
+  scr.browserOwn = scr.browserOwn.filter(p => p.id !== id);
+  delete scr.drafts[id];
+  delete scr.lastExported[id];
+  if (!originalPreset(id)) {
+    delete scr.chips[id];
+    if (scr.expanded === id) scr.expanded = null;
+  }
+  persistOwn();
+  screenerChanged();
+}
+
+/** Downloads the preset as <id>.json (user-data/presets/<id>.json in the repo); returns what was downloaded */
+function exportPreset(id: string): { fileName: string; text: string } | null {
+  const p = effectivePreset(id);
+  if (!p) return null;
+  const fileName = presetFileName(p);
+  const text = presetFileText(p);
+  downloadText(text, fileName, 'application/json');
+  scr.lastExported[id] = presetKey(p);
+  persistOwn();
+  screenerChanged();
+  return { fileName, text };
+}
+
+/** Adds the presets of an exported file to My presets; the id of a base preset gets a new id, an own one is replaced */
+function importPresetText(text: string): { ids: string[]; errors: string[] } {
+  const parsed = parsePresetText(text);
+  const ids: string[] = [];
+  parsed.presets.forEach(p => {
+    const preset = scr.base.some(b => b.id === p.id) ? { ...p, id: uniqueId(p.id, takenIds()) } : p;
+    scr.browserOwn = scr.browserOwn.filter(own => own.id !== preset.id).concat([preset]);
+    delete scr.drafts[preset.id];
+    scr.lastExported[preset.id] = presetKey(preset);
+    ids.push(preset.id);
+  });
+  persistOwn();
+  const names = ids.map(id => { const p = effectivePreset(id); return p ? pick(p.title) : id; }).join(', ');
+  screenerChanged(parsed.errors.length ? t('screener.import.failed', { errors: parsed.errors.join('; ') }) : t('screener.import.done', { names }));
+  return { ids, errors: parsed.errors };
+}
+
+function presetShareUrl(id: string): string {
+  const p = effectivePreset(id);
+  return p ? `${location.origin}${location.pathname}${location.search}#${encodePresetHash(p)}` : '';
+}
+
+/** A preset link (#preset=...) adds its preset to My presets, chooses and opens it; the hash is removed afterwards */
+function applyHashPreset(): string {
+  const decoded = decodePresetHash(location.hash);
+  if (!decoded.preset && !decoded.errors.length) return '';
+  try { history.replaceState(null, '', `${location.pathname}${location.search}`); } catch { /* keep the hash */ }
+  if (!decoded.preset) return t('screener.shareFailed', { errors: decoded.errors.join('; ') });
+  let preset = decoded.preset;
+  const same = allPresets().filter(p => samePreset(p, decoded.preset))[0];
+  if (same) preset = same;
+  else {
+    if (takenIds().indexOf(preset.id) >= 0) preset = { ...preset, id: uniqueId(preset.id, takenIds()) };
+    scr.browserOwn = scr.browserOwn.concat([preset]);
+    persistOwn();
+  }
+  scr.chips[preset.id] = 'in';
+  scr.expanded = preset.id;
+  if (preset.appliesTo.indexOf('etf') >= 0 && scr.type === 'stock') scr.type = 'all';
+  return t('screener.shared', { title: pick(preset.title) });
+}
+
+function onHashChange(): void {
+  const message = applyHashPreset();
+  if (!message) return;
+  if (scr.type !== 'stock') void ensureEtfs();
+  screenerChanged(message);
+}
+
+// ---- the screener panel: type and combine switches, chips, the editor with the funnel ----
+
+function metricKind(metric: string): 'number' | 'category' | 'flag' {
+  const def = REGISTRY.byId[metric];
+  if (!def) return 'number';
+  if (def.unit === 'flag') return 'flag';
+  return isNumericMetric(def) ? 'number' : 'category';
+}
+
+function opsFor(metric: string): Op[] {
+  const kind = metricKind(metric);
+  return kind === 'number' ? SCREENER_OPS : kind === 'flag' ? ['='] : ['=', 'in'];
+}
+
+function scopesFor(metric: string): Scope[] {
+  if (metricKind(metric) !== 'number') return ['absolute'];
+  return SCOPES.filter(scope => scope !== 'history' || HISTORY_METRICS.indexOf(metric) >= 0);
+}
+
+function opLabel(op: Op): string {
+  return op === 'range' ? t('op.range') : op === 'in' ? t('op.in') : op;
+}
+
+function optionHtml(value: string, label: string, selected: boolean): string {
+  return `<option value="${escapeHtml(value)}"${selected ? ' selected' : ''}>${escapeHtml(label)}</option>`;
+}
+
+function valueCellHtml(c: ScreenerCondition, index: number): string {
+  const relative = RELATIVE_SCOPES.indexOf(c.scope || 'absolute') >= 0;
+  const num = (field: string, value: unknown, placeholder: string) => `<input type="number" step="any" class="scr-input scr-num" data-field="${field}" data-ci="${index}" value="${escapeHtml(value === null || value === undefined ? '' : String(value))}" placeholder="${escapeHtml(placeholder || (relative ? t('screener.percentile') : ''))}" aria-label="${escapeHtml(t('screener.value'))}" />`;
+  if (c.op === 'in') {
+    const list = Array.isArray(c.value) ? c.value : [];
+    return `<div class="scr-list">${list.map((item, li) => `<span class="scr-li">${escapeHtml(String(item))}<button type="button" data-act="list-remove" data-ci="${index}" data-li="${li}" title="${escapeHtml(t('screener.list.remove'))}" aria-label="${escapeHtml(`${t('screener.list.remove')} ${String(item)}`)}">✕</button></span>`).join('')}<input type="text" class="scr-input scr-list-add" data-field="list-add" data-ci="${index}" placeholder="${escapeHtml(t('screener.list.add'))}" aria-label="${escapeHtml(t('screener.list.add'))}" /></div>`;
+  }
+  if (c.op === 'range') {
+    const pair = Array.isArray(c.value) ? c.value : [null, null];
+    return `<div class="scr-range">${num('min', pair[0], t('screener.range.min'))}<span>…</span>${num('max', pair[1], t('screener.range.max'))}</div>`;
+  }
+  if (metricKind(c.metric) === 'flag') return `<select class="scr-input" data-field="flag" data-ci="${index}" aria-label="${escapeHtml(t('screener.value'))}">${optionHtml('true', t('bool.true'), c.value === true)}${optionHtml('false', t('bool.false'), c.value === false)}</select>`;
+  if (metricKind(c.metric) === 'category') return `<input type="text" class="scr-input" data-field="text" data-ci="${index}" value="${escapeHtml(String(c.value ?? ''))}" aria-label="${escapeHtml(t('screener.value'))}" />`;
+  return num('value', typeof c.value === 'number' ? c.value : '', '');
+}
+
+function editorHtml(id: string): string {
+  const p = effectivePreset(id);
+  if (!p) return '';
+  const original = originalPreset(id);
+  const own = scr.base.some(b => b.id === id) ? null : ownEntry(id);
+  const universe = screenerUniverse();
+  const result = universe ? evaluatePreset(universe, p) : null;
+  const changed = changedConditions(original, p);
+  const stepByIndex: Record<number, FunnelStep> = {};
+  if (result) result.funnel.forEach(step => { stepByIndex[step.index] = step; });
+  const emptyAt = result ? result.funnel.filter(step => step.left === 0)[0] : undefined;
+  const m = p.conditions.length;
+  const matchOptions = [optionHtml('all', t('screener.match.all'), p.match === 'all')]
+    .concat(Array.from({ length: m }, (_, k) => optionHtml(String(k + 1), t('screener.match.soft', { n: k + 1, m }), p.match === k + 1)));
+  const rows = p.conditions.map((c, i) => {
+    const step = stepByIndex[i];
+    const def = REGISTRY.byId[c.metric];
+    const off = c.enabled === false;
+    const funnel = off ? `<span class="scr-muted">${escapeHtml(t('screener.funnel.off'))}</span>`
+      : !step ? DASH
+        : `${step.status === 'unavailable' ? `<span class="scr-warn">${escapeHtml(t('screener.notInFeed'))}</span> ` : ''}<span class="scr-left${step.left === 0 ? ' is-empty' : ''}">${escapeHtml(t('screener.funnel.left', { count: step.left.toLocaleString('en-US') }))}${emptyAt === step ? ` · ${escapeHtml(t('screener.funnel.empty'))}` : ''}</span>`;
+    return `<tr class="scr-cond${changed[i] ? ' is-changed' : ''}${off ? ' is-off' : ''}" data-ci="${i}">
+      <td><input type="checkbox" data-field="enabled" data-ci="${i}" ${off ? '' : 'checked'} title="${escapeHtml(t('screener.enabled.tip'))}" aria-label="${escapeHtml(t('screener.enabled'))}" /></td>
+      <td><input type="text" list="scr-metric-list" class="scr-input scr-metric" data-field="metric" data-ci="${i}" value="${escapeHtml(c.metric)}" placeholder="${escapeHtml(t('screener.metricSearch'))}" aria-label="${escapeHtml(t('screener.metric'))}" title="${escapeHtml(def ? `${pick(def.name)}: ${pick(def.short)}` : c.metric)}" /><div class="scr-metric-name">${escapeHtml(def ? pick(def.name) : c.metric)}</div></td>
+      <td><select class="scr-input" data-field="op" data-ci="${i}" aria-label="${escapeHtml(t('screener.op'))}">${opsFor(c.metric).map(op => optionHtml(op, opLabel(op), op === c.op)).join('')}</select></td>
+      <td>${valueCellHtml(c, i)}</td>
+      <td><select class="scr-input" data-field="scope" data-ci="${i}" aria-label="${escapeHtml(t('screener.scope'))}">${scopesFor(c.metric).map(scope => optionHtml(scope, t(`scope.${scope}`), scope === (c.scope || 'absolute'))).join('')}</select></td>
+      <td><select class="scr-input" data-field="missing" data-ci="${i}" aria-label="${escapeHtml(t('screener.missing'))}">${MISSING_MODES.map(mode => optionHtml(mode, t(`missing.${mode}`), mode === (c.missing || 'fail'))).join('')}</select></td>
+      <td class="scr-funnel" data-funnel="${i}" title="${escapeHtml(t('screener.funnel.tip'))}">${funnel}</td>
+      <td><button type="button" class="scr-x" data-act="delete-cond" data-ci="${i}" title="${escapeHtml(t('screener.delete'))}" aria-label="${escapeHtml(t('screener.delete'))}">✕</button></td>
+    </tr>`;
+  }).join('');
+  const isDraft = !!scr.drafts[id];
+  const invalid = invalidMessage(p);
+  const head = own
+    ? `<label class="scr-title-edit">${escapeHtml(t('screener.titleLabel'))} <input type="text" class="scr-input" data-field="title" value="${escapeHtml(pick(p.title))}" /></label>`
+    : `<strong>${escapeHtml(pick(p.title))}</strong>`;
+  const saveButton = own
+    ? (isDraft ? `<button type="button" class="dd-act" data-act="save">${escapeHtml(t('screener.save'))}</button>` : '')
+    : `<button type="button" class="dd-act" data-act="save">${escapeHtml(t('screener.saveAsOwn'))}</button>`;
+  return `<div class="scr-editor" data-editor="${escapeHtml(id)}">
+    <div class="scr-ed-head">
+      ${head}
+      ${own && !own.exported ? `<span class="scr-flag" title="${escapeHtml(t('screener.notExported.tip'))}">${escapeHtml(t('screener.notExported'))}</span>` : ''}
+      <label class="scr-match">${escapeHtml(t('screener.match.label'))} <select class="scr-input" data-field="match">${matchOptions.join('')}</select></label>
+      <span class="scr-start" data-funnel-total title="${escapeHtml(t('screener.start.tip'))}">${escapeHtml(t('screener.start', { count: result ? result.start.toLocaleString('en-US') : DASH }))} → ${escapeHtml(t('screener.funnel.left', { count: result ? result.count.toLocaleString('en-US') : DASH }))}</span>
+      <span class="scr-ed-actions">
+        ${isDraft ? `<button type="button" class="dd-act" data-act="reset">${escapeHtml(t('screener.reset'))}</button>` : ''}
+        ${saveButton}
+        <button type="button" class="dd-act" data-act="export" title="${escapeHtml(t('screener.export.tip', { file: presetFileName(p) }))}">${escapeHtml(t('screener.export'))}</button>
+        <button type="button" class="dd-act" data-act="share" title="${escapeHtml(t('screener.share.tip'))}">${escapeHtml(t('screener.share'))}</button>
+        ${own && scr.browserOwn.some(b => b.id === id) ? `<button type="button" class="dd-act" data-act="delete-preset" title="${escapeHtml(t('screener.deletePreset.tip'))}">${escapeHtml(t('screener.deletePreset'))}</button>` : ''}
+      </span>
+    </div>
+    ${p.description ? `<p class="scr-desc">${escapeHtml(pick(p.description))}</p>` : ''}
+    <div class="scr-table-wrap themed-scroll"><table class="scr-conds">
+      <thead><tr><th>${escapeHtml(t('screener.enabled'))}</th><th>${escapeHtml(t('screener.metric'))}</th><th>${escapeHtml(t('screener.op'))}</th><th>${escapeHtml(t('screener.value'))}</th><th>${escapeHtml(t('screener.scope'))}</th><th>${escapeHtml(t('screener.missing'))}</th><th title="${escapeHtml(t('screener.funnel.tip'))}">${escapeHtml(t('screener.funnel'))}</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>
+    <div class="scr-ed-foot"><button type="button" class="dd-act" data-act="add-cond">${escapeHtml(t('screener.addMetric'))}</button>${invalid ? `<span class="scr-error">${escapeHtml(invalid)}</span>` : ''}</div>
+  </div>`;
+}
+
+function chipHtml(p: Preset, results: Record<string, PresetResult>, own: OwnEntry | null): string {
+  const mode = scr.chips[p.id];
+  const count = results[p.id] ? results[p.id].count : null;
+  const title = pick(p.title);
+  const tip = t('screener.chip.tip', { title, count: count === null ? DASH : count.toLocaleString('en-US') });
+  const open = scr.expanded === p.id;
+  return `<span class="scr-chip${mode === 'in' ? ' is-in' : mode === 'out' ? ' is-out' : ''}${open ? ' is-open' : ''}${p.refine ? ' is-refine' : ''}" data-chip="${escapeHtml(p.id)}">`
+    + `<button type="button" class="scr-chip-main" data-act="chip" data-id="${escapeHtml(p.id)}" aria-pressed="${mode === 'in'}" title="${escapeHtml(tip)}">${mode === 'out' ? '¬ ' : ''}${escapeHtml(title)}${scr.drafts[p.id] ? `<span class="scr-edited" title="${escapeHtml(t('screener.chip.changed'))}">*</span>` : ''}${count === null ? '' : `<span class="scr-count">${count.toLocaleString('en-US')}</span>`}${own && !own.exported ? `<span class="scr-dot" title="${escapeHtml(t('screener.notExported.tip'))}"></span>` : ''}</button>`
+    + `<button type="button" class="scr-chip-btn" data-act="not" data-id="${escapeHtml(p.id)}" aria-pressed="${mode === 'out'}" title="${escapeHtml(t('screener.chip.exclude'))}" aria-label="${escapeHtml(`${t('screener.chip.exclude')}: ${title}`)}">¬</button>`
+    + `<button type="button" class="scr-chip-btn" data-act="expand" data-id="${escapeHtml(p.id)}" aria-expanded="${open}" title="${escapeHtml(t('screener.chip.edit'))}" aria-label="${escapeHtml(`${t('screener.chip.edit')}: ${title}`)}">▾</button></span>`;
+}
+
+function screenerStatusText(): string {
+  const parts: string[] = [];
+  if (etfState === 'loading') parts.push(t('screener.loadingEtfs', { done: etfDone, total: ETF_BRANDS.length }));
+  else if (etfState === 'done') parts.push(t('screener.etfsLoaded', { count: etfRows.length.toLocaleString('en-US'), brands: ETF_BRANDS.length - etfFailed.length }));
+  if (etfFailed.length) parts.push(t('screener.etfFailed', { count: etfFailed.length, brands: etfFailed.join(', ') }));
+  if (scr.message) parts.push(scr.message);
+  return parts.join(' · ');
+}
+
+function renderScreenerStatus(): void {
+  const node = document.getElementById('scr-status');
+  if (node) node.textContent = screenerStatusText();
+}
+
+function metricDatalistHtml(): string {
+  if (metricOptionsLocale !== getLocale()) {
+    metricOptionsLocale = getLocale();
+    metricOptionsHtml = groupMetrics(REGISTRY.metrics).map(group => group.metrics.filter(m => m.unit !== 'text' && m.unit !== 'date')
+      .map(m => `<option value="${escapeHtml(m.id)}">${escapeHtml(`${pick(m.name)} · ${pick(group.title)}${m.source === 'planned' ? ` · ${t('guide.planned')}` : ''}`)}</option>`).join('')).join('');
+  }
+  return `<datalist id="scr-metric-list">${metricOptionsHtml}</datalist>`;
+}
+
+function renderScreener(): void {
+  const panel = document.getElementById('screener-panel');
+  if (!panel) return;
+  const results = presetResults();
+  const owns = ownEntries();
+  const seg = (items: Array<{ value: string; label: string; on: boolean; act: string; tip: string }>) => `<div class="scr-seg" role="group">${items.map(item => `<button type="button" data-act="${item.act}" data-value="${item.value}" aria-pressed="${item.on}" title="${escapeHtml(item.tip)}">${escapeHtml(item.label)}</button>`).join('')}</div>`;
+  const typeSeg = seg(TYPE_FILTERS.map(type => ({ value: type, label: t(type === 'stock' ? 'type.stocks' : type === 'etf' ? 'type.etfs' : 'type.all'), on: scr.type === type, act: 'type', tip: t('type.tip') })));
+  const combineSeg = seg([false, true].map(any => ({ value: String(any), label: t(any ? 'screener.combine.any' : 'screener.combine.all'), on: scr.any === any, act: 'any', tip: t('screener.combine.tip') })));
+  const main = scr.base.filter(p => !p.refine).map(p => chipHtml(scr.drafts[p.id] || p, results, null)).join('');
+  const refine = scr.base.filter(p => p.refine).map(p => chipHtml(scr.drafts[p.id] || p, results, null)).join('');
+  const own = owns.map(entry => chipHtml(scr.drafts[entry.preset.id] || entry.preset, results, entry)).join('');
+  const loading = scr.status === 'loading' ? `<span class="scr-muted">${escapeHtml(t('screener.loading'))}</span>` : scr.status === 'failed' ? `<span class="scr-error">${escapeHtml(t('screener.unavailablePresets', { error: scr.error }))}</span>` : '';
+  const chosen = Object.keys(scr.chips).length;
+  panel.innerHTML = `<div class="scr-bar">
+      <span class="scr-label">${escapeHtml(t('screener.title'))}</span>
+      ${typeSeg}${combineSeg}
+      <div class="scr-chips">${loading}${main}</div>
+      ${refine ? `<span class="scr-sep" title="${escapeHtml(t('screener.refine.tip'))}">${escapeHtml(t('screener.refine'))}</span><div class="scr-chips">${refine}</div>` : ''}
+      ${own ? `<span class="scr-sep">${escapeHtml(t('screener.own'))}</span><div class="scr-chips">${own}</div>` : ''}
+      <span class="scr-tools">
+        ${chosen ? `<button type="button" class="dd-act" data-act="clear" title="${escapeHtml(t('screener.clear.tip'))}">${escapeHtml(t('screener.clear'))}</button>` : ''}
+        <label class="dd-act scr-import" title="${escapeHtml(t('screener.import.tip'))}">${escapeHtml(t('screener.import'))}<input type="file" id="scr-import-input" accept=".json,application/json" multiple hidden /></label>
+      </span>
+      <span id="scr-status" class="scr-muted" aria-live="polite">${escapeHtml(screenerStatusText())}</span>
+    </div>
+    ${!chosen && !scr.expanded && scr.status === 'ready' ? `<p class="scr-hint">${escapeHtml(t('screener.none'))}</p>` : ''}
+    ${scr.expanded && effectivePreset(scr.expanded) ? editorHtml(scr.expanded) + metricDatalistHtml() : ''}`;
+}
+
+/** A condition for a newly picked metric: keeps what still fits, else a sensible default for its kind */
+function conditionForMetric(c: ScreenerCondition, metric: string): ScreenerCondition {
+  const kind = metricKind(metric);
+  const next: ScreenerCondition = { ...c, metric };
+  if (kind === 'flag') { next.op = '='; next.value = true; next.scope = 'absolute'; }
+  else if (kind === 'category') { next.op = 'in'; next.value = []; next.scope = 'absolute'; }
+  else {
+    if (opsFor(metric).indexOf(next.op) < 0 || typeof next.value === 'boolean' || (next.op !== 'in' && next.op !== 'range' && typeof next.value !== 'number')) { next.op = '>'; next.value = 0; }
+    if (scopesFor(metric).indexOf(next.scope || 'absolute') < 0) next.scope = 'absolute';
+  }
+  return next;
+}
+
+function numberInput(value: string): number | null {
+  const text = String(value).trim().replace(',', '.');
+  const n = Number(text);
+  return text === '' || !isFinite(n) ? null : n;
+}
+
+/** The value of a condition when its operator changes: a list for in, [min, max] for range, one value otherwise */
+function valueForOp(c: ScreenerCondition, op: Op): ScreenerCondition['value'] {
+  if (op === 'in') return Array.isArray(c.value) ? c.value.filter(v => v !== null) : typeof c.value === 'number' || typeof c.value === 'string' ? [c.value] : [];
+  if (op === 'range') return typeof c.value === 'number' ? [c.value, null] : c.op === 'range' && Array.isArray(c.value) ? c.value : [null, null];
+  if (Array.isArray(c.value)) return metricKind(c.metric) === 'number' ? (numberOrNull(c.value[0]) ?? 0) : String(c.value[0] ?? '');
+  return c.value;
+}
+
+function onScreenerChange(event: any): void {
+  const target = event.target;
+  if (!target || !target.dataset) return;
+  if (target.id === 'scr-import-input') { void importFiles(target.files).finally(() => { target.value = ''; }); return; }
+  const id = scr.expanded;
+  const field = target.dataset.field;
+  if (!id || !field || field === 'list-add') return; // a list value is added by Enter or by leaving the input
+  const index = Number(target.dataset.ci);
+  const value = String(target.value ?? '');
+  if (field === 'match' || field === 'title') {
+    const draft = draftFor(id);
+    if (!draft) return;
+    if (field === 'match') draft.match = value === 'all' ? 'all' : Number(value);
+    else if (value.trim()) draft.title = { en: value.trim(), ru: value.trim() };
+    commitDraft(id, draft);
+    return;
+  }
+  editCondition(id, index, c => {
+    if (field === 'enabled') { if (target.checked) delete c.enabled; else c.enabled = false; }
+    else if (field === 'metric') { if (REGISTRY.byId[value.trim()]) Object.assign(c, conditionForMetric(c, value.trim())); }
+    else if (field === 'op') {
+      const op = SCREENER_OPS.filter(item => item === value)[0];
+      if (op) { c.value = valueForOp(c, op); c.op = op; }
+    } else if (field === 'value') { const n = numberInput(value); if (n !== null) c.value = n; }
+    else if (field === 'min' || field === 'max') {
+      const pair = Array.isArray(c.value) && c.value.length === 2 ? c.value.slice() : [null, null];
+      pair[field === 'min' ? 0 : 1] = numberInput(value);
+      c.value = pair;
+    } else if (field === 'flag') c.value = value === 'true';
+    else if (field === 'text') c.value = value.trim();
+    else if (field === 'scope') { const scope = SCOPES.filter(item => item === value)[0]; if (scope) c.scope = scope; }
+    else if (field === 'missing') c.missing = value === 'skip' ? 'skip' : 'fail';
+  });
+}
+
+function addListValue(index: number, text: string): void {
+  const id = scr.expanded;
+  const items = text.split(',').map(item => item.trim()).filter(Boolean);
+  if (!id || !items.length) return;
+  editCondition(id, index, c => {
+    const list = Array.isArray(c.value) ? c.value.slice() : [];
+    const numeric = metricKind(c.metric) === 'number';
+    items.forEach(item => {
+      const value = numeric ? numberInput(item) : c.metric === 'ticker' ? item.toUpperCase() : item;
+      if (value !== null && list.indexOf(value) < 0) list.push(value);
+    });
+    c.value = list;
+  });
+}
+
+function onScreenerKeydown(event: any): void {
+  const target = event.target;
+  if (!target || !target.dataset || target.dataset.field !== 'list-add' || event.key !== 'Enter') return;
+  event.preventDefault();
+  addListValue(Number(target.dataset.ci), String(target.value || ''));
+}
+
+function onScreenerFocusOut(event: any): void {
+  const target = event.target;
+  if (target && target.dataset && target.dataset.field === 'list-add' && String(target.value || '').trim()) addListValue(Number(target.dataset.ci), String(target.value));
+}
+
+function onScreenerClick(event: any): void {
+  const button = event.target && typeof event.target.closest === 'function' ? event.target.closest('button[data-act]') : null;
+  if (!button) return;
+  const act = button.dataset.act;
+  const id = button.dataset.id || '';
+  const editing = scr.expanded;
+  if (act === 'type') setType(TYPE_FILTERS.filter(type => type === button.dataset.value)[0] || 'stock');
+  else if (act === 'any') { scr.any = button.dataset.value === 'true'; screenerChanged(); }
+  else if (act === 'chip') toggleChip(id, 'in');
+  else if (act === 'not') toggleChip(id, 'out');
+  else if (act === 'expand') { scr.expanded = scr.expanded === id ? null : id; screenerChanged(); }
+  else if (act === 'clear') { scr.chips = {}; screenerChanged(); }
+  else if (!editing) return;
+  else if (act === 'reset') resetPreset(editing);
+  else if (act === 'save') savePreset(editing);
+  else if (act === 'export') exportPreset(editing);
+  else if (act === 'share') {
+    const url = presetShareUrl(editing);
+    void copyText(url).then(() => { scr.message = t('screener.shareCopied', { url }); renderScreenerStatus(); });
+  } else if (act === 'delete-preset') deleteOwnPreset(editing);
+  else if (act === 'add-cond') {
+    const draft = draftFor(editing);
+    if (!draft) return;
+    draft.conditions.push({ metric: 'dividendYield', op: '>', value: 0, scope: 'absolute', missing: 'fail' });
+    commitDraft(editing, draft);
+  } else if (act === 'delete-cond') {
+    const draft = draftFor(editing);
+    if (!draft) return;
+    draft.conditions.splice(Number(button.dataset.ci), 1);
+    if (typeof draft.match === 'number' && draft.match > draft.conditions.length) draft.match = Math.max(1, draft.conditions.length);
+    commitDraft(editing, draft);
+  } else if (act === 'list-remove') {
+    const li = Number(button.dataset.li);
+    editCondition(editing, Number(button.dataset.ci), c => { if (Array.isArray(c.value)) c.value = c.value.filter((_, k) => k !== li); });
+  }
+}
+
+async function importFiles(files: any): Promise<void> {
+  const list: any[] = files ? Array.from(files) : [];
+  for (const file of list) importPresetText(await file.text());
+}
+
+// ---- language switch and guide ----
+
+function applyLanguage(): void {
+  const locale = getLocale();
+  document.documentElement.lang = locale;
+  el.langSwitch.querySelectorAll('[data-lang]').forEach((button: any) => button.setAttribute('aria-pressed', String(button.dataset.lang === locale)));
+  el.langSwitch.title = t('language.tip');
+  el.guideBtn.textContent = t('guide.open');
+  el.guideBtn.title = t('guide.open.tip');
+  el.guideTitle.textContent = t('guide.title');
+  el.guideSearch.placeholder = t('guide.search');
+  el.guideClose.title = t('guide.close');
+  el.guideClose.setAttribute('aria-label', t('guide.close'));
+}
+
+function switchLanguage(locale: string): void {
+  setLocale(locale);
+  metricOptionsLocale = '';
+  applyLanguage();
+  renderScreener();
+  renderGuide();
+  render();
+}
+
+function paragraphs(text: string): string {
+  return text.split('\n\n').map(part => `<p>${escapeHtml(part)}</p>`).join('');
+}
+
+function guideMetricHtml(m: MetricDef): string {
+  const types = m.appliesTo.map(type => t(`type.${type}`)).join(', ');
+  return `<article class="guide-metric" id="guide-m-${escapeHtml(m.id)}" data-metric="${escapeHtml(m.id)}">
+    <h4>${escapeHtml(pick(m.name))} <code>${escapeHtml(m.id)}</code>${m.source === 'planned' ? ` <span class="scr-flag">${escapeHtml(t('guide.planned'))}</span>` : ''}</h4>
+    <p class="guide-short">${escapeHtml(pick(m.short))}</p>
+    <p class="guide-formula"><span class="guide-label">${escapeHtml(t('guide.formula'))}:</span> <code>${escapeHtml(m.formula)}</code> · ${escapeHtml(t('guide.appliesTo'))}: ${escapeHtml(types)}</p>
+    ${paragraphs(pick(m.guide))}
+    ${m.nullWhen ? `<p><span class="guide-label">${escapeHtml(t('guide.nullWhen'))}:</span> ${escapeHtml(pick(m.nullWhen))}</p>` : ''}
+    ${m.sectorNotes ? `<p><span class="guide-label">${escapeHtml(t('guide.sectorNotes'))}:</span> ${escapeHtml(pick(m.sectorNotes))}</p>` : ''}
+  </article>`;
+}
+
+function renderGuide(): void {
+  el.guidePanel.hidden = !guideOpen;
+  if (!guideOpen) return;
+  const query = String(el.guideSearch.value || '').trim().toLowerCase();
+  const hit = (text: string) => !query || text.toLowerCase().includes(query);
+  const sections = GUIDE_SECTIONS.filter(key => hit(`${t(`guide.s.${key}.title`)} ${t(`guide.s.${key}.body`)}`))
+    .map(key => `<section class="guide-section" data-section="${key}"><h3>${escapeHtml(t(`guide.s.${key}.title`))}</h3>${paragraphs(t(`guide.s.${key}.body`))}</section>`).join('');
+  const groups = groupMetrics(REGISTRY.metrics).map(group => {
+    const metrics = group.metrics.filter(m => hit([m.id, m.name.en, m.name.ru, pick(m.short), pick(m.guide), m.formula].join(' ')));
+    return metrics.length ? `<section class="guide-group" data-group="${group.id}"><h3>${escapeHtml(pick(group.title))} <span class="scr-muted">${metrics.length}</span></h3>${metrics.map(guideMetricHtml).join('')}</section>` : '';
+  }).join('');
+  el.guideBody.innerHTML = sections || groups
+    ? `${sections ? `<h2 class="guide-h2">${escapeHtml(t('guide.sections'))}</h2>${sections}` : ''}${groups ? `<h2 class="guide-h2">${escapeHtml(t('guide.metrics'))}</h2>${groups}` : ''}`
+    : `<p class="scr-muted">${escapeHtml(t('guide.empty'))}</p>`;
+}
+
+function setGuideOpen(open: boolean): void {
+  guideOpen = open;
+  el.guideBtn.setAttribute('aria-expanded', String(open));
+  renderGuide();
+  if (open) el.guideSearch.focus();
+  else el.guideBtn.focus();
+}
+
+function bindScreenerEvents(): void {
+  el.screenerPanel.addEventListener('click', onScreenerClick);
+  el.screenerPanel.addEventListener('change', onScreenerChange);
+  el.screenerPanel.addEventListener('keydown', onScreenerKeydown);
+  el.screenerPanel.addEventListener('focusout', onScreenerFocusOut);
+  el.langSwitch.addEventListener('click', (event: any) => {
+    const button = event.target && typeof event.target.closest === 'function' ? event.target.closest('[data-lang]') : null;
+    if (button) switchLanguage(button.dataset.lang);
+  });
+  el.guideBtn.addEventListener('click', () => setGuideOpen(!guideOpen));
+  el.guideClose.addEventListener('click', () => setGuideOpen(false));
+  el.guidePanel.addEventListener('click', (event: any) => { if (event.target === el.guidePanel) setGuideOpen(false); });
+  el.guideSearch.addEventListener('input', () => renderGuide());
+  document.addEventListener('keydown', (event: any) => { if (event.key === 'Escape' && guideOpen) setGuideOpen(false); });
+  window.addEventListener('hashchange', onHashChange);
+}
+
 function init(): void {
   restoreSelectedStocks();
   restoreBlacklist();
@@ -4229,13 +5095,18 @@ function init(): void {
   if (savedTab) state.activeTab = savedTab;
   restoreSearches();
   restoreTabSorts();
+  restoreScreener();
   applySortForTab(state.activeTab);
   applyTheme(lsGet(THEME_KEY) === 'dark');
   bindEvents();
+  bindScreenerEvents();
+  applyLanguage();
+  renderScreener();
   syncSearchInput();
   fitTableHeight();
   renderFilters();
   renderSubtitle();
+  void loadScreenerData();
   void loadCatalog().catch(error => {
     const message = error instanceof Error ? error.message : String(error);
     state.loading = false;
@@ -4361,4 +5232,6 @@ init();
 // ---- browser test hooks: the module scope hides these from the page, the UI tests in ../ETFs/.claude/tools/ui-std reach them through window ----
 
 Object.assign(window, { state, render, catalogIds, catalogFilterColumns, detectedCatalogType, filterExpressionFor, gridTypeCache, menuColumns });
+// screener hooks of stocks-screener-uitest.ts
+Object.assign(window, { scr, exportPreset, importPresetText, presetShareUrl, presetResults, effectivePreset, switchLanguage, applyClear });
 Object.defineProperty(window, 'store', { get: () => store });
