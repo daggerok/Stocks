@@ -31,7 +31,9 @@ export const isFinancial = (industry: string | null) => isBank(industry) || isIn
 
 /**
  * Sectors scored with the classic manufacturing Altman Z (market cap over liabilities, sales over assets); every other sector,
- * an unknown one included, gets Z'' for non-manufacturers (book equity over liabilities, no sales term)
+ * an unknown one included, gets Z'' for non-manufacturers (book equity over liabilities, no sales term). Kept in code (owner
+ * answer N12, a config only if cheap): scripts/ allows only its listed files and update-data.config.json holds control defaults
+ * only, so there is no allowed place for a data table outside this module
  */
 export const ALTMAN_CLASSIC_SECTORS = ['Industrials', 'Basic Materials', 'Consumer Cyclical', 'Consumer Defensive', 'Energy', 'Technology', 'Healthcare'];
 

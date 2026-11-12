@@ -11,6 +11,7 @@ import {
   isOperatingTicker, minusMonths, normalizeTicker, parseChart, periodEve, parseRange, parseRanges, parseRetryAfter, parseSecTickers, parseSummary, parseYahooAnnual, priceReturns, readConfig, resolveControls,
   indexDocument, parseWatchlist, range52wPosition, pruneCompanies, resolveWatchlist, restoreFeed, run, writeSignalsIssue, runtimeControls, sampleHistory, useApiRoot, useWatchlistDir, valuationMetrics, withMetricKeys, type ChartDay, type Snapshot,
   coverageMarkdown, metaText, scaleCheck, FEED_SCHEMA_VERSION, adrCoverage, adrFlag, annualRowsFromSec, FUNDAMENTALS_BASIS, SCALE_TOLERANCE_ANNUAL_PCT, staleForeignLayer,
+  restateAnnualEps,
 } from './update-data.ts';
 import { parseCompanyFacts } from './sec/companyfacts';
 
@@ -286,6 +287,16 @@ describe('metrics', () => {
     const gap = buildAnnualRows(syntheticFacts());
     gap.splice(1, 1); // the previous row is not the prior fiscal year
     expect(fundamentalsMetrics(gap).revenueGrowth).toBeNull();
+    // N18: a 4:1 split after FY-1: the 10-K facts of the older years keep the old share basis, the SEC layer restates them
+    const rows = buildAnnualRows(syntheticFacts());
+    const preSplit = rows.map((r, i) => (i === 0 ? r : { ...r, eps: (r.eps as number) * 4 }));
+    expect((fundamentalsMetrics(preSplit).epsGrowth3y as number) < 0).toBe(true);
+    const layer = parseCompanyFacts(syntheticFacts());
+    if (!layer) throw new Error('no SEC layer');
+    const restated = fundamentalsMetrics(restateAnnualEps(preSplit, layer));
+    expect([restated.epsGrowth, restated.epsGrowth3y, restated.epsGrowth5y]).toEqual([m.epsGrowth, m.epsGrowth3y, m.epsGrowth5y]);
+    expect([m.epsGrowth, m.epsGrowth3y, m.epsGrowth5y]).toEqual([10, 10, 10]);
+    expect(restateAnnualEps(preSplit, null)).toBe(preSplit);
   });
 
   test('returns: performance from closes, total return from adjusted closes, horizons the history cannot reach are null', () => {
@@ -340,6 +351,10 @@ describe('metrics', () => {
     expect(r.metrics.dividendGrowth3y).toBeCloseTo(9.14, 1);
     expect(r.metrics.dividendGrowth5y).toBeNull();
     expect(dividendMetrics([], 100, '2025-03-01').metrics.dividendYield).toBe(0);
+    // N20: 30 complete calendar years and the current one are kept, so 35 years of raises give a streak of 29
+    const long = Array.from({ length: 36 }, (_x, i) => ({ date: `${1990 + i}-06-15`, amount: 1 + i * 0.1 }));
+    const kept = dividendMetrics(long, 100, '2025-07-01');
+    expect([kept.annual.length, kept.annual[0].year, kept.annual[kept.annual.length - 1].year, kept.metrics.dividendStreak]).toEqual([31, 2025, 1995, 29]);
     const adr = valuationMetrics({ ...SNAPSHOT, financialCurrency: 'TWD' });
     expect(adr.pe).toBeNull();
     expect(adr.pFcf).toBeNull();

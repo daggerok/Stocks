@@ -316,7 +316,7 @@ type GrowthBase = { key: string; en: string; ru: string; direction: Direction; r
 const inSentence = (b: GrowthBase): string => (['Revenue', 'Assets', 'Debt'].indexOf(b.en) >= 0 ? b.en.toLowerCase() : b.en);
 const GROWTH_BASES: GrowthBase[] = [
   { key: 'revenue', en: 'Revenue', ru: 'выручки', direction: 'higher-is-better', read: { en: 'Sustained double-digit growth marks a grower; 3-5% is a mature business keeping pace with inflation', ru: 'Устойчивый двузначный рост - признак растущей компании; 3-5% - зрелый бизнес на уровне инфляции' } },
-  { key: 'eps', en: 'EPS', ru: 'EPS', direction: 'higher-is-better', read: { en: 'EPS is diluted earnings per share; it can grow faster than net income thanks to buybacks', ru: 'EPS - разводнённая прибыль на акцию; она может расти быстрее чистой прибыли за счёт выкупов' } },
+  { key: 'eps', en: 'EPS', ru: 'EPS', direction: 'higher-is-better', read: { en: 'EPS is diluted earnings per share, restated for stock splits from the SEC layer (a year filed before a split is divided by the split ratio); it can grow faster than net income thanks to buybacks', ru: 'EPS - разводнённая прибыль на акцию, пересчитанная на сплиты по слою SEC (год, поданный до сплита, делится на коэффициент сплита); она может расти быстрее чистой прибыли за счёт выкупов' } },
   { key: 'fcf', en: 'FCF', ru: 'FCF', direction: 'higher-is-better', read: { en: 'FCF is operating cash flow minus capital expenditures; it swings with investment cycles, so prefer the 3 and 5-year rates', ru: 'FCF - операционный денежный поток минус капзатраты; он скачет вместе с циклом инвестиций, поэтому надёжнее темпы за 3 и 5 лет' } },
   { key: 'ebitda', en: 'EBITDA', ru: 'EBITDA', direction: 'higher-is-better', read: { en: 'EBITDA here is operating income plus depreciation and amortization from the filings', ru: 'EBITDA здесь - операционная прибыль плюс амортизация по отчётности' } },
   { key: 'capex', en: 'CapEx', ru: 'капзатрат', direction: 'neutral', read: { en: 'Rising capital expenditures mean investment in future capacity, which lowers FCF today; compare with revenue growth', ru: 'Рост капзатрат - вложения в будущие мощности, которые сегодня снижают FCF; сравнивают с ростом выручки' } },
@@ -1246,13 +1246,13 @@ const SCORE_OUTPUTS: MetricDef[] = [
 
 const SCORE_INPUTS: MetricDef[] = [
   def({
-    id: 'dividendStreak', name: { en: 'Dividend increase streak', ru: 'Стрик повышений дивиденда' }, formula: 'complete calendar years in a row whose dividend per share is above the base year (the year before, or the one before a special dividend), counted back from the last complete year (market.annualDps, up to 15 years)',
+    id: 'dividendStreak', name: { en: 'Dividend increase streak', ru: 'Стрик повышений дивиденда' }, formula: 'complete calendar years in a row whose dividend per share is above the base year (the year before, or the one before a special dividend), counted back from the last complete year (market.annualDps, up to 30 complete years)',
     unit: 'count', basis: 'calendar-year', source: 'yahoo-chart', direction: 'higher-is-better', thresholds: { good: 10 },
     nullWhen: { en: 'no dividend in the last complete calendar year', ru: 'нет дивиденда в последнем полном календарном году' },
     short: { en: 'Years in a row with a higher dividend', ru: 'Лет подряд с повышением дивиденда' },
     guide: {
-      en: 'How many complete calendar years in a row the dividend per share (split adjusted, sum of the ex-dates of the year) went up. A flat year ends the streak. A special dividend does not count: a year more than 1.2 times above both neighbours is skipped as the base. The feed keeps up to 15 years, so the streak tops out at 14 even for a company raising for 60 years. 10 and more is a dividend grower',
-      ru: 'Сколько полных календарных лет подряд дивиденд на акцию (с поправкой на сплиты, сумма экс-дат года) повышался. Год без изменений обрывает стрик. Спецдивиденд не считается: год, который больше обоих соседей в 1,2 раза, пропускается как база. Фид хранит до 15 лет, поэтому стрик не больше 14 даже у компании, повышающей выплату 60 лет. От 10 лет - устойчивый растущий плательщик',
+      en: 'How many complete calendar years in a row the dividend per share (split adjusted, sum of the ex-dates of the year) went up. A flat year ends the streak. A special dividend does not count: a year more than 1.2 times above both neighbours is skipped as the base. The feed keeps 30 complete calendar years, so the streak tops out at 29 even for a company raising for 60 years. 10 and more is a dividend grower',
+      ru: 'Сколько полных календарных лет подряд дивиденд на акцию (с поправкой на сплиты, сумма экс-дат года) повышался. Год без изменений обрывает стрик. Спецдивиденд не считается: год, который больше обоих соседей в 1,2 раза, пропускается как база. Фид хранит 30 полных календарных лет, поэтому стрик не больше 29 даже у компании, повышающей выплату 60 лет. От 10 лет - устойчивый растущий плательщик',
     },
   }),
   def({
