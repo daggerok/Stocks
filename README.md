@@ -97,7 +97,7 @@ Defaults live in `scripts/update-data.config.json` (every control as a string). 
 
 ### Metrics and caveats
 
-Each stock carries a `metrics` object that powers the catalog columns. Percent values are plain numbers (`12.5` means 12.5%), ratios are plain numbers, money is USD
+Each stock carries a `metrics` object that powers the catalog columns. Every metric of the registry that a stock has is a table column (none lives only in the screener), all visible by default: texts and flags (`altmanVariant`, `country`, `isAdr`, `isReit`, `isMine` as Yes or No) are text columns, `athDate` and the row dates `fundamentalsAsOf` (`FY As Of`) and `ttmAsOf` (`TTM As Of`) are date columns; the wide table scrolls inside its card. Percent values are plain numbers (`12.5` means 12.5%), ratios are plain numbers, money is USD
 
 | Group | Keys | Meaning |
 | --- | --- | --- |
