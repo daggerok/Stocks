@@ -85,3 +85,27 @@ describe('fundamentals formulas', () => {
     expect(withSectorExceptions({ quickRatio: 1 }, 'Software - Application')).toEqual({ quickRatio: 1 });
   });
 });
+
+describe('stop factor and flag inputs', () => {
+  test('negative FCF years in a row, CFO growth and the EPS over NI growth gap', () => {
+    // FCF = cfo - capex: -10, -5, -1, then +10: three negative years in a row
+    const burn: Row[] = [[10, 20], [15, 20], [19, 20], [30, 20]].map(([cfo, capex]) => ({ cfo, capex }));
+    expect(fundamentalMetrics(sec(burn, {}), CTX).fcfNegativeYears).toBe(3);
+    expect(fundamentalMetrics(sec([{ cfo: 30, capex: 20 }, ...burn], {}), CTX).fcfNegativeYears).toBe(0); // the latest year is positive
+    expect(fundamentalMetrics(sec([{ cfo: 30 }], {}), CTX).fcfNegativeYears).toBeNull(); // no capex: unknown, never 0
+    // NI 100 -> 133.1 (10% a year), EPS 1 -> 1.728 (20% a year, buybacks), CFO 150 -> 150: gap 10 pp, CFO growth 0
+    const y: Row[] = [[133.1, 1.728], [121, 1.44], [110, 1.2], [100, 1]].map(([netIncome, epsDiluted]) => ({ netIncome, epsDiluted, cfo: 150 }));
+    const m = fundamentalMetrics(sec(y, {}), CTX);
+    expect([m.niGrowth3y, m.cfoGrowth3y, m.epsNiGrowthGap3y]).toEqual([10, 0, 10]);
+  });
+
+  test('the largest material year-over-year balance change and its line', () => {
+    const prev: Row = { assets: 1000, cash: 50, receivables: 200, debt: 300, equity: 400 };
+    // cash +300% is below 10% of the assets of the year before, so the debt jump (+100%) wins
+    const m = fundamentalMetrics(sec([{ assets: 1300, cash: 200, receivables: 210, debt: 600, equity: 420 }, prev], {}), CTX);
+    expect([m.balanceYoyMaxChange, m.balanceYoyMaxLine]).toEqual([100, 'debt']);
+    const calm = fundamentalMetrics(sec([{ assets: 1020, cash: 52, receivables: 205, debt: 290, equity: 410 }, prev], {}), CTX);
+    expect([calm.balanceYoyMaxChange, calm.balanceYoyMaxLine]).toEqual([-3.33, 'debt']);
+    expect(fundamentalMetrics(sec([prev], {}), CTX).balanceYoyMaxChange).toBeNull(); // one year only
+  });
+});

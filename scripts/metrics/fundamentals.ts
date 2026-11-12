@@ -14,6 +14,8 @@ export const FUNDAMENTAL_METRIC_KEYS = [
   'operatingMargin', 'grossMarginSlope3y', 'operatingMarginSlope3y', 'cfoToNi', 'fcfToNi', 'interestCoverage', 'interestCoverageNote',
   'cashRunwayMonths', 'altmanZ', 'altmanVariant', 'piotroskiF', 'niVolatility5y', 'fcfVolatility5y', 'capexToCfo', 'capexToRevenue',
   'capexToRevenueDelta3y', 'niGrowth3y', 'niGrowth5y', 'ffoApprox', 'ffoPayoutApprox',
+  // inputs of the stage 5 stop factors and flags (src/core/scoring)
+  'fcfNegativeYears', 'cfoGrowth3y', 'epsNiGrowthGap3y', 'balanceYoyMaxChange', 'balanceYoyMaxLine',
 ] as const;
 
 /** Yahoo industries (plan 1.7): REIT - prefix REIT, banks - Banks, insurers - Insurance */
@@ -32,7 +34,7 @@ export const ALTMAN_CLASSIC_SECTORS = ['Industrials', 'Basic Materials', 'Consum
 export const FINANCIALS_NULL_KEYS = [
   'netDebtToEbitda', 'evEbitda', 'quickRatio', 'currentRatio', 'pFcf', 'fcfToEbitda', 'fcfPayout', 'fcfMargin', 'fcfMarginDelta', 'fcfMarginDelta3y',
   'fcfGrowth', 'fcfGrowth3y', 'fcfGrowth5y', 'fcfToNi', 'fcfVolatility5y', 'cashRunwayMonths', 'altmanZ', 'altmanVariant', 'piotroskiF',
-  'interestCoverage', 'interestCoverageNote', 'pFcfPct5y',
+  'interestCoverage', 'interestCoverageNote', 'pFcfPct5y', 'fcfNegativeYears',
 ];
 
 const DAY = 86_400_000;
@@ -127,6 +129,25 @@ function growthVolatility(v: View, value: (back: number) => Num): Num {
     rates.push(((cur - base) / base) * 100);
   }
   return r2(stdev(rates));
+}
+
+/** Balance lines checked for a large year-over-year change (flag of plan stage 5) */
+export const BALANCE_LINES = ['cash', 'receivables', 'currentAssets', 'assets', 'currentLiabilities', 'liabilities', 'debt', 'equity'];
+/** A line smaller than this share of the total assets of the year before is too small to matter */
+export const BALANCE_MATERIALITY = 0.1;
+
+/** The balance line with the largest year-over-year change in %, latest fiscal year end against the one before */
+function balanceJump(v: View): { line: string; change: number } | null {
+  const prevAssets = v.fy('assets', 1);
+  if (!pos(prevAssets)) return null;
+  let best: { line: string; change: number } | null = null;
+  for (const line of BALANCE_LINES) {
+    const cur = v.fy(line, 0), prev = v.fy(line, 1);
+    if (!fin(cur) || !pos(prev) || prev < BALANCE_MATERIALITY * prevAssets) continue;
+    const change = ((cur - prev) / prev) * 100;
+    if (!best || Math.abs(change) > Math.abs(best.change)) best = { line, change: roundTo(change, 2) };
+  }
+  return best;
 }
 
 export type AltmanResult = { altmanZ: Num; altmanVariant: string | null };
@@ -242,6 +263,21 @@ export function fundamentalMetrics(sec: SecFundamentals | null, ctx: Fundamental
   out.capexToRevenueDelta3y = i0 !== null && i3 !== null ? r2((i0 - i3) * 100) : null;
   out.niGrowth3y = cagr(v, 'netIncome', 3);
   out.niGrowth5y = cagr(v, 'netIncome', 5);
+
+  // stop factor and flag inputs
+  let negative = 0;
+  for (let back = 0; back < 10; back += 1) {
+    const f = fcfOf(v.fy('cfo', back), v.fy('capex', back));
+    if (!fin(f) || f >= 0) break;
+    negative += 1;
+  }
+  out.fcfNegativeYears = fin(fcfOf(v.fy('cfo', 0), v.fy('capex', 0))) ? negative : null;
+  out.cfoGrowth3y = cagr(v, 'cfo', 3);
+  const epsCagr = cagr(v, 'epsDiluted', 3);
+  out.epsNiGrowthGap3y = epsCagr !== null && out.niGrowth3y !== null ? r2(epsCagr - (out.niGrowth3y as number)) : null;
+  const jump = balanceJump(v);
+  out.balanceYoyMaxChange = jump ? jump.change : null;
+  out.balanceYoyMaxLine = jump ? jump.line : null;
 
   if (isReit(ctx.industry) && fin(ni) && fin(v.ttm('da'))) {
     // approximate FFO: net income + depreciation (the cash flow D&A line: Schedule III real estate depreciation is annual only)

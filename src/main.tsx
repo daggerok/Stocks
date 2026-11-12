@@ -7,6 +7,10 @@ import {
   OwnEntry, parsePresetText, PeerGroups, Preset, PRESET_SCHEMA_VERSION, presetFileName, presetFileText, presetKey, PresetResult, RELATIVE_SCOPES,
   samePreset, Scope, SCOPES, stockRow, uniqueId, Universe, validatePreset,
 } from './core/screener';
+import {
+  archetypeText, computeScoring, flagTexts, RowScoring, SCORE_IDS, SCORE_METRICS, SCORING_CONFIG_URL, ScoringConfig, ScoringResult, statusText,
+  validateScoringConfig, whyText, withScoreMetrics,
+} from './core/scoring';
 
 /**
  * @file Stocks Application
@@ -93,6 +97,13 @@ const MARGIN_NAMES: Array<[string, string, string]> = [
 function buildColumns(): Col[] {
   const cols: Col[] = [];
   const add = (key: string, label: string, group: string, fmt: CellFormat, tip: string) => { cols.push({ key, label, group, fmt, tip }); };
+  // the five scores and the status score (src/core/scoring, plan stage 5): computed in the page, colored by the config thresholds
+  add('statusScore', 'Score', 'Scores', 'int', 'Status score - the five scores weighted by the archetype (0-100); the status compares it with the thresholds of the archetype.');
+  add('scoreCheap', 'Cheap', 'Scores', 'int', 'Cheap score 0-100 - PEGs, forward against TTM P/E, own 5-year P/E and P/FCF percentiles, forward P/E in the sector and among peers.');
+  add('scoreQuality', 'Quality', 'Scores', 'int', 'Quality score 0-100 - ROIC, margin trends, cash conversion.');
+  add('scoreSafety', 'Safety', 'Scores', 'int', 'Safety score 0-100 - debt, interest coverage, Altman Z, Piotroski F, stable earnings.');
+  add('scoreDividend', 'Dividend', 'Scores', 'int', 'Dividend score 0-100 - streak, no cuts, growth, payout, yield; payers only.');
+  add('scoreEntry', 'Entry', 'Scores', 'int', 'Entry point score 0-100 - drop from the highs, 52-week range position, sigma from the 60-day mean; lowered when EPS estimates fall.');
   add('pe', 'P/E', 'Valuation', 'x', 'P/E - price divided by trailing twelve month earnings per share (Yahoo Finance snapshot). Unavailable for loss makers and for ADRs whose reporting currency differs from the price currency.');
   add('forwardPe', 'Fwd P/E', 'Valuation', 'x', 'Forward P/E - price divided by the analyst consensus EPS estimate for the next fiscal year (Yahoo Finance).');
   add('ps', 'P/S', 'Valuation', 'x', 'P/S - market cap divided by trailing twelve month revenue.');
@@ -1506,7 +1517,15 @@ const BASE_FILTER_COLUMNS: CatalogColumn[] = [
   { key: 'price', label: 'Price', kind: 'num', fmt: 'price' },
   { key: 'marketCap', label: 'Market Cap', kind: 'num', fmt: 'money' },
   { key: 'presets', label: 'Presets', kind: 'text', fmt: 'text' },
+  { key: 'archetype', label: 'Archetype', kind: 'text', fmt: 'text' },
+  { key: 'status', label: 'Status', kind: 'text', fmt: 'text' },
+  { key: 'why', label: 'Why', kind: 'text', fmt: 'text' },
+  { key: 'flags', label: 'Flags', kind: 'text', fmt: 'text' },
 ];
+
+/** Text columns of the scoring (src/core/scoring): their texts follow the language switch */
+const SCORING_TEXT_KEYS = ['archetype', 'status', 'why', 'flags'];
+const SCORE_COLUMN_KEYS = ['statusScore', 'scoreCheap', 'scoreQuality', 'scoreSafety', 'scoreDividend', 'scoreEntry'];
 
 /** Ticker (and the # and Use cells in front of it) can never be hidden; every other column is optional. */
 const MANDATORY_COLUMN = 'ticker';
@@ -1534,6 +1553,7 @@ function catalogCellText(col: CatalogColumn, id: number): string {
   if (!s) return '';
   if (col.key === 'type') return s.typeText[id].toLowerCase();
   if (col.key === 'presets') return passedPresets(id).map(p => pick(p.title)).join(' ').toLowerCase();
+  if (SCORING_TEXT_KEYS.includes(col.key)) return scoringText(col.key, id).toLowerCase();
   if (col.kind === 'text') return col.key === 'ticker' ? s.fields.ticker[id] : col.key === 'name' ? s.fields.name[id] : col.key === 'exchange' ? s.fields.exchange[id] : col.key === 'sector' ? s.fields.sector[id] : s.fields.industry[id];
   if (col.kind === 'basis') { const cls = s.num.basisCls[id]; return BASIS_BADGES[Number.isFinite(cls) ? String(cls) : 'none'].label.toLowerCase(); }
   if (col.kind === 'date') return String(col.key === 'perfTs' ? (s.raw[id].metrics ? s.raw[id].metrics.performanceAsOf || '' : '') : s.raw[id].fundamentalsAsOf || '').toLowerCase();
@@ -1645,6 +1665,7 @@ function sortArrayFor(key: string): Float64Array | null {
   const s = store;
   if (s.num[key]) return s.num[key];
   if (key === 'presets') return presetCountArray(); // number of presets passed, moves with every screener edit (never in rankCache)
+  if (SCORING_TEXT_KEYS.includes(key)) return scoringSortArray(key);
   if (!STRING_SORT_KEYS.includes(key)) return null;
   const cached = s.rankCache[key];
   if (cached) return cached;
@@ -2790,6 +2811,7 @@ function cellHtml(col: Col, id: number): string {
     const m = s.raw[id].metrics || {};
     return range52wCellHtml({ range52w: m.range52w, week52Low: m.week52Low, week52High: m.week52High, range52wClose: m.price, range52wAsOf: m.performanceAsOf || s.raw[id].asOfDate, range52wBasis: 'High and Low' }, numCls);
   }
+  if (SCORE_COLUMN_KEYS.includes(col.key)) return `<td class="${numCls}">${scoreBadgeHtml(s.num[col.key][id])}</td>`;
   if (col.key === 'perf1y' && s.raw[id].perf1yBasis === 'tr1y') return `<td class="${numCls}" title="${escapeHtml(t('etf.perf1y.tip'))}">${formatByFmt(col.fmt, s.num[col.key][id])}</td>`;
   return `<td class="${numCls}">${formatByFmt(col.fmt, s.num[col.key][id])}</td>`;
 }
@@ -2818,6 +2840,7 @@ function stockRowHtml(id: number, index: number, cols: Col[]): string {
           ${state.hiddenCols.has('price') ? '' : `<td class="${numCls}">${formatPrice(s.num.price[id])}</td>`}
           ${state.hiddenCols.has('marketCap') ? '' : `<td class="${numCls}">${formatMoney(s.num.marketCap[id])}</td>`}
           ${state.hiddenCols.has('presets') ? '' : `<td class="py-2 px-4 scr-badges">${presetBadgesHtml(id)}</td>`}
+          ${scoringCellsHtml(id)}
           ${cols.map(col => cellHtml(col, id)).join('')}
         </tr>
       `;
@@ -3005,7 +3028,7 @@ function renderCatalogTable(): void {
       ${filterColumns.map(col => {
         const base = BASE_FILTER_COLUMNS.some(item => item.key === col.key);
         const numeric = col.kind === 'num';
-        const label = col.key === 'presets' ? t('screener.badges') : col.key === 'type' ? t('screener.type.column') : col.label;
+        const label = col.key === 'presets' ? t('screener.badges') : col.key === 'type' ? t('screener.type.column') : SCORING_TEXT_KEYS.includes(col.key) ? t(`scoring.col.${col.key}`) : col.label;
         return sortHeader(label, col.key, numeric, col.key === 'ticker' ? 'catalog-sticky-col catalog-sticky-ticker' : '', badgeFor(col), catalogHeaderTip(col.key, col.label));
       }).join('')}
     </tr>`;
@@ -3879,7 +3902,7 @@ function currentExportRows(): { headers: string[]; rows: string[][]; scope: stri
   const s = store;
   const ids = catalogIds();
   return {
-    headers: ['#', 'Selected', 'Ticker', 'Company', 'Type', 'Exchange', 'Sector', 'Industry', 'Price ($)', 'Market Cap ($)', 'Presets', ...COLS.map(col => (col.fmt === 'pct' ? `${col.label} (%)` : col.fmt === 'pp' ? `${col.label} (pp)` : col.label))],
+    headers: ['#', 'Selected', 'Ticker', 'Company', 'Type', 'Exchange', 'Sector', 'Industry', 'Price ($)', 'Market Cap ($)', 'Presets', 'Archetype', 'Status', 'Why', 'Flags', ...COLS.map(col => (col.fmt === 'pct' ? `${col.label} (%)` : col.fmt === 'pp' ? `${col.label} (pp)` : col.label))],
     rows: s ? ids.map((id, index) => [
       String(catalogRowNumber(id, index)),
       state.selected.has(s.ticker[id]) ? 'yes' : 'no',
@@ -3892,6 +3915,7 @@ function currentExportRows(): { headers: string[]; rows: string[][]; scope: stri
       numberCell(nanToNull(s.num.price[id])),
       numberCell(nanToNull(s.num.marketCap[id])),
       passedPresets(id).map(p => pick(p.title)).join('; '),
+      ...SCORING_TEXT_KEYS.map(key => scoringText(key, id)),
       ...COLS.map(col => exportCell(col, id)),
     ]) : [],
     scope: state.activeTab === 'watchlist' ? 'watchlist' : 'stocks',
@@ -4295,7 +4319,7 @@ const ETF_CONCURRENCY = 6;
 const TYPE_FILTERS: TypeFilter[] = ['stock', 'etf', 'all'];
 const SCREENER_OPS: Op[] = ['>', '>=', '<', '<=', '=', 'range', 'in'];
 const MISSING_MODES: Missing[] = ['fail', 'skip'];
-const GUIDE_SECTIONS = ['presets', 'scopes', 'missing', 'swings', 'own'];
+const GUIDE_SECTIONS = ['presets', 'scopes', 'missing', 'swings', 'scores', 'archetypes', 'flags', 'thresholds', 'own'];
 
 const scr: ScreenerState = {
   type: 'stock', any: false, chips: {}, drafts: {}, expanded: null, base: [], repoOwn: [], browserOwn: [], lastExported: {}, peers: {},
@@ -4309,6 +4333,10 @@ let etfState: 'idle' | 'loading' | 'done' = 'idle';
 let etfDone = 0;
 let etfFailed: string[] = [];
 let screenUniverse: { version: number; universe: Universe } | null = null;
+let scoringConfig: ScoringConfig | null = null; // src/core/scoring/config.json as dist/scoring.json, null until loaded or when invalid
+let scoringResult: ScoringResult | null = null; // one entry per store row, rebuilt with the universe
+let scoringRows: any[] = []; // the engine rows the result was computed on (the Why and Flags texts read their metrics)
+let scoringTextCache: { sig: string; texts: Record<string, string[]>; tips: Record<string, string[]>; sorts: Record<string, Float64Array> } | null = null;
 let resultsCache: { sig: string; results: Record<string, PresetResult> } | null = null;
 let maskCache: { sig: string; mask: Uint8Array | null } | null = null;
 let presetCountCache: { sig: string; counts: Float64Array } | null = null;
@@ -4345,7 +4373,23 @@ function screenerUniverse(): Universe | null {
   const flagged = stockCompanies.some(row => typeof row.isMine === 'boolean');
   const mine = new Set((mineTickers ? mineTickers : flagged ? [] : stockCompanies.map(row => String(row.ticker))).map(normalizeTicker));
   const rows = s.raw.map((raw: any) => (raw.assetType === 'etf' ? etfRow(raw, mine) : stockRow(raw, mine)));
-  screenUniverse = { version: s.version, universe: createUniverse(rows, { peers: scr.peers }) };
+  let universe = createUniverse(rows, { peers: scr.peers });
+  scoringResult = null;
+  scoringRows = rows;
+  if (scoringConfig) {
+    try {
+      // scores, archetype, status and flags of every row, then a universe whose rows carry them as metrics (presets can filter on them)
+      const result = computeScoring(universe, scoringConfig);
+      universe = createUniverse(withScoreMetrics(rows, result), { peers: scr.peers });
+      scoringResult = result;
+      SCORE_IDS.forEach(id => { const column = s.num[SCORE_METRICS[id]]; result.rows.forEach((r, i) => { const v = r.scores[id]; column[i] = v === null ? NaN : v; }); });
+      result.rows.forEach((r, i) => { s.num.statusScore[i] = r.statusScore === null ? NaN : r.statusScore; });
+    } catch (error) {
+      console.warn('Scoring failed:', error instanceof Error ? error.message : error);
+    }
+  }
+  scoringTextCache = null;
+  screenUniverse = { version: s.version, universe };
   return screenUniverse.universe;
 }
 
@@ -4440,8 +4484,79 @@ function presetBadgesHtml(id: number): string {
 function catalogHeaderTip(key: string, label: string): string {
   if (key === 'presets') return t('screener.badges.tip');
   if (key === 'type') return t('screener.type.column.tip');
+  if (SCORING_TEXT_KEYS.includes(key)) return t(`scoring.col.${key}.tip`);
   const def = REGISTRY.byId[key];
   return def ? `${pick(def.name)}: ${pick(def.short)}` : getHeaderTooltip(label);
+}
+
+// ---- scoring columns: five scores, archetype, status, Why and flags (plan stage 5; logic and texts in src/core/scoring) ----
+
+function scoringRowOf(id: number): RowScoring | null {
+  screenerUniverse(); // computes the scoring of the current store
+  return scoringResult && scoringResult.rows[id] ? scoringResult.rows[id] : null;
+}
+
+/** Texts, tooltips and sort keys of the scoring text columns for every row, cached per store and language */
+function scoringTexts(): { texts: Record<string, string[]>; tips: Record<string, string[]>; sorts: Record<string, Float64Array> } {
+  screenerUniverse();
+  const s = store;
+  const config = scoringConfig;
+  const result = scoringResult;
+  const locale = getLocale();
+  const sig = `${s ? s.version : 0}|${locale}|${result ? 1 : 0}`;
+  if (scoringTextCache && scoringTextCache.sig === sig) return scoringTextCache;
+  const n = s ? s.n : 0;
+  const texts: Record<string, string[]> = { archetype: [], status: [], why: [], flags: [] };
+  const tips: Record<string, string[]> = { why: [], flags: [] };
+  const sorts: Record<string, Float64Array> = {};
+  SCORING_TEXT_KEYS.forEach(key => { sorts[key] = new Float64Array(n).fill(NaN); });
+  const archetypes = config ? Object.keys(config.archetypes) : [];
+  for (let i = 0; i < n; i++) {
+    const r = result ? result.rows[i] : null;
+    const row = scoringRows[i];
+    if (!config || !r || !row) { SCORING_TEXT_KEYS.forEach(key => { texts[key][i] = ''; }); tips.why[i] = ''; tips.flags[i] = ''; continue; }
+    texts.archetype[i] = archetypeText(config, r.archetype, locale);
+    texts.status[i] = statusText(r.status, locale);
+    texts.why[i] = whyText(config, r, row, locale);
+    const flags = flagTexts(config, r, row, locale);
+    texts.flags[i] = flags.map(f => f.title).join(', ');
+    tips.why[i] = texts.why[i].split('; ').join('\n');
+    tips.flags[i] = flags.map(f => f.detail).join('\n');
+    sorts.archetype[i] = archetypes.indexOf(r.archetype);
+    sorts.status[i] = r.status === 'buy' ? 0 : r.status === 'watch' ? 1 : r.status === 'rejected' ? 2 : NaN;
+    sorts.why[i] = r.statusScore === null ? NaN : r.statusScore;
+    sorts.flags[i] = row.type === 'stock' ? r.flags.length : NaN;
+  }
+  scoringTextCache = { sig, texts, tips, sorts };
+  return scoringTextCache;
+}
+
+function scoringText(key: string, id: number): string {
+  const list = scoringTexts().texts[key];
+  return list && list[id] ? list[id] : '';
+}
+
+function scoringSortArray(key: string): Float64Array {
+  return scoringTexts().sorts[key];
+}
+
+/** A score 0-100 colored by the thresholds of the config: green from colors.good, red below colors.bad */
+function scoreBadgeHtml(value: number): string {
+  if (!Number.isFinite(value)) return DASH;
+  const colors = scoringConfig ? scoringConfig.colors : { good: 70, bad: 40 };
+  const cls = value >= colors.good ? 'is-good' : value < colors.bad ? 'is-bad' : 'is-mid';
+  return `<span class="scr-score ${cls}">${formatInteger(value)}</span>`;
+}
+
+function scoringCellsHtml(id: number): string {
+  const r = scoringRowOf(id);
+  const cache = scoringTexts();
+  const cell = (key: string, inner: string, cls: string, tip: string) => (state.hiddenCols.has(key) ? '' : `<td class="py-2.5 px-4 ${cls}"${tip ? ` title="${escapeHtml(tip)}"` : ''}>${inner || DASH}</td>`);
+  const status = r && r.status ? `<span class="scr-status is-${r.status}">${escapeHtml(cache.texts.status[id])}</span>` : '';
+  return cell('archetype', escapeHtml(cache.texts.archetype[id] || ''), 'text-slate-600 dark:text-slate-300', '')
+    + cell('status', status, 'whitespace-nowrap', '')
+    + cell('why', escapeHtml(cache.texts.why[id] || ''), 'scr-why text-slate-600 dark:text-slate-300', cache.tips.why[id] || '')
+    + cell('flags', escapeHtml(cache.texts.flags[id] || ''), 'scr-flags text-rose-600 dark:text-rose-400', cache.tips.flags[id] || '');
 }
 
 // ---- persistence: the screener choice (a setting, reset by Clear) and own presets (data, never reset by Clear) ----
@@ -4513,7 +4628,22 @@ async function fetchPresetFolder(base: string): Promise<Preset[]> {
   return out;
 }
 
+/** The scoring config next to the page; an invalid or missing one leaves the scoring columns empty with a warning */
+async function loadScoringConfig(): Promise<void> {
+  try {
+    const config = await fetchJson(SCORING_CONFIG_URL);
+    const problems = validateScoringConfig(config);
+    if (problems.length) throw new Error(problems.slice(0, 5).join('; '));
+    scoringConfig = config;
+  } catch (error) {
+    console.warn(`Scoring config unavailable: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  screenUniverse = null;
+  if (store) rebuildStore(); // new store version: the score columns are filled and their types detected again
+}
+
 async function loadScreenerData(): Promise<void> {
+  await loadScoringConfig();
   try {
     scr.base = await fetchPresetFolder('./presets/');
     scr.status = 'ready';
@@ -5243,3 +5373,7 @@ Object.assign(window, { state, render, catalogIds, catalogFilterColumns, detecte
 // screener hooks of stocks-screener-uitest.ts
 Object.assign(window, { scr, exportPreset, importPresetText, presetShareUrl, presetResults, effectivePreset, switchLanguage, applyClear });
 Object.defineProperty(window, 'store', { get: () => store });
+// scoring hooks (plan stage 5)
+Object.assign(window, { scoringText, scoringSortArray, sortIds });
+Object.defineProperty(window, 'scoringConfig', { get: () => scoringConfig });
+Object.defineProperty(window, 'scoringResult', { get: () => scoringResult });

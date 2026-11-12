@@ -2,7 +2,7 @@
 /** Sections of the guide and the metric picker: every registry entry belongs to exactly one, in this order */
 import type { MetricDef, Text } from './types';
 
-export type MetricGroup = 'valuation' | 'quality' | 'safety' | 'dividends' | 'growth' | 'price' | 'etf' | 'fields';
+export type MetricGroup = 'valuation' | 'quality' | 'safety' | 'dividends' | 'growth' | 'price' | 'etf' | 'fields' | 'scores';
 
 export const METRIC_GROUPS: ReadonlyArray<{ id: MetricGroup; title: Text }> = [
   { id: 'valuation', title: { en: 'Valuation', ru: 'Оценка' } },
@@ -13,6 +13,7 @@ export const METRIC_GROUPS: ReadonlyArray<{ id: MetricGroup; title: Text }> = [
   { id: 'price', title: { en: 'Price, returns and swings', ru: 'Цена, доходность и свинги' } },
   { id: 'etf', title: { en: 'ETF issuer data', ru: 'Данные эмитентов ETF' } },
   { id: 'fields', title: { en: 'Fields: ticker, type, sector, size', ru: 'Поля: тикер, тип, сектор, размер' } },
+  { id: 'scores', title: { en: 'Scores, archetype, status and flags', ru: 'Оценки, архетип, статус и флаги' } },
 ];
 
 const LISTS: Record<string, MetricGroup> = {};
@@ -21,6 +22,11 @@ put('valuation', ['marketCap', 'enterpriseValue', 'sharesOutstanding', 'pe', 'fo
 put('quality', ['roic', 'fcfToEbitda', 'operatingMargin', 'grossMarginSlope3y', 'operatingMarginSlope3y', 'cfoToNi', 'fcfToNi', 'niVolatility5y', 'fcfVolatility5y', 'capexToCfo', 'capexToRevenue', 'capexToRevenueDelta3y', 'ffoApprox']);
 put('safety', ['currentRatio', 'quickRatio', 'debtToEquity', 'netDebtToEbitda', 'interestCoverage', 'interestCoverageNote', 'cashRunwayMonths', 'altmanZ', 'altmanVariant', 'piotroskiF', 'beta']);
 put('dividends', ['dividendYield', 'dividendRate', 'payoutRatio', 'fcfPayout', 'ffoPayoutApprox', 'yieldVsAvg5y']);
+put('quality', ['epsNiGrowthGap3y']);
+put('safety', ['fcfNegativeYears', 'balanceYoyMaxChange', 'balanceYoyMaxLine']);
+put('dividends', ['dividendStreak', 'dividendCut10y']);
+put('growth', ['revenueGrowthVsTam']);
+put('scores', ['scoreCheap', 'scoreQuality', 'scoreSafety', 'scoreDividend', 'scoreEntry', 'statusScore', 'archetype', 'status', 'why', 'flags', 'flagCount']);
 put('fields', ['ticker', 'type', 'sector', 'industry', 'isMine', 'size']);
 
 export function metricGroup(def: MetricDef): MetricGroup {
