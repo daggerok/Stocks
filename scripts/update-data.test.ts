@@ -193,6 +193,8 @@ describe('parsing', () => {
     const chart = parseChart({ chart: { result: [{ meta: {}, timestamp: [1598880600], indicators: { quote: [{ close: [129] }] }, events: { splits: { 1598880600: { numerator: 4, denominator: 1 }, 1: { numerator: 0, denominator: 1 } } } }] } });
     expect(chart.splits).toEqual([{ date: '2020-08-31', ratio: 4 }]);
     expect(parseSummary({ quoteSummary: { result: [{ financialData: { totalRevenue: { raw: 4.2e11 } } }] } }).totalRevenue).toBe(4.2e11);
+    const trend = { earningsTrend: { trend: [{ period: '+1y', growth: { raw: 0.1 }, earningsEstimate: { avg: { raw: 10.5 } }, epsTrend: { current: { raw: 10.5 }, '30daysAgo': { raw: 10 } } }] } };
+    expect(parseSummary({ quoteSummary: { result: [trend] } }).estimates).toMatchObject({ epsNextYear: 10.5, growthNextYear: 10, growth5y: null, trendNextYear: { current: 10.5, d30: 10 } });
     expect(scaleCheck(416e9, 400e9)).toEqual({ ok: true, diffPct: 4 });
     expect(scaleCheck(416e12, 400e9)?.ok).toBe(false); // a ×1000 tagging error
     expect([scaleCheck(null, 1), scaleCheck(-1, 1), scaleCheck(1, 0)]).toEqual([null, null, null]);
