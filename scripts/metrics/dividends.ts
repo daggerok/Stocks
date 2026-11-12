@@ -21,6 +21,11 @@ export const DIVIDEND_HISTORY_KEYS: Array<keyof DividendHistory> = ['dividendStr
 export const CUT_TOLERANCE = 0.1;
 /** A year more than this factor above both neighbours is a special dividend or a shifted payment */
 export const SPIKE_FACTOR = 1.2;
+/**
+ * Complete calendar years of dividends per share kept in `market.annualDps` (plus the current partial year): 30, so the streak
+ * can reach 29 (owner answer N20; with 15 KO showed 13 despite 60 years of raises)
+ */
+export const ANNUAL_DPS_YEARS = 30;
 /** Window of the cut flag in complete calendar years */
 export const CUT_WINDOW_YEARS = 10;
 

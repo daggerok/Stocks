@@ -6,7 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { epsCagr3y, ESTIMATE_METRIC_KEYS, estimateMetrics, parseEstimates, type Estimates } from './metrics/estimates';
 import { capMultiples, FUNDAMENTAL_METRIC_KEYS, fundamentalMetrics, isFinancial, ownEbitdaMetrics, STALE_TTM_MULTIPLE_KEYS, staleAnnualTtm, TTM_AMOUNT_KEYS, ttmAmounts, withSectorExceptions } from './metrics/fundamentals';
 import { HISTORY_METRIC_KEYS, historyMetrics } from './metrics/history';
-import { DIVIDEND_HISTORY_KEYS, dividendHistory } from './metrics/dividends';
+import { ANNUAL_DPS_YEARS, DIVIDEND_HISTORY_KEYS, dividendHistory } from './metrics/dividends';
 import { pctFrom52wHigh, swingMetrics } from './metrics/swing';
 import { column, parseCompanyFacts, SEC_FORMS, type SecFundamentals, type Split } from './sec/companyfacts';
 import { fxPairs, fxPoints, usdLayer, usdView, type FxSeries, type UsdLayer } from './sec/fx';
@@ -463,6 +463,23 @@ export function annualRowsFromSec(sec: SecFundamentals | null): AnnualRow[] {
   return rows;
 }
 
+/**
+ * Diluted EPS of the annual rows restated for splits (owner answer N18): a row whose period end matches a fiscal year of the SEC
+ * layer (within 10 days) takes that year's epsDiluted, which is split restated (scripts/sec/companyfacts.ts, the same EPS
+ * pegHist reads); the 10-K facts of buildAnnualRows keep the share basis of their filing, so epsGrowth3y and 5y over a split
+ * compared two bases. Rows without a matching layer value keep their EPS
+ */
+export function restateAnnualEps(rows: AnnualRow[], sec: SecFundamentals | null): AnnualRow[] {
+  if (!sec) return rows;
+  const ends = (sec.fy?.end ?? []) as Array<string | null>;
+  const eps = column(sec.fy, 'epsDiluted');
+  return rows.map((r) => {
+    const i = ends.findIndex((e) => !!e && Math.abs(dayDiff(e, r.end)) <= 10);
+    const v = i < 0 ? null : eps[i];
+    return v === null || v === undefined || v === r.eps ? r : { ...r, eps: v };
+  });
+}
+
 const emptyRow = (end: string): AnnualRow => ({ end, revenue: null, grossProfit: null, operatingIncome: null, ebitda: null, netIncome: null, eps: null, operatingCashFlow: null, capex: null, fcf: null, dividendsPaid: null, assets: null, currentAssets: null, currentLiabilities: null, cash: null, longInvestments: null, receivables: null, debt: null, equity: null, taxRate: null });
 
 /** SEC rows win; Yahoo only fills null fields of a row whose period end is within 10 days, and adds rows SEC has none for (newer than the SEC history or when SEC has fewer than 3 rows). */
@@ -654,7 +671,8 @@ export function dividendMetrics(dividends: ParsedChart['dividends'], price: numb
   };
   const cutoff = new Date(Date.parse(`${lastDate}T00:00:00Z`) - YEAR_MS).toISOString().slice(0, 10);
   const ttm = dividends.filter((d) => d.date > cutoff).reduce((sum, d) => sum + d.amount, 0);
-  const annual = Array.from(byYear.entries()).sort((a, b) => b[0] - a[0]).slice(0, 15).map(([year, v]) => ({ year, dps: round(v, 4) }));
+  // 30 complete calendar years and the current partial one (owner answer N20): the streak can reach 29
+  const annual = Array.from(byYear.entries()).sort((a, b) => b[0] - a[0]).filter(([year]) => year > complete - ANNUAL_DPS_YEARS).map(([year, v]) => ({ year, dps: round(v, 4) }));
   return {
     metrics: {
       dividendYield: price ? (ttm > 0 ? rounded((ttm / price) * 100) : 0) : null, // no payments in the last year is an honest 0
@@ -1186,8 +1204,10 @@ export async function processCompany(listing: Listing, config: UpdaterConfig, pr
     history = prevMeta?.history ?? {};
   }
 
-  const fundamentals = fundamentalsMetrics(rows);
   const secLayer = sec ? (secStored as SecFundamentals) : null;
+  // a USD filer's annual EPS from the split-restated SEC layer (N18); a foreign layer's rows are already built from it
+  if (secLayer && !isForeignLayer(secLayer)) rows = restateAnnualEps(rows, secLayer);
+  const fundamentals = fundamentalsMetrics(rows);
   const marketCap = numberOrNull(market.valuation?.marketCap);
   // foreign issuer: formulas that mix market cap (USD) with amounts read the USD layer, multiples go over market cap (plan 1.3)
   const foreignLayer = isForeignLayer(secLayer);
