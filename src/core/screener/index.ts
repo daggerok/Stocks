@@ -6,3 +6,4 @@ export * from './rows';
 export * from './validate';
 export * from './own';
 export * from './etf-brands';
+export * from './peers';
