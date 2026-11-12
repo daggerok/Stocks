@@ -41,6 +41,14 @@ export const DCF_SCENARIOS: Record<'bear' | 'base' | 'bull', { g1: number; g2: n
 };
 export type ScenarioName = keyof typeof DCF_SCENARIOS;
 export const SCENARIO_NAMES: ScenarioName[] = ['bear', 'base', 'bull'];
+/** Tax rate of "operating income after tax" when the filing gives no usable effective rate (US federal statutory rate), percent */
+export const DCF_STATUTORY_TAX_PCT = 21;
+/** Effective tax rates are kept within 0 and this (one-off charges can push income tax / pretax income far out), percent */
+export const DCF_MAX_TAX_PCT = 50;
+/** reported: the diluted EPS of the filing; operating: operating income after tax per diluted share (owner answer N37) */
+export type EpsSource = 'reported' | 'operating';
+export const EPS_SOURCES: EpsSource[] = ['reported', 'operating'];
+
 /** The two per-share values are flagged as diverging when the smaller is more than this share below the larger (percent) */
 export const DCF_GAP_PCT = 30;
 
@@ -108,6 +116,10 @@ export type DcfFeedInputs = {
   fcf: number | null;
   /** TTM diluted EPS in USD (a foreign issuer: USD net income / diluted shares) */
   eps: number | null;
+  /** TTM operating income × (1 - tax rate) / diluted shares, USD: earnings without non-operating gains and losses (owner answer N37) */
+  epsOperating: number | null;
+  /** the tax rate behind epsOperating, percent: income tax / pretax income within 0-DCF_MAX_TAX_PCT, else DCF_STATUTORY_TAX_PCT */
+  taxRate: number | null;
   netDebt: number | null;
   shares: number | null;
   /** capex / revenue and capex / operating cash flow, percent */
@@ -118,6 +130,18 @@ export type DcfFeedInputs = {
   /** the SEC layer is not in USD: amounts are the USD view, per share = per ordinary share (an ADR can stand for several) */
   foreign: boolean;
 };
+
+/**
+ * Operating income after tax per share: operating income × (1 - tax rate) / shares. The tax rate is the effective one
+ * (income tax / pretax income) when both are given and pretax income is positive, kept within 0-DCF_MAX_TAX_PCT, else the
+ * statutory DCF_STATUTORY_TAX_PCT. null without operating income or positive shares
+ */
+export function operatingEpsAfterTax(operatingIncome: number | null, pretaxIncome: number | null, incomeTax: number | null, shares: number | null): { value: number | null; taxRate: number | null } {
+  if (!finite(operatingIncome) || !finite(shares) || shares <= 0) return { value: null, taxRate: null };
+  const effective = finite(pretaxIncome) && finite(incomeTax) && pretaxIncome > 0 ? (incomeTax / pretaxIncome) * 100 : null;
+  const taxRate = effective === null ? DCF_STATUTORY_TAX_PCT : Math.min(DCF_MAX_TAX_PCT, Math.max(0, effective));
+  return { value: (operatingIncome * (1 - taxRate / 100)) / shares, taxRate };
+}
 
 /**
  * DCF inputs from a company's meta.json and its index row: the SEC TTM layer (USD view for a foreign issuer), else the
@@ -145,8 +169,9 @@ export function dcfInputsFromMeta(meta: Json | null, row: Json | null): DcfFeedI
     const eps = reported ?? (ni !== null && secShares ? ni / secShares : null);
     const epsNote = reported === null && eps !== null ? '; EPS = net income / shares' : '';
     const debt = num(ttm.debt) ?? 0, cash = num(ttm.cash) ?? 0, sti = num(ttm.shortTermInvestments) ?? 0;
+    const operating = operatingEpsAfterTax(num(ttm.operatingIncome), num(ttm.pretaxIncome), num(ttm.incomeTax), secShares);
     return {
-      fcf: cfo !== null && capex !== null ? cfo - capex : null, eps, netDebt: debt - cash - sti, shares,
+      fcf: cfo !== null && capex !== null ? cfo - capex : null, eps, epsOperating: operating.value, taxRate: operating.taxRate, netDebt: debt - cash - sti, shares,
       capexToRevenue: capex !== null && revenue ? (capex / revenue) * 100 : null, capexToCfo: capex !== null && cfo && cfo > 0 ? (capex / cfo) * 100 : null,
       basis: `SEC TTM to ${sec.ttm.end ?? '?'}${foreign ? ` in USD (${sec.currency})` : ''}${epsNote}`, foreign,
     };
@@ -161,14 +186,14 @@ export function dcfInputsFromMeta(meta: Json | null, row: Json | null): DcfFeedI
   const ni = num(annual.netIncome);
   const eps = num(annual.eps) ?? (ni !== null && yahooShares ? ni / yahooShares : null);
   return {
-    fcf, eps, netDebt: (num(annual.debt) ?? 0) - (num(annual.cash) ?? 0), shares: yahooShares,
+    fcf, eps, epsOperating: null, taxRate: null, netDebt: (num(annual.debt) ?? 0) - (num(annual.cash) ?? 0), shares: yahooShares,
     capexToRevenue: capex !== null && revenue ? (capex / revenue) * 100 : null, capexToCfo: capex !== null && cfo && cfo > 0 ? (capex / cfo) * 100 : null,
     basis: `fiscal year ${annual.end ?? '?'}${num(annual.eps) === null && eps !== null ? '; EPS = net income / shares' : ''}`, foreign: false,
   };
 }
 
 function emptyInputs(basis: string, foreign: boolean): DcfFeedInputs {
-  return { fcf: null, eps: null, netDebt: null, shares: null, capexToRevenue: null, capexToCfo: null, basis, foreign };
+  return { fcf: null, eps: null, epsOperating: null, taxRate: null, netDebt: null, shares: null, capexToRevenue: null, capexToCfo: null, basis, foreign };
 }
 
 /**
@@ -180,4 +205,52 @@ export function defaultGrowth(metrics: Json | null): { g1: number; g2: number } 
   const raw = num(m.revenueGrowth3y) ?? num(m.epsGrowth3y) ?? 5;
   const g1 = Math.round(Math.min(20, Math.max(0, raw)));
   return { g1, g2: Math.round(g1 * 5) / 10 };
+}
+
+// ---- the owner's DCF inputs of one ticker as a user-data file (owner answer N39): user-data/dcf/<T>.json ----
+
+export const DCF_DOC_SCHEMA_VERSION = 1;
+/** The edited inputs of one ticker; null amounts are empty fields. Rates in percent, amounts in USD, shares as a count */
+export type DcfDoc = {
+  schemaVersion: number;
+  ticker: string;
+  epsSource: EpsSource;
+  g1: number;
+  g2: number;
+  wacc: number;
+  terminalGrowth: number;
+  fcf: number | null;
+  eps: number | null;
+  epsOperating: number | null;
+  netDebt: number | null;
+  shares: number | null;
+};
+const DOC_RATES = ['g1', 'g2', 'wacc', 'terminalGrowth'] as const;
+const DOC_AMOUNTS = ['fcf', 'eps', 'epsOperating', 'netDebt', 'shares'] as const;
+
+export function dcfDocText(doc: DcfDoc): string {
+  const out: Record<string, unknown> = { schemaVersion: DCF_DOC_SCHEMA_VERSION, ticker: doc.ticker, epsSource: doc.epsSource };
+  DOC_RATES.forEach((k) => { out[k] = doc[k]; });
+  DOC_AMOUNTS.forEach((k) => { out[k] = finite(doc[k]) ? doc[k] : null; });
+  return `${JSON.stringify(out, null, 2)}\n`;
+}
+
+/** Reads an exported file back: every rate a number, amounts a number or null, epsSource reported or operating (missing = reported) */
+export function parseDcfDoc(textIn: string, ticker: string): { doc: DcfDoc | null; errors: string[] } {
+  let data: any;
+  try { data = JSON.parse(textIn); } catch (error) { return { doc: null, errors: [`not JSON: ${error instanceof Error ? error.message : String(error)}`] }; }
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return { doc: null, errors: ['DCF file needs {"schemaVersion": 1, "ticker": "T", "g1": ..., "wacc": ...}'] };
+  const errors: string[] = [];
+  if (data.schemaVersion !== DCF_DOC_SCHEMA_VERSION) errors.push(`schemaVersion must be ${DCF_DOC_SCHEMA_VERSION}`);
+  if (data.ticker !== ticker) errors.push(`the file is for ${String(data.ticker)}, not ${ticker}`);
+  const epsSource = data.epsSource === undefined ? 'reported' : data.epsSource;
+  if (EPS_SOURCES.indexOf(epsSource) < 0) errors.push(`epsSource must be one of ${EPS_SOURCES.join(', ')}`);
+  DOC_RATES.forEach((k) => { if (!finite(data[k])) errors.push(`${k} must be a number`); });
+  DOC_AMOUNTS.forEach((k) => { if (data[k] !== undefined && data[k] !== null && !finite(data[k])) errors.push(`${k} must be a number or null`); });
+  if (errors.length) return { doc: null, errors };
+  const amount = (k: (typeof DOC_AMOUNTS)[number]): number | null => (finite(data[k]) ? data[k] : null);
+  return {
+    doc: { schemaVersion: DCF_DOC_SCHEMA_VERSION, ticker, epsSource, g1: data.g1, g2: data.g2, wacc: data.wacc, terminalGrowth: data.terminalGrowth, fcf: amount('fcf'), eps: amount('eps'), epsOperating: amount('epsOperating'), netDebt: amount('netDebt'), shares: amount('shares') },
+    errors,
+  };
 }
