@@ -121,7 +121,9 @@ export type DcfFeedInputs = {
 
 /**
  * DCF inputs from a company's meta.json and its index row: the SEC TTM layer (USD view for a foreign issuer), else the
- * latest annual row; shares are the TTM diluted weighted shares, else Yahoo sharesOutstanding. A missing debt line counts as 0
+ * latest annual row; shares are the TTM diluted weighted shares (all share classes, owner answer N36), else Yahoo sharesOutstanding.
+ * Without a diluted EPS tag EPS = net income / those SEC shares, never over Yahoo's count (one class only for Visa). A missing debt
+ * line counts as 0
  */
 export function dcfInputsFromMeta(meta: Json | null, row: Json | null): DcfFeedInputs {
   const fundamentals = meta && meta.fundamentals ? meta.fundamentals : {};
@@ -136,10 +138,11 @@ export function dcfInputsFromMeta(meta: Json | null, row: Json | null): DcfFeedI
     // a TTM that is the last fiscal year keeps its per-share values in fy; an issuer without EPS tags (V reports by share class) gets NI / shares
     const sameAsFy = Array.isArray(sec.fy && sec.fy.end) && sec.fy.end[0] === sec.ttm.end;
     const fyFirst = (key: string): number | null => (sameAsFy && Array.isArray(sec.fy[key]) ? num(sec.fy[key][0]) : null);
-    const shares = num(sec.ttm.sharesDiluted) ?? fyFirst('sharesDiluted') ?? yahooShares;
+    const secShares = num(sec.ttm.sharesDiluted) ?? fyFirst('sharesDiluted');
+    const shares = secShares ?? yahooShares;
     const ni = num(ttm.netIncome);
     const reported = foreign ? null : num(sec.ttm.epsDiluted) ?? fyFirst('epsDiluted');
-    const eps = reported ?? (ni !== null && shares ? ni / shares : null);
+    const eps = reported ?? (ni !== null && secShares ? ni / secShares : null);
     const epsNote = reported === null && eps !== null ? '; EPS = net income / shares' : '';
     const debt = num(ttm.debt) ?? 0, cash = num(ttm.cash) ?? 0, sti = num(ttm.shortTermInvestments) ?? 0;
     return {

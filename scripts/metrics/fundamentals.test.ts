@@ -1,7 +1,7 @@
 /// <reference types="bun" />
 import { describe, expect, test } from 'bun:test';
 import type { SecFundamentals } from '../sec/companyfacts';
-import { altman, FUNDAMENTAL_METRIC_KEYS, fundamentalMetrics, ownEbitdaMetrics, piotroski, slope, stdev, withSectorExceptions } from './fundamentals';
+import { altman, capMultiples, FUNDAMENTAL_METRIC_KEYS, fundamentalMetrics, ownEbitdaMetrics, piotroski, slope, staleAnnualTtm, stdev, withSectorExceptions } from './fundamentals';
 
 type Row = Record<string, number | null>;
 /** Fiscal years newest first, one per calendar year ending 2025-12-31, plus TTM values */
@@ -107,5 +107,23 @@ describe('stop factor and flag inputs', () => {
     const calm = fundamentalMetrics(sec([{ assets: 1020, cash: 52, receivables: 205, debt: 290, equity: 410 }, prev], {}), CTX);
     expect([calm.balanceYoyMaxChange, calm.balanceYoyMaxLine]).toEqual([-3.33, 'debt']);
     expect(fundamentalMetrics(sec([prev], {}), CTX).balanceYoyMaxChange).toBeNull(); // one year only
+  });
+});
+
+describe('sec layer defaults', () => {
+  test('a debt-free issuer (debt 0 from the SEC layer, N13) gets EV, EV/EBITDA and net debt to EBITDA; missing debt or operating income stays null', () => {
+    const free = sec([GOOD], { operatingIncome: 80, da: 20, cfo: 90, capex: 10, debt: 0, cash: 150, shortTermInvestments: 50 });
+    expect(ownEbitdaMetrics(free, 1000)).toEqual({ evEbitda: 8, fcfToEbitda: 80, netDebtToEbitda: -2 }); // EV 1000 - 150 - 50 = 800
+    expect(capMultiples(free, 1000).enterpriseValue).toBe(800);
+    expect(ownEbitdaMetrics(sec([GOOD], { operatingIncome: 80, da: 20, debt: null, cash: 150 }), 1000).evEbitda).toBeNull();
+    // a REIT without operating income: no EBITDA, so nothing even with debt 0
+    expect(ownEbitdaMetrics(sec([GOOD], { operatingIncome: null, da: 20, debt: 0, cash: 10 }), 1000)).toEqual({ evEbitda: null, fcfToEbitda: null, netDebtToEbitda: null });
+  });
+
+  test('stale annual TTM (N29): an annual-only TTM ending more than 12 months before the last close; a quarterly TTM never', () => {
+    const annual = { ...sec([GOOD], {}), ttmIsAnnual: true, ttm: { end: '2025-03-31' } };
+    expect([staleAnnualTtm(annual, '2026-03-31'), staleAnnualTtm(annual, '2026-04-02'), staleAnnualTtm(annual, null)]).toEqual([false, true, false]);
+    expect(staleAnnualTtm({ ...annual, ttmIsAnnual: false }, '2027-01-01')).toBe(false);
+    expect(staleAnnualTtm(null, '2027-01-01')).toBe(false);
   });
 });

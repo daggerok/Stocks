@@ -170,7 +170,7 @@ describe('sec companyfacts: ifrs-full and 20-F (plan 1.3)', () => {
     expect([us?.ttmIsAnnual, us?.currency, us?.taxonomy, us?.annualForm]).toEqual([false, 'USD', 'us-gaap', '10-K']);
   });
 
-  test('us-gaap first, then ifrs-full: Toyota moved to IFRS in FY2021 and one series joins both, us-gaap wins a shared period', () => {
+  test('us-gaap and ifrs-full join into one series (Toyota moved to IFRS in FY2021); a shared period takes the latest filed (N27)', () => {
     // real values (JPY): us-gaap 20-F up to FY2020 (year to 2020-03-31), ifrs-full from the 20-F filed 2021-06-24, which restated FY2020
     const jpy = (list: unknown[]) => ({ units: { JPY: list } });
     const facts = {
@@ -186,7 +186,31 @@ describe('sec companyfacts: ifrs-full and 20-F (plan 1.3)', () => {
     if (!sec) throw new Error('no SEC layer');
     expect([sec.currency, sec.taxonomy, sec.ttmIsAnnual]).toEqual(['JPY', 'ifrs-full', true]);
     expect(sec.fy.end).toEqual(['2022-03-31', '2021-03-31', '2020-03-31', '2019-03-31']);
-    expect(column(sec.fy, 'netIncome')).toEqual([2850110000000, 2245261000000, 2076183000000, 1882873000000]);
+    // FY2020: the IFRS restatement filed 2021-06-24 wins over the US GAAP value filed 2020-06-24 (owner answer N27)
+    expect(column(sec.fy, 'netIncome')).toEqual([2850110000000, 2245261000000, 2036140000000, 1882873000000]);
+    // a tie on the filing date keeps us-gaap
+    (facts.facts['ifrs-full'].ProfitLossAttributableToOwnersOfParent.units.JPY[0] as { filed: string }).filed = '2020-06-24';
+    expect(column(parseCompanyFacts(facts)?.fy, 'netIncome')[2]).toBe(2076183000000);
     expect(parseCompanyFacts(facts, { taxonomies: ['us-gaap'] })?.fy.end).toEqual(['2020-03-31', '2019-03-31']);
+  });
+});
+
+describe('sec companyfacts: debt-free issuers (N13)', () => {
+  test('no debt tag in any filing: debt 0 at every period; a debt tag at another date or a debt-only tag keeps null', () => {
+    const free = parseCompanyFacts(apple()); // the sample tags no debt line at all
+    expect([free?.ttm.debt, column(free?.fy, 'debt')]).toEqual([0, [0, 0]]);
+    const some = apple();
+    some.facts['us-gaap'].LongTermDebtNoncurrent = { units: { USD: [I('2025-09-27', 78328000000)] } };
+    const withDebt = parseCompanyFacts(some);
+    expect([withDebt?.ttm.debt, column(withDebt?.fy, 'debt')]).toEqual([null, [78328000000, null]]); // the 10-Q date has no debt fact
+    const evidence = apple();
+    evidence.facts['us-gaap'].DebtInstrumentFaceAmount = { units: { USD: [I('2025-09-27', 1000000000)] } };
+    expect(parseCompanyFacts(evidence)?.ttm.debt).toBeNull();
+    // a debt line tagged 0, or debt that ended more than 3 years before the last fiscal year end, is no debt today (Arista: notes
+    // repaid in 2014); the old period keeps its own value
+    const old = apple();
+    old.facts['us-gaap'].LongTermDebtNoncurrent = { units: { USD: [I('2014-06-30', 0, '2014-08-01', '10-Q')] } };
+    old.facts['us-gaap'].LongTermDebtCurrent = { units: { USD: [I('2013-12-31', 98793000, '2014-03-01')] } };
+    expect(parseCompanyFacts(old)?.ttm.debt).toBe(0);
   });
 });

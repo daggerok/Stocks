@@ -343,6 +343,22 @@ export function capMultiples(usd: SecFundamentals | null, marketCap: Num): CapMu
   };
 }
 
+/** Multiples hidden for a stale annual-only TTM (owner answer N29): price or EV over a fiscal year that ended long ago */
+export const STALE_TTM_MULTIPLE_KEYS = ['pe', 'ps', 'pFcf', 'pb', 'evEbitda'];
+/** An annual-only TTM (ttmIsAnnual) older than this before the last close has its multiples hidden */
+export const STALE_ANNUAL_TTM_DAYS = 365;
+
+/**
+ * true for an annual-only TTM (20-F filers without quarterly XBRL) whose period ends more than 12 months before `asOf` (the last
+ * close): price or EV over a year that old says little about today (a year-old annual TTM gave BP a P/E of 2119 next to Yahoo's
+ * 22), so such multiples are left empty
+ */
+export function staleAnnualTtm(sec: SecFundamentals | null, asOf: string | null): boolean {
+  const end = sec && typeof sec.ttm?.end === 'string' ? sec.ttm.end : null;
+  if (!sec || !sec.ttmIsAnnual || !end || !asOf) return false;
+  return (Date.parse(`${asOf}T00:00:00Z`) - Date.parse(`${end}T00:00:00Z`)) / DAY > STALE_ANNUAL_TTM_DAYS;
+}
+
 /** Banks and insurers (plan 1.7): the metrics of FINANCIALS_NULL_KEYS become null, key order kept */
 export function withSectorExceptions(metrics: Record<string, unknown>, industry: string | null): Record<string, unknown> {
   if (!isFinancial(industry)) return metrics;

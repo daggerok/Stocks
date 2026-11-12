@@ -4,12 +4,13 @@
 import { appendFile, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { epsCagr3y, ESTIMATE_METRIC_KEYS, estimateMetrics, parseEstimates, type Estimates } from './metrics/estimates';
-import { capMultiples, FUNDAMENTAL_METRIC_KEYS, fundamentalMetrics, isFinancial, ownEbitdaMetrics, withSectorExceptions } from './metrics/fundamentals';
+import { capMultiples, FUNDAMENTAL_METRIC_KEYS, fundamentalMetrics, isFinancial, ownEbitdaMetrics, STALE_TTM_MULTIPLE_KEYS, staleAnnualTtm, withSectorExceptions } from './metrics/fundamentals';
 import { HISTORY_METRIC_KEYS, historyMetrics } from './metrics/history';
 import { DIVIDEND_HISTORY_KEYS, dividendHistory } from './metrics/dividends';
 import { pctFrom52wHigh, swingMetrics } from './metrics/swing';
-import { column, parseCompanyFacts, type SecFundamentals, type Split } from './sec/companyfacts';
+import { column, parseCompanyFacts, SEC_FORMS, type SecFundamentals, type Split } from './sec/companyfacts';
 import { fxPairs, fxPoints, usdLayer, usdView, type FxSeries, type UsdLayer } from './sec/fx';
+import { instanceFile, needsClassShares, parseInstanceShares, publishedShares, ttmAccession, withClassShares } from './sec/shares';
 import { TAGS } from './sec/tags';
 import { computeSignals, parseSignals, signalNames, signalsIssue, SIGNALS_FILE, type SignalsResult } from '../src/core/signals';
 import { loadSignalSources } from '../src/core/signals/load';
@@ -956,6 +957,25 @@ export function adrFlag(country: string | null, annualForm: string | null): bool
 
 const toCik = (cik: number) => String(cik).padStart(10, '0');
 
+/**
+ * Owner answer N36: an issuer whose TTM has no diluted EPS and no diluted shares in companyfacts (Visa reports both per share
+ * class) gets the diluted shares of all classes from the XBRL instance of the filing behind its TTM (two EDGAR requests, only
+ * for such issuers and only when the published layer does not carry them already). A failed download keeps the layer as is
+ */
+async function withAllClassShares(sec: SecFundamentals, facts: JsonRecord, cik: number, prev: SecFundamentals | null, ticker: string, config: UpdaterConfig): Promise<SecFundamentals> {
+  let out = withClassShares(sec, publishedShares(prev));
+  if (!needsClassShares(out)) return out;
+  const accn = ttmAccession(facts, out, SEC_FORMS);
+  if (!accn) return out;
+  const folder = `${SEC_SITE}/Archives/edgar/data/${cik}/${accn.replace(/-/g, '')}`;
+  try {
+    const file = instanceFile(await fetchJson(`${folder}/index.json`, `[ sec       ] ${ticker} filing index`, config));
+    if (!file) return out;
+    out = withClassShares(out, parseInstanceShares(await fetchText(`${folder}/${file}`, `[ sec       ] ${ticker} instance`, config)));
+  } catch (error) { note(`[ sec       ] ${ticker}: share classes: ${error instanceof Error ? error.message : String(error)}`); }
+  return out;
+}
+
 function historyPeriods(range: string): { period1: number; period2: number } {
   const period2 = Math.floor(Date.now() / 1000) + DAY_MS / 1000;
   if (range === 'max') return { period1: 0, period2 };
@@ -1088,6 +1108,7 @@ export async function processCompany(listing: Listing, config: UpdaterConfig, pr
     const facts = await fetchJson(`${SEC_FACTS_URL}/CIK${toCik(listing.cik)}.json`, `[ sec       ] ${ticker}`, config);
     rows = buildAnnualRows(facts);
     sec = parseCompanyFacts(facts, { splits: chart?.splits ?? [] });
+    if (sec && needsClassShares(sec)) sec = await withAllClassShares(sec, facts, listing.cik, prevMeta?.fundamentals?.sec ?? null, ticker, config);
     annualForm = sec?.annualForm ?? null;
     // a foreign issuer (plan 1.3): annual rows from its 20-F or 40-F layer; a layer older than 15 months keeps the Yahoo fallback
     if (isForeignLayer(sec)) {
@@ -1173,7 +1194,9 @@ export async function processCompany(listing: Listing, config: UpdaterConfig, pr
   const marketLayer: SecFundamentals | null = !secLayer ? null : secLayer.currency === 'USD' ? secLayer : usd ? usdView(secLayer, usd) : null;
   const derived = fundamentalMetrics(secLayer, { marketCap, sector: snapshot?.sector ?? prevMeta?.sector ?? null, industry, ...(foreignLayer ? { usd: marketLayer } : {}) });
   const multiples: JsonRecord = foreignLayer ? capMultiples(marketLayer, marketCap) : {};
-  const pe = foreignLayer ? numberOrNull(multiples.pe) : numberOrNull(market.valuation?.pe);
+  // an annual-only TTM more than 12 months old: no multiples over it (owner answer N29), also none derived from P/E
+  const staleTtm = staleAnnualTtm(secLayer, market.asOfDate ?? null);
+  const pe = staleTtm ? null : foreignLayer ? numberOrNull(multiples.pe) : numberOrNull(market.valuation?.pe);
   const estimates = estimateMetrics(market.estimates ?? null, pe, numberOrNull(market.valuation?.forwardPe), epsCagr3y(secLayer?.fy) ?? numberOrNull(fundamentals.epsGrowth3y));
   // own 5-year history needs the full daily chart: without a fresh one (SKIP_YAHOO) the published values stay; a foreign issuer
   // has none of the P/E and P/FCF percentiles (price per ADR against shares and amounts of the ordinary shares)
@@ -1187,6 +1210,7 @@ export async function processCompany(listing: Listing, config: UpdaterConfig, pr
     ttmIsAnnual: secLayer && typeof secLayer.ttmIsAnnual === 'boolean' ? secLayer.ttmIsAnnual : null,
   };
   const parts: JsonRecord = { ...fundamentals, ...(market.valuation ?? {}), ...(market.returns ?? {}), ...(market.dividends ?? {}), ...(market.swing ?? {}), ...derived, ...multiples, ...ownEbitdaMetrics(foreignLayer ? marketLayer : secLayer, marketCap), ...estimates, ...history5y, ...issuer, price: market.price, week52High: market.week52High, week52Low: market.week52Low, range52w: range52wPosition(market.price, market.week52Low, market.week52High), pctFrom52wHigh: pctFrom52wHigh(market.price, market.week52High) };
+  if (staleTtm) STALE_TTM_MULTIPLE_KEYS.forEach((k) => { parts[k] = null; });
   if (parts.marketCap === undefined || parts.marketCap === null) parts.marketCap = null;
   const metrics = withSectorExceptions(completeMetrics(parts, market.asOfDate ?? null), industry) as JsonRecord;
   if (metrics.marketCap === null) return { skipped: 'no market cap (unit, warrant, preferred share or note)' };
