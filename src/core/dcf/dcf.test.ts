@@ -1,6 +1,6 @@
 /// <reference types="bun" />
 import { describe, expect, test } from 'bun:test';
-import { cents, dcf, DcfInput, dcfInputsFromMeta, defaultGrowth, marginOfSafety, scenarioInput, valueGap } from '.';
+import { cents, dcf, dcfDocText, DcfInput, dcfInputsFromMeta, defaultGrowth, marginOfSafety, operatingEpsAfterTax, parseDcfDoc, scenarioInput, valueGap } from '.';
 
 const value = (input: DcfInput): number => {
   const r = dcf(input);
@@ -119,7 +119,7 @@ describe('dcf', () => {
     expect(defaultGrowth({ revenueGrowth3y: null, epsGrowth3y: 7.4 })).toEqual({ g1: 7, g2: 3.5 });
     expect(defaultGrowth(null)).toEqual({ g1: 5, g2: 2.5 });
     const meta = { fundamentals: { sec: { currency: 'USD', ttm: { end: '2026-09-30', cfo: 1000, capex: 400, revenue: 4000, epsDiluted: 2.5, sharesDiluted: 100, debt: 300, cash: 50, shortTermInvestments: null, netIncome: 250 } } } };
-    expect(dcfInputsFromMeta(meta, { metrics: { sharesOutstanding: 90 } })).toEqual({ fcf: 600, eps: 2.5, netDebt: 250, shares: 100, capexToRevenue: 10, capexToCfo: 40, basis: 'SEC TTM to 2026-09-30', foreign: false });
+    expect(dcfInputsFromMeta(meta, { metrics: { sharesOutstanding: 90 } })).toEqual({ fcf: 600, eps: 2.5, epsOperating: null, taxRate: null, netDebt: 250, shares: 100, capexToRevenue: 10, capexToCfo: 40, basis: 'SEC TTM to 2026-09-30', foreign: false });
     // no EPS tag (V, owner answer N36): EPS = net income / the SEC diluted shares of all classes, said in the basis; never over
     // Yahoo's count (one class only), which stays only for the per-share value of the FCF flow
     const noEps = { fundamentals: { sec: { currency: 'USD', fy: { end: ['2026-09-30'], epsDiluted: [null], sharesDiluted: [5] as Array<number | null> }, ttm: { end: '2026-09-30', cfo: 10, capex: 1, revenue: 40, netIncome: 20, epsDiluted: null, sharesDiluted: null, debt: 2, cash: 1 } } } };
@@ -132,6 +132,34 @@ describe('dcf', () => {
     // an older feed without the SEC layer: the latest annual row, Yahoo shares
     const old = { financialCurrency: 'USD', fundamentals: { annual: [{ end: '2025-12-31', revenue: 1000, operatingCashFlow: 300, capex: -100, fcf: 200, eps: 3, debt: 50, cash: 20 }] } };
     expect(dcfInputsFromMeta({ fundamentals: { annual: [{ end: '2026-09-30', netIncome: 30, eps: null }] } }, { metrics: { sharesOutstanding: 10 } })).toMatchObject({ eps: 3, basis: 'fiscal year 2026-09-30; EPS = net income / shares' });
-    expect(dcfInputsFromMeta(old, { metrics: { sharesOutstanding: 10 } })).toEqual({ fcf: 200, eps: 3, netDebt: 30, shares: 10, capexToRevenue: 10, capexToCfo: (100 / 300) * 100, basis: 'fiscal year 2025-12-31', foreign: false });
+    expect(dcfInputsFromMeta(old, { metrics: { sharesOutstanding: 10 } })).toEqual({ fcf: 200, eps: 3, epsOperating: null, taxRate: null, netDebt: 30, shares: 10, capexToRevenue: 10, capexToCfo: (100 / 300) * 100, basis: 'fiscal year 2025-12-31', foreign: false });
+  });
+
+  test('operating income after tax per share as the EPS flow base (owner answer N37)', () => {
+    // operating income 1000, pretax 1300 (900 of it operating, 400 a one-off gain), tax 260: effective 20%; 100 shares
+    // 1000 x (1 - 0.20) / 100 = 8.00 per share, while reported EPS = (1300 - 260) / 100 = 10.40 carries the gain
+    expect(operatingEpsAfterTax(1000, 1300, 260, 100)).toEqual({ value: 8, taxRate: 20 });
+    expect(operatingEpsAfterTax(1000, -50, 10, 100)).toEqual({ value: 7.9, taxRate: 21 }); // no positive pretax income: statutory 21%
+    expect(operatingEpsAfterTax(1000, 100, 90, 100)).toEqual({ value: 5, taxRate: 50 }); // a 90% effective rate is capped at 50%
+    expect(operatingEpsAfterTax(1000, 1000, -100, 100).taxRate).toBe(0); // a tax benefit counts as 0, never a negative rate
+    expect(operatingEpsAfterTax(null, 1300, 260, 100)).toEqual({ value: null, taxRate: null });
+    const meta = { fundamentals: { sec: { currency: 'USD', ttm: { end: '2026-09-30', cfo: 1000, capex: 400, revenue: 4000, operatingIncome: 1000, pretaxIncome: 1300, incomeTax: 260, epsDiluted: 10.4, sharesDiluted: 100, netIncome: 1040 } } } };
+    const inputs = dcfInputsFromMeta(meta, null);
+    expect([inputs.eps, inputs.epsOperating, inputs.taxRate]).toEqual([10.4, 8, 20]);
+    // the same rates on both bases: the per-share value scales with the base (8 / 10.4)
+    const rates = { g1: 10, g2: 10, wacc: 10, terminalGrowth: 3 };
+    expect(cents(value({ kind: 'eps', base: inputs.epsOperating as number, ...rates }))).toBe(197.71); // 8 x 24.7142857 (set 1: 123.5714 for 5)
+    expect(cents(value({ kind: 'eps', base: 10.4, ...rates }))).toBe(257.03);
+  });
+
+  test('the edited DCF inputs as user-data/dcf/<T>.json: written, read back, broken files rejected (owner answer N39)', () => {
+    const doc = { schemaVersion: 1, ticker: 'GOOGL', epsSource: 'operating' as const, g1: 12, g2: 6, wacc: 9.5, terminalGrowth: 3, fcf: 7.3e10, eps: 19.15, epsOperating: 11.2, netDebt: -6e10, shares: 1.22e10 };
+    const text = dcfDocText(doc);
+    expect(text.endsWith('\n')).toBe(true);
+    expect(parseDcfDoc(text, 'GOOGL')).toEqual({ doc, errors: [] });
+    expect(parseDcfDoc(JSON.stringify({ schemaVersion: 1, ticker: 'GOOGL', g1: 1, g2: 1, wacc: 9, terminalGrowth: 2 }), 'GOOGL').doc).toMatchObject({ epsSource: 'reported', fcf: null, eps: null });
+    expect(parseDcfDoc(text, 'V').errors).toEqual(['the file is for GOOGL, not V']);
+    expect(parseDcfDoc(JSON.stringify({ ...doc, wacc: '9', epsSource: 'magic', shares: 'x' }), 'GOOGL').errors).toEqual(['epsSource must be one of reported, operating', 'wacc must be a number', 'shares must be a number or null']);
+    expect(parseDcfDoc('{', 'GOOGL').errors[0]).toContain('not JSON');
   });
 });

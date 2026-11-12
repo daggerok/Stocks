@@ -11,7 +11,7 @@ import {
 } from './core/screener';
 import { createSimilarContext, filterFromX, SIMILAR_CONFIG_URL, SimilarConfig, SimilarContext, SimilarResult, similarTo, validateSimilarConfig } from './core/similar';
 import {
-  cents, dcf, DCF_DEFAULTS, DCF_GAP_PCT, DcfFeedInputs, DcfInput, dcfInputsFromMeta, DcfResult, defaultGrowth, marginOfSafety, SCENARIO_NAMES, scenarioInput, valueGap,
+  cents, dcf, DCF_DEFAULTS, DCF_DOC_SCHEMA_VERSION, DCF_GAP_PCT, DcfDoc, dcfDocText, DcfFeedInputs, DcfInput, dcfInputsFromMeta, DcfResult, defaultGrowth, EPS_SOURCES, EpsSource, marginOfSafety, parseDcfDoc, SCENARIO_NAMES, scenarioInput, valueGap,
 } from './core/dcf';
 import {
   emptyNotes, emptyTam, indexFiles, notesFileText, notesFilled, NotesDoc, parseNotes, parsePromises, parseTam, PROMISE_KINDS, PROMISE_STATUSES, PromiseItem, promiseProgress,
@@ -68,7 +68,7 @@ const OWN_PRESETS_KEY = 'stocks-own-presets'; // own presets of this browser (da
 const PEERS_KEY = 'stocks-peers'; // peer groups changed in this browser over user-data/peers.json (data: Clear keeps them)
 const SIMILAR_KEY = 'stocks-similar'; // the metric group and own set of Similar to X (a convenience: Clear keeps it)
 const RESEARCH_KEY = 'stocks-research'; // TAM, notes and promises saved in this browser (data: Clear keeps them)
-const DCF_KEY = 'stocks-dcf'; // DCF inputs edited per ticker (Clear keeps them)
+const DCF_KEY = 'stocks-dcf'; // DCF inputs of the first ticker page version, moved into the research data (kind dcf) on load
 const FILTER_DEBOUNCE_MS = 250;
 const SEARCH_DEBOUNCE_MS = 200;
 const FONT_WAIT_MS = 2500; // longest the first render waits for the web font
@@ -5575,7 +5575,7 @@ function onTickerPageClick(event: any): void {
   else if (act === 'add-peers') addSimilarToPeers();
   else if (act === 'make-filter') makeFilterFromTicker();
   else if (act === 'usd') { tickerPage.usd = !tickerPage.usd; renderTickerPage(); }
-  else if (act === 'dcf-reset' && tickerPage.ticker) { delete dcfSaved[tickerPage.ticker]; lsSet(DCF_KEY, JSON.stringify(dcfSaved)); renderTickerPage(); }
+  else if (act === 'dcf-reset' && tickerPage.ticker) { delete research.browser.dcf[tickerPage.ticker]; persistResearch(); renderTickerPage(); }
   else if ((act === 'research-export' || act === 'research-delete') && tickerPage.ticker) {
     const kind = RESEARCH_KINDS.filter(k => k === button.dataset.kind)[0];
     if (kind && act === 'research-export') exportResearch(kind, tickerPage.ticker);
@@ -5616,7 +5616,7 @@ function bindTickerPageEvents(): void {
 
 // ---- ticker page sections of plan stage 7: overview, statements, long-run charts, peers, DCF, TAM, research notes ----
 
-type DcfFields = { g1: number; g2: number; wacc: number; terminalGrowth: number; fcf: number | null; eps: number | null; netDebt: number | null; shares: number | null };
+type DcfFields = { epsSource: EpsSource; g1: number; g2: number; wacc: number; terminalGrowth: number; fcf: number | null; eps: number | null; epsOperating: number | null; netDebt: number | null; shares: number | null };
 type ResearchStore = {
   index: Record<ResearchKind, string[] | null>; // file lists of user-data/<kind>/index.json, null until loaded
   repo: Record<ResearchKind, Record<string, string | null>>; // committed texts by ticker (null: not in the repo), loaded on demand
@@ -5625,12 +5625,11 @@ type ResearchStore = {
 };
 
 const research: ResearchStore = {
-  index: { tam: null, notes: null, promises: null },
-  repo: { tam: {}, notes: {}, promises: {} },
-  browser: { tam: {}, notes: {}, promises: {} },
+  index: { tam: null, notes: null, promises: null, dcf: null },
+  repo: { tam: {}, notes: {}, promises: {}, dcf: {} },
+  browser: { tam: {}, notes: {}, promises: {}, dcf: {} }, // dcf: the edited DCF inputs per ticker (user-data/dcf/<T>.json, owner answer N39)
   exported: {},
 };
-let dcfSaved: Record<string, DcfFields> = {}; // per ticker, only after the inputs were edited (else the feed values)
 
 function restoreResearch(): void {
   const saved = lsGetJson(RESEARCH_KEY, null);
@@ -5641,12 +5640,22 @@ function restoreResearch(): void {
     });
     if (saved.exported && typeof saved.exported === 'object') Object.keys(saved.exported).forEach(key => { if (typeof saved.exported[key] === 'string') research.exported[key] = saved.exported[key]; });
   }
+  // DCF inputs saved before they became research data: each ticker becomes a dcf record once, then the old key goes
   const dcfState = lsGetJson(DCF_KEY, null);
-  if (dcfState && typeof dcfState === 'object') dcfSaved = dcfState;
+  if (dcfState && typeof dcfState === 'object') {
+    Object.keys(dcfState).forEach(ticker => {
+      const f = dcfState[ticker];
+      if (!f || typeof f !== 'object' || research.browser.dcf[ticker]) return;
+      const parsed = parseDcfDoc(JSON.stringify({ schemaVersion: DCF_DOC_SCHEMA_VERSION, ticker, epsSource: 'reported', ...f }), ticker);
+      if (parsed.doc) research.browser.dcf[ticker] = dcfDocText(parsed.doc);
+    });
+    persistResearch();
+    lsRemove(DCF_KEY);
+  }
 }
 
 function persistResearch(): void {
-  lsSet(RESEARCH_KEY, JSON.stringify({ schemaVersion: 1, tam: research.browser.tam, notes: research.browser.notes, promises: research.browser.promises, exported: research.exported }));
+  lsSet(RESEARCH_KEY, JSON.stringify({ schemaVersion: 1, tam: research.browser.tam, notes: research.browser.notes, promises: research.browser.promises, dcf: research.browser.dcf, exported: research.exported }));
 }
 
 async function fetchText(url: string): Promise<string> {
@@ -5706,6 +5715,7 @@ function promisesDoc(ticker: string): PromisesDoc {
 }
 
 function researchText(kind: ResearchKind, ticker: string): string {
+  if (kind === 'dcf') return dcfDocText(currentDcfDoc(ticker));
   if (kind === 'tam') return tamFileText(tamDoc(ticker));
   if (kind === 'notes') return notesFileText(notesDoc(ticker));
   return promisesFileText(promisesDoc(ticker));
@@ -5728,6 +5738,7 @@ function importResearchText(kind: ResearchKind, ticker: string, text: string): s
   let errors: string[] = [];
   if (kind === 'notes') canonical = notesFileText(parseNotes(text, ticker));
   else if (kind === 'tam') { const parsed = parseTam(text, ticker); errors = parsed.errors; if (parsed.doc) canonical = tamFileText(parsed.doc); }
+  else if (kind === 'dcf') { const parsed = parseDcfDoc(text, ticker); errors = parsed.errors; if (parsed.doc) canonical = dcfDocText(parsed.doc); }
   else { const parsed = parsePromises(text, ticker); errors = parsed.errors; if (parsed.doc) canonical = promisesFileText(parsed.doc); }
   const file = researchFileName(kind, ticker);
   if (!canonical) tickerPage.message = t('research.importFailed', { errors: errors.join('; ') });
@@ -5888,20 +5899,38 @@ function dcfFeedFields(ticker: string, id: number, meta: any): { fields: DcfFiel
   const raw = s ? s.raw[id] : null;
   const feed = dcfInputsFromMeta(meta, raw);
   const growth = defaultGrowth(raw ? raw.metrics : null);
-  return { feed, fields: { g1: growth.g1, g2: growth.g2, wacc: DCF_DEFAULTS.wacc, terminalGrowth: DCF_DEFAULTS.terminalGrowth, fcf: feed.fcf, eps: feed.eps, netDebt: feed.netDebt, shares: feed.shares } };
+  return { feed, fields: { epsSource: 'reported', g1: growth.g1, g2: growth.g2, wacc: DCF_DEFAULTS.wacc, terminalGrowth: DCF_DEFAULTS.terminalGrowth, fcf: feed.fcf, eps: feed.eps, epsOperating: feed.epsOperating, netDebt: feed.netDebt, shares: feed.shares } };
+}
+
+/** The saved inputs of a ticker (this browser, else user-data/dcf/<T>.json), null when there are none or the file is broken */
+function savedDcfDoc(ticker: string): DcfDoc | null {
+  const record = researchRecord('dcf', ticker);
+  const parsed = record.text ? parseDcfDoc(record.text, ticker) : null;
+  return parsed && parsed.doc ? parsed.doc : null;
 }
 
 function dcfFields(ticker: string, id: number, meta: any): { fields: DcfFields; feed: DcfFeedInputs } {
   const fromFeed = dcfFeedFields(ticker, id, meta);
-  const saved = dcfSaved[ticker];
-  return saved ? { feed: fromFeed.feed, fields: { ...fromFeed.fields, ...saved } } : fromFeed;
+  const saved = savedDcfDoc(ticker);
+  if (!saved) return fromFeed;
+  const fields: DcfFields = { epsSource: saved.epsSource, g1: saved.g1, g2: saved.g2, wacc: saved.wacc, terminalGrowth: saved.terminalGrowth, fcf: saved.fcf, eps: saved.eps, epsOperating: saved.epsOperating ?? fromFeed.fields.epsOperating, netDebt: saved.netDebt, shares: saved.shares };
+  return { feed: fromFeed.feed, fields };
+}
+
+/** The inputs the DCF section shows as a user-data file (the export of the dcf research kind) */
+function currentDcfDoc(ticker: string): DcfDoc {
+  const s = store;
+  const id = s ? s.keyIndex.get(ticker) : undefined;
+  const meta = metaCache.get(ticker);
+  const fields = id === undefined ? dcfFeedFields(ticker, -1, null).fields : dcfFields(ticker, id, meta === undefined ? null : meta).fields;
+  return { schemaVersion: DCF_DOC_SCHEMA_VERSION, ticker, ...fields };
 }
 
 function dcfInputOf(fields: DcfFields, kind: 'fcf' | 'eps'): DcfInput {
   const common = { g1: fields.g1, g2: fields.g2, wacc: fields.wacc, terminalGrowth: fields.terminalGrowth };
   return kind === 'fcf'
     ? { kind, base: fields.fcf ?? NaN, netDebt: fields.netDebt ?? 0, shares: fields.shares ?? NaN, ...common }
-    : { kind, base: fields.eps ?? NaN, ...common };
+    : { kind, base: (fields.epsSource === 'operating' ? fields.epsOperating : fields.eps) ?? NaN, ...common };
 }
 
 /** The DCF of the open ticker as the page shows it: both flows, base and scenarios (the browser test reads it) */
@@ -5926,12 +5955,12 @@ function dcfNumberInput(field: string, value: number | null, label: string, scal
   return `<label class="tp-field"><span>${escapeHtml(label)}</span><input type="number" step="${step}" class="scr-input scr-num" data-dcf="${field}" data-scale="${scale}" value="${escapeHtml(shown)}" /></label>`;
 }
 
-function dcfResultHtml(r: DcfResult, price: number | null, kind: 'fcf' | 'eps'): string {
-  if (!r.ok) return `<div class="tp-dcf-col" data-dcf-result="${kind}"><h4>${escapeHtml(t(`dcf.flow.${kind}`))}</h4><p class="scr-error" data-dcf-error="${r.error}">${escapeHtml(t(`dcf.err.${r.error}`))}</p></div>`;
+function dcfResultHtml(r: DcfResult, price: number | null, kind: 'fcf' | 'eps', title: string): string {
+  if (!r.ok) return `<div class="tp-dcf-col" data-dcf-result="${kind}"><h4>${escapeHtml(title)}</h4><p class="scr-error" data-dcf-error="${r.error}">${escapeHtml(t(`dcf.err.${r.error}`))}</p></div>`;
   const mos = marginOfSafety(r.perShare, price);
   const money = (v: number) => (kind === 'fcf' ? formatMoney(v) : `$${cents(v).toFixed(2)}`);
   const years = r.years.map(y => `<tr><td>${y.year}</td><td class="tp-num">${y.growth}%</td><td class="tp-num">${escapeHtml(money(y.flow))}</td><td class="tp-num">${y.factor.toFixed(6)}</td><td class="tp-num">${escapeHtml(money(y.pv))}</td></tr>`).join('');
-  return `<div class="tp-dcf-col" data-dcf-result="${kind}"><h4>${escapeHtml(t(`dcf.flow.${kind}`))}</h4>
+  return `<div class="tp-dcf-col" data-dcf-result="${kind}"><h4>${escapeHtml(title)}</h4>
     <div class="tp-kv"><span>${escapeHtml(t('dcf.perShare'))}</span><strong class="tp-big" data-dcf-value="${kind}">$${cents(r.perShare).toFixed(2)}</strong></div>
     <div class="tp-kv"><span>${escapeHtml(t('dcf.mos', { price: price === null ? DASH : `$${price.toFixed(2)}` }))}</span><strong class="${mos !== null && mos >= 0 ? 'tp-good' : 'tp-bad'}">${mos === null ? DASH : `${cents(mos).toFixed(2)}%`}</strong></div>
     <div class="tp-kv"><span>${escapeHtml(t('dcf.sumPv'))}</span><strong>${escapeHtml(money(r.sumPv))}</strong></div>
@@ -5953,23 +5982,27 @@ function dcfTabHtml(ticker: string, id: number, meta: any): string {
     const mos = (v: number | null) => { const m = marginOfSafety(v, price); return m === null ? DASH : `${cents(m).toFixed(1)}%`; };
     return `<tr data-scenario="${name}"><td>${escapeHtml(t(`dcf.scenario.${name}`))}</td><td class="tp-num">${cell(sc.fcf)}</td><td class="tp-num">${mos(sc.fcf)}</td><td class="tp-num">${cell(sc.eps)}</td><td class="tp-num">${mos(sc.eps)}</td></tr>`;
   }).join('');
+  const epsFlowTitle = fields.epsSource === 'operating' ? t('dcf.flow.epsOperating') : t('dcf.flow.eps');
   const gap = view.gap.gap === null ? '' : view.gap.flagged
     ? `<p class="scr-flag tp-gap" id="tp-dcf-gap">${escapeHtml(t('dcf.gap', { gap: view.gap.gap.toFixed(1) }))}</p>`
     : `<p class="scr-muted" id="tp-dcf-gap">${escapeHtml(t('dcf.noGap', { threshold: DCF_GAP_PCT }))}</p>`;
   return `<section class="tp-section" data-tp-section="dcf">
-    <div class="tp-row"><h3>${escapeHtml(t('dcf.title'))}</h3><button type="button" class="dd-act" data-tp-act="dcf-reset">${escapeHtml(t('dcf.reset'))}</button></div>
+    <div class="tp-row"><h3>${escapeHtml(t('dcf.title'))}</h3><button type="button" class="dd-act" data-tp-act="dcf-reset">${escapeHtml(t('dcf.reset'))}</button>${researchToolsHtml('dcf', ticker)}</div>
     <p class="scr-muted">${escapeHtml(t('dcf.basis', { basis: feed.basis }))}${feed.foreign ? ` · ${escapeHtml(t('dcf.foreign'))}` : ''}</p>
+    <p class="scr-muted" id="tp-eps-operating">${escapeHtml(feed.epsOperating === null ? t('dcf.epsOperating.none') : t('dcf.epsOperating.info', { value: `$${cents(feed.epsOperating).toFixed(2)}`, tax: pct(feed.taxRate), reported: feed.eps === null ? DASH : `$${cents(feed.eps).toFixed(2)}` }))}</p>
     <div class="tp-fields">
       ${dcfNumberInput('g1', fields.g1, t('dcf.g1'), 1, 'any')}${dcfNumberInput('g2', fields.g2, t('dcf.g2'), 1, 'any')}
       ${dcfNumberInput('wacc', fields.wacc, t('dcf.wacc'), 1, 'any')}${dcfNumberInput('terminalGrowth', fields.terminalGrowth, t('dcf.tg'), 1, 'any')}
       ${dcfNumberInput('fcf', fields.fcf, t('dcf.fcfBase'), 1e9, 'any')}${dcfNumberInput('netDebt', fields.netDebt, t('dcf.netDebt'), 1e9, 'any')}
-      ${dcfNumberInput('shares', fields.shares, t('dcf.shares'), 1e6, 'any')}${dcfNumberInput('eps', fields.eps, t('dcf.epsBase'), 1, 'any')}
+      ${dcfNumberInput('shares', fields.shares, t('dcf.shares'), 1e6, 'any')}
+      <label class="tp-field"><span>${escapeHtml(t('dcf.epsSource'))}</span><select class="scr-input" data-dcf="epsSource" title="${escapeHtml(t('dcf.epsSource.tip'))}">${EPS_SOURCES.map(src => optionHtml(src, t(`dcf.epsSource.${src}`), fields.epsSource === src)).join('')}</select></label>
+      ${fields.epsSource === 'operating' ? dcfNumberInput('epsOperating', fields.epsOperating, t('dcf.epsOperatingBase'), 1, 'any') : dcfNumberInput('eps', fields.eps, t('dcf.epsBase'), 1, 'any')}
     </div>
     <p class="scr-muted" id="tp-capex">${escapeHtml(t('dcf.capex', { revenue: pct(feed.capexToRevenue), cfo: pct(feed.capexToCfo) }))}</p>
-    <div class="tp-dcf">${dcfResultHtml(view.fcf, price, 'fcf')}${dcfResultHtml(view.eps, price, 'eps')}</div>
+    <div class="tp-dcf">${dcfResultHtml(view.fcf, price, 'fcf', t('dcf.flow.fcf'))}${dcfResultHtml(view.eps, price, 'eps', epsFlowTitle)}</div>
     ${gap}
     <h4 title="${escapeHtml(t('dcf.scenario.tip'))}">${escapeHtml(t('dcf.scenarios'))}</h4>
-    <table class="scr-conds tp-table" id="tp-scenarios"><thead><tr><th></th><th class="tp-num">${escapeHtml(t('dcf.flow.fcf'))}</th><th class="tp-num">MoS</th><th class="tp-num">${escapeHtml(t('dcf.flow.eps'))}</th><th class="tp-num">MoS</th></tr></thead><tbody>${scenarioRows}</tbody></table>
+    <table class="scr-conds tp-table" id="tp-scenarios"><thead><tr><th></th><th class="tp-num">${escapeHtml(t('dcf.flow.fcf'))}</th><th class="tp-num">MoS</th><th class="tp-num">${escapeHtml(epsFlowTitle)}</th><th class="tp-num">MoS</th></tr></thead><tbody>${scenarioRows}</tbody></table>
   </section>`;
 }
 
@@ -5983,10 +6016,10 @@ function onDcfInput(target: any): void {
   const field = String(target.dataset.dcf);
   const n = numberInput(String(target.value || ''));
   const scaled = n === null ? null : n * Number(target.dataset.scale || 1);
-  if (field === 'g1' || field === 'g2' || field === 'wacc' || field === 'terminalGrowth') { if (scaled !== null) fields[field] = scaled; }
-  else if (field === 'fcf' || field === 'eps' || field === 'netDebt' || field === 'shares') fields[field] = scaled;
-  dcfSaved[ticker] = fields;
-  lsSet(DCF_KEY, JSON.stringify(dcfSaved));
+  if (field === 'epsSource') { const src = EPS_SOURCES.filter(x => x === target.value)[0]; if (src) fields.epsSource = src; }
+  else if (field === 'g1' || field === 'g2' || field === 'wacc' || field === 'terminalGrowth') { if (scaled !== null) fields[field] = scaled; }
+  else if (field === 'fcf' || field === 'eps' || field === 'epsOperating' || field === 'netDebt' || field === 'shares') fields[field] = scaled;
+  saveResearch('dcf', ticker, dcfDocText({ schemaVersion: DCF_DOC_SCHEMA_VERSION, ticker, ...fields }));
   renderTickerPage();
 }
 
@@ -6119,7 +6152,7 @@ function onPromiseInput(target: any): void {
 /** Loads what the open tab needs (meta.json, the committed research files), then renders again */
 function ensureTickerPageData(ticker: string): boolean {
   const needsMeta = ['statements', 'charts', 'dcf', 'tam', 'notes'].indexOf(tickerPage.tab) >= 0;
-  const kinds: ResearchKind[] = tickerPage.tab === 'tam' ? ['tam'] : tickerPage.tab === 'notes' ? ['notes', 'promises'] : [];
+  const kinds: ResearchKind[] = tickerPage.tab === 'tam' ? ['tam'] : tickerPage.tab === 'notes' ? ['notes', 'promises'] : tickerPage.tab === 'dcf' ? ['dcf'] : [];
   const missingRepo = kinds.filter(kind => !Object.prototype.hasOwnProperty.call(research.repo[kind], ticker));
   const missingMeta = needsMeta && !metaCache.has(ticker) && !metaTried.has(ticker);
   if (!missingRepo.length && !missingMeta) return true;

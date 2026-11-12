@@ -2,14 +2,15 @@
 /**
  * The owner's research data of the ticker page (plan stage 7): TAM scenarios (user-data/tam/<T>.json), research notes with the
  * 9-question checklist and the dated thesis (user-data/notes/<T>.md) and the management promises tracker
- * (user-data/promises/<T>.json). They live in the browser and are exported to files with these exact names; the committed
+ * (user-data/promises/<T>.json), and the edited DCF inputs (user-data/dcf/<T>.json). They live in the browser and are exported to files with these exact names; the committed
  * files are the starting state (each folder has an index.json, the site has no directory listing). A browser copy wins and is
  * "not exported" until its text equals the repo file or the last export. No DOM
  */
 
 export const RESEARCH_SCHEMA_VERSION = 1;
-export type ResearchKind = 'tam' | 'notes' | 'promises';
-export const RESEARCH_KINDS: ResearchKind[] = ['tam', 'notes', 'promises'];
+/** dcf: the edited DCF inputs of the ticker page (owner answer N39), file format in src/core/dcf */
+export type ResearchKind = 'tam' | 'notes' | 'promises' | 'dcf';
+export const RESEARCH_KINDS: ResearchKind[] = ['tam', 'notes', 'promises', 'dcf'];
 
 /** user-data/<kind>/<T>.<json|md> */
 export const researchFileName = (kind: ResearchKind, ticker: string): string => `${ticker}.${kind === 'notes' ? 'md' : 'json'}`;
