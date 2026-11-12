@@ -168,6 +168,17 @@
         <div id="guide-body" class="guide-body themed-scroll"></div>
       </div>
     </div>
+    <!-- Ticker page: similar stocks and peers (rendered by main.tsx in the chosen language) -->
+    <div id="ticker-page" class="guide-overlay" hidden>
+      <div class="guide-card tp-card" role="dialog" aria-modal="true" aria-labelledby="tp-title">
+        <div class="guide-head">
+          <h2 id="tp-title">Ticker</h2>
+          <nav id="tp-tabs" class="tp-tabs" role="tablist"></nav>
+          <button type="button" id="tp-close" class="guide-close" title="Close" aria-label="Close">✕</button>
+        </div>
+        <div id="tp-body" class="guide-body themed-scroll"></div>
+      </div>
+    </div>
     <script>document.getElementById('footer-year').textContent = String(new Date().getFullYear());</script>
   </div>
 

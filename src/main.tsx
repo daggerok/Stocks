@@ -6,7 +6,10 @@ import {
   evaluateExpression, evaluatePreset, evaluatePresets, Expression, FunnelStep, HISTORY_METRICS, mergeOwnPresets, Missing, normalizeTicker, Op, ownCopy,
   OwnEntry, parsePresetText, PeerGroups, Preset, PRESET_SCHEMA_VERSION, presetFileName, presetFileText, presetKey, PresetResult, RELATIVE_SCOPES,
   samePreset, Scope, SCOPES, stockRow, uniqueId, Universe, validatePreset,
+  changedGroups, cleanTickers, deleteGroup, groupName, groupsOf, importGroups, mergePeers, parsePeersText, PEERS_FILE_NAME, peersExported, peersFileText,
+  peersKey, PeersOverlay, setGroup,
 } from './core/screener';
+import { createSimilarContext, filterFromX, SIMILAR_CONFIG, SimilarContext, SimilarResult, similarTo } from './core/similar';
 import {
   archetypeText, computeScoring, flagTexts, RowScoring, SCORE_IDS, SCORE_METRICS, SCORING_CONFIG_URL, ScoringConfig, ScoringResult, statusText,
   validateScoringConfig, whyText, withScoreMetrics,
@@ -53,6 +56,8 @@ const SHOW_FILTERS_KEY = 'stocks-show-filters';
 const STICKY_RANK_KEY = 'stocks-sticky-rank';
 const SCREENER_KEY = 'stocks-screener'; // chosen preset chips, edits, Stocks / ETFs (a setting: Clear resets it)
 const OWN_PRESETS_KEY = 'stocks-own-presets'; // own presets of this browser (data: Clear keeps them)
+const PEERS_KEY = 'stocks-peers'; // peer groups changed in this browser over user-data/peers.json (data: Clear keeps them)
+const SIMILAR_KEY = 'stocks-similar'; // the metric group and own set of Similar to X (a convenience: Clear keeps it)
 const FILTER_DEBOUNCE_MS = 250;
 const SEARCH_DEBOUNCE_MS = 200;
 const FONT_WAIT_MS = 2500; // longest the first render waits for the web font
@@ -292,6 +297,11 @@ const el = {
   guideSearch: byId('guide-search'),
   guideClose: byId('guide-close'),
   guideBody: byId('guide-body'),
+  tickerPage: byId('ticker-page'),
+  tickerPageTitle: byId('tp-title'),
+  tickerPageTabs: byId('tp-tabs'),
+  tickerPageClose: byId('tp-close'),
+  tickerPageBody: byId('tp-body'),
 };
 
 type AppState = {
@@ -2831,7 +2841,7 @@ function stockRowHtml(id: number, index: number, cols: Col[]): string {
               <button data-blacklist="${escapeHtml(key)}" class="w-4 h-4 rounded-sm text-slate-300 dark:text-slate-600 hover:text-rose-500 dark:hover:text-rose-400 leading-none transition" title="Blacklist ${escapeHtml(key)} - hide it from All Stocks">✕</button>
             </div>
           </td>
-          <td class="catalog-sticky-col catalog-sticky-ticker py-2.5 px-4 font-mono font-semibold text-blue-600 dark:text-blue-400">${escapeHtml(key)}</td>
+          <td class="catalog-sticky-col catalog-sticky-ticker py-2.5 px-4 font-mono font-semibold text-blue-600 dark:text-blue-400">${s.assetType[id] === 0 ? `<button type="button" class="tp-open" data-page="${escapeHtml(key)}" title="${escapeHtml(t('tp.open.tip', { ticker: key }))}">${escapeHtml(key)}</button>` : escapeHtml(key)}</td>
           ${state.hiddenCols.has('name') ? '' : `<td class="py-2.5 px-4 text-slate-700 dark:text-slate-300 font-medium" title="${escapeHtml(s.name[id])}">${escapeHtml(s.name[id])}</td>`}
           ${state.hiddenCols.has('type') ? '' : `<td class="py-2.5 px-4 text-slate-600 dark:text-slate-300"${s.raw[id].brand ? ` title="${escapeHtml(s.raw[id].brand)}"` : ''}>${escapeHtml(s.typeText[id])}</td>`}
           ${state.hiddenCols.has('exchange') ? '' : `<td class="py-2.5 px-4 text-slate-600 dark:text-slate-300">${escapeHtml(s.exchangeText[id] || DASH)}</td>`}
@@ -4220,6 +4230,11 @@ function bindEvents(): void {
       blacklistTickers([blacklistButton.dataset.blacklist || '']);
       return;
     }
+    const pageButton = target.closest('button[data-page]');
+    if (pageButton) {
+      event.stopPropagation();
+      openTickerPage(pageButton.dataset.page || '');
+    }
   });
 
   // Column filters and type badges live in the table header (delegated: the header is rebuilt on every render).
@@ -4308,7 +4323,12 @@ type ScreenerState = {
   repoOwn: Preset[]; // user-data/presets of the repo, the starting state
   browserOwn: Preset[]; // own presets saved in this browser (they win over the repo copies)
   lastExported: Record<string, string>; // id -> presetKey of the last export or import
-  peers: PeerGroups;
+  peers: PeerGroups; // the merged groups the engine uses: user-data/peers.json with the browser overlay on top
+  peersRepo: PeerGroups; // user-data/peers.json as committed
+  peersOverlay: PeersOverlay; // groups changed or deleted (null) in this browser
+  peersExported: string; // peersKey of the last peers export or import
+  peersOpen: boolean; // the peer group editor is shown
+  peersMessage: string;
   status: 'loading' | 'ready' | 'failed';
   error: string;
   message: string;
@@ -4319,10 +4339,11 @@ const ETF_CONCURRENCY = 6;
 const TYPE_FILTERS: TypeFilter[] = ['stock', 'etf', 'all'];
 const SCREENER_OPS: Op[] = ['>', '>=', '<', '<=', '=', 'range', 'in'];
 const MISSING_MODES: Missing[] = ['fail', 'skip'];
-const GUIDE_SECTIONS = ['presets', 'scopes', 'missing', 'swings', 'scores', 'archetypes', 'flags', 'thresholds', 'own'];
+const GUIDE_SECTIONS = ['presets', 'scopes', 'missing', 'swings', 'scores', 'archetypes', 'flags', 'thresholds', 'own', 'peers', 'similar'];
 
 const scr: ScreenerState = {
   type: 'stock', any: false, chips: {}, drafts: {}, expanded: null, base: [], repoOwn: [], browserOwn: [], lastExported: {}, peers: {},
+  peersRepo: {}, peersOverlay: {}, peersExported: '', peersOpen: false, peersMessage: '',
   status: 'loading', error: '', message: '', version: 0,
 };
 
@@ -4585,6 +4606,24 @@ function restoreScreener(): void {
   }
 }
 
+function restorePeers(): void {
+  const saved = lsGetJson(PEERS_KEY, null);
+  if (!saved || typeof saved !== 'object' || !saved.overlay || typeof saved.overlay !== 'object') return;
+  const overlay: PeersOverlay = {};
+  Object.keys(saved.overlay).forEach(name => {
+    const list = saved.overlay[name];
+    if (list === null) overlay[name] = null;
+    else if (Array.isArray(list) && groupName(name)) overlay[groupName(name)] = cleanTickers(list);
+  });
+  scr.peersOverlay = overlay;
+  scr.peersExported = typeof saved.exported === 'string' ? saved.exported : '';
+  scr.peers = mergePeers(scr.peersRepo, overlay);
+}
+
+function persistPeers(): void {
+  lsSet(PEERS_KEY, JSON.stringify({ schemaVersion: 1, overlay: scr.peersOverlay, exported: scr.peersExported }));
+}
+
 function persistOwn(): void {
   lsSet(OWN_PRESETS_KEY, JSON.stringify({ schemaVersion: PRESET_SCHEMA_VERSION, presets: scr.browserOwn, exported: scr.lastExported }));
 }
@@ -4654,10 +4693,12 @@ async function loadScreenerData(): Promise<void> {
   }
   try { scr.repoOwn = await fetchPresetFolder('./user-data/presets/'); } catch (error) { console.warn('user-data/presets unavailable:', error); }
   try {
-    const peers = await fetchJson('./user-data/peers.json');
-    scr.peers = peers && peers.groups && typeof peers.groups === 'object' ? peers.groups : {};
-    screenUniverse = null;
+    const parsed = parsePeersText(JSON.stringify(await fetchJson('./user-data/peers.json')));
+    if (parsed.errors.length) console.warn(`user-data/peers.json: ${parsed.errors.join('; ')}`);
+    scr.peersRepo = parsed.groups;
   } catch (error) { console.warn('user-data/peers.json unavailable:', error); }
+  scr.peers = mergePeers(scr.peersRepo, scr.peersOverlay);
+  screenUniverse = null;
   const message = applyHashPreset();
   if (scr.type !== 'stock') void ensureEtfs();
   screenerChanged(message);
@@ -5004,11 +5045,13 @@ function renderScreener(): void {
       ${own ? `<span class="scr-sep">${escapeHtml(t('screener.own'))}</span><div class="scr-chips">${own}</div>` : ''}
       <span class="scr-tools">
         ${chosen ? `<button type="button" class="dd-act" data-act="clear" title="${escapeHtml(t('screener.clear.tip'))}">${escapeHtml(t('screener.clear'))}</button>` : ''}
+        <button type="button" class="dd-act" data-act="peers" aria-expanded="${scr.peersOpen}" title="${escapeHtml(t('peers.button.tip'))}">${escapeHtml(t('peers.button'))} (${Object.keys(scr.peers).length})${peersAreExported() ? '' : '<span class="scr-dot"></span>'}</button>
         <label class="dd-act scr-import" title="${escapeHtml(t('screener.import.tip'))}">${escapeHtml(t('screener.import'))}<input type="file" id="scr-import-input" accept=".json,application/json" multiple hidden /></label>
       </span>
       <span id="scr-status" class="scr-muted" aria-live="polite">${escapeHtml(screenerStatusText())}</span>
     </div>
     ${!chosen && !scr.expanded && scr.status === 'ready' ? `<p class="scr-hint">${escapeHtml(t('screener.none'))}</p>` : ''}
+    ${scr.peersOpen ? peersPanelHtml() : ''}
     ${scr.expanded && effectivePreset(scr.expanded) ? editorHtml(scr.expanded) + metricDatalistHtml() : ''}`;
 }
 
@@ -5043,6 +5086,7 @@ function onScreenerChange(event: any): void {
   const target = event.target;
   if (!target || !target.dataset) return;
   if (target.id === 'scr-import-input') { void importFiles(target.files).finally(() => { target.value = ''; }); return; }
+  if (target.id === 'scr-peers-import') { void importPeersFiles(target.files).finally(() => { target.value = ''; }); return; }
   const id = scr.expanded;
   const field = target.dataset.field;
   if (!id || !field || field === 'list-add') return; // a list value is added by Enter or by leaving the input
@@ -5091,6 +5135,12 @@ function addListValue(index: number, text: string): void {
 
 function onScreenerKeydown(event: any): void {
   const target = event.target;
+  if (target && target.dataset && event.key === 'Enter' && (target.dataset.field === 'peer-add' || target.dataset.field === 'peer-new-name' || target.dataset.field === 'peer-new-tickers')) {
+    event.preventDefault();
+    if (target.dataset.field === 'peer-add') addPeerTickers(String(target.dataset.group || ''), String(target.value || ''));
+    else createPeerGroupFromInputs();
+    return;
+  }
   if (!target || !target.dataset || target.dataset.field !== 'list-add' || event.key !== 'Enter') return;
   event.preventDefault();
   addListValue(Number(target.dataset.ci), String(target.value || ''));
@@ -5113,6 +5163,12 @@ function onScreenerClick(event: any): void {
   else if (act === 'not') toggleChip(id, 'out');
   else if (act === 'expand') { scr.expanded = scr.expanded === id ? null : id; screenerChanged(); }
   else if (act === 'clear') { scr.chips = {}; screenerChanged(); }
+  else if (act === 'peers') { scr.peersOpen = !scr.peersOpen; scr.peersMessage = ''; renderScreener(); }
+  else if (act === 'peer-close') { scr.peersOpen = false; renderScreener(); }
+  else if (act === 'peer-remove') removePeerTicker(String(button.dataset.group || ''), String(button.dataset.ticker || ''));
+  else if (act === 'peer-delete') applyPeers(deleteGroup(scr.peersOverlay, scr.peersRepo, String(button.dataset.group || '')), '');
+  else if (act === 'peer-create') createPeerGroupFromInputs();
+  else if (act === 'peer-export') exportPeers();
   else if (!editing) return;
   else if (act === 'reset') resetPreset(editing);
   else if (act === 'save') savePreset(editing);
@@ -5143,6 +5199,328 @@ async function importFiles(files: any): Promise<void> {
   for (const file of list) importPresetText(await file.text());
 }
 
+// ---- peer groups (plan stage 6): user-data/peers.json as the starting state, the browser overlay wins, export and import ----
+
+function peersAreExported(): boolean {
+  return peersExported(scr.peers, scr.peersRepo, scr.peersExported);
+}
+
+/** Stock tickers of the loaded feed (an unknown peer ticker is kept with a warning) */
+function knownStockTickers(): string[] {
+  const s = store;
+  if (!s) return [];
+  return s.ticker.filter((_, i) => s.assetType[i] === 0);
+}
+
+function applyPeers(overlay: PeersOverlay, message: string): void {
+  scr.peersOverlay = overlay;
+  scr.peers = mergePeers(scr.peersRepo, overlay);
+  scr.peersMessage = message;
+  persistPeers();
+  screenUniverse = null;
+  similarCache = null;
+  screenerChanged();
+  if (tickerPage.ticker) renderTickerPage();
+}
+
+function peerWarnings(tickers: string[]): string {
+  const known = knownStockTickers();
+  const unknown = known.length ? tickers.filter(ticker => known.indexOf(ticker) < 0) : [];
+  return unknown.length ? ` · ${t('peers.warn', { warnings: unknown.join(', ') })}` : '';
+}
+
+function addPeerTickers(name: string, text: string): void {
+  const group = groupName(name);
+  const tickers = cleanTickers(text.split(/[\s,;]+/));
+  if (!group || !tickers.length) return;
+  const next = cleanTickers((scr.peers[group] || []).concat(tickers));
+  applyPeers(setGroup(scr.peersOverlay, scr.peersRepo, group, next), `${t('peers.created', { name: group, tickers: next.join(', ') })}${peerWarnings(tickers)}`);
+}
+
+function removePeerTicker(name: string, ticker: string): void {
+  const list = scr.peers[name];
+  if (!list) return;
+  applyPeers(setGroup(scr.peersOverlay, scr.peersRepo, name, list.filter(item => item !== ticker)), '');
+}
+
+function createPeerGroupFromInputs(): void {
+  const nameInput: any = document.getElementById('scr-peer-new-name');
+  const tickersInput: any = document.getElementById('scr-peer-new-tickers');
+  const name = groupName(nameInput ? nameInput.value : '');
+  if (!name) { scr.peersMessage = t('peers.badName'); renderScreener(); return; }
+  const tickers = cleanTickers(String(tickersInput ? tickersInput.value : '').split(/[\s,;]+/));
+  const next = cleanTickers((scr.peers[name] || []).concat(tickers));
+  applyPeers(setGroup(scr.peersOverlay, scr.peersRepo, name, next), `${t('peers.created', { name, tickers: next.join(', ') || DASH })}${peerWarnings(tickers)}`);
+}
+
+/** Downloads peers.json with every merged group (user-data/peers.json in the repo); returns what was downloaded */
+function exportPeers(): { fileName: string; text: string } {
+  const text = peersFileText(scr.peers);
+  downloadText(text, PEERS_FILE_NAME, 'application/json');
+  scr.peersExported = peersKey(scr.peers);
+  persistPeers();
+  screenerChanged();
+  return { fileName: PEERS_FILE_NAME, text };
+}
+
+function importPeersText(text: string): { names: string[]; errors: string[] } {
+  const parsed = parsePeersText(text, knownStockTickers());
+  const names = Object.keys(parsed.groups);
+  if (!names.length) {
+    scr.peersMessage = t('peers.importFailed', { errors: parsed.errors.join('; ') || 'no groups' });
+    renderScreener();
+    return { names, errors: parsed.errors };
+  }
+  const overlay = importGroups(scr.peersOverlay, scr.peersRepo, parsed.groups);
+  const merged = mergePeers(scr.peersRepo, overlay);
+  scr.peersExported = peersKey(merged);
+  const notes = parsed.errors.concat(parsed.warnings);
+  applyPeers(overlay, `${t('peers.imported', { names: names.join(', ') })}${notes.length ? ` · ${t('peers.warn', { warnings: notes.join('; ') })}` : ''}`);
+  return { names, errors: parsed.errors };
+}
+
+async function importPeersFiles(files: any): Promise<void> {
+  const list: any[] = files ? Array.from(files) : [];
+  for (const file of list) importPeersText(await file.text());
+}
+
+function peersPanelHtml(): string {
+  const names = Object.keys(scr.peers).sort();
+  const changed = changedGroups(scr.peersRepo, scr.peersOverlay);
+  const groups = names.map(name => `<div class="peer-group" data-group="${escapeHtml(name)}">
+      <strong class="peer-name">${escapeHtml(name)}</strong>${changed.indexOf(name) >= 0 ? ` <span class="scr-muted">${escapeHtml(t('peers.changed'))}</span>` : ''}
+      <div class="scr-list">${scr.peers[name].map(ticker => `<span class="scr-li">${escapeHtml(ticker)}<button type="button" data-act="peer-remove" data-group="${escapeHtml(name)}" data-ticker="${escapeHtml(ticker)}" title="${escapeHtml(t('peers.remove', { ticker }))}" aria-label="${escapeHtml(t('peers.remove', { ticker }))}">✕</button></span>`).join('')}
+        <input type="text" class="scr-input scr-list-add" data-field="peer-add" data-group="${escapeHtml(name)}" placeholder="${escapeHtml(t('peers.add'))}" aria-label="${escapeHtml(`${t('peers.add')}: ${name}`)}" /></div>
+      <button type="button" class="dd-act" data-act="peer-delete" data-group="${escapeHtml(name)}" title="${escapeHtml(t('peers.delete.tip'))}">${escapeHtml(t('peers.delete'))}</button>
+    </div>`).join('');
+  return `<div class="scr-editor peer-editor" id="peer-editor">
+    <div class="scr-ed-head">
+      <strong>${escapeHtml(t('peers.title'))}</strong>
+      ${peersAreExported() ? '' : `<span class="scr-flag" title="${escapeHtml(t('peers.notExported.tip'))}">${escapeHtml(t('screener.notExported'))}</span>`}
+      <span class="scr-ed-actions">
+        <button type="button" class="dd-act" data-act="peer-export" title="${escapeHtml(t('peers.export.tip'))}">${escapeHtml(t('peers.export'))}</button>
+        <label class="dd-act scr-import" title="${escapeHtml(t('peers.import.tip'))}">${escapeHtml(t('peers.import'))}<input type="file" id="scr-peers-import" accept=".json,application/json" hidden /></label>
+        <button type="button" class="dd-act" data-act="peer-close">${escapeHtml(t('peers.close'))}</button>
+      </span>
+    </div>
+    ${groups || `<p class="scr-hint">${escapeHtml(t('peers.empty'))}</p>`}
+    <div class="scr-ed-foot">
+      <input type="text" id="scr-peer-new-name" class="scr-input" data-field="peer-new-name" placeholder="${escapeHtml(t('peers.newName'))}" aria-label="${escapeHtml(t('peers.newName'))}" />
+      <input type="text" id="scr-peer-new-tickers" class="scr-input" data-field="peer-new-tickers" placeholder="${escapeHtml(t('peers.newTickers'))}" aria-label="${escapeHtml(t('peers.newTickers'))}" />
+      <button type="button" class="dd-act" data-act="peer-create">${escapeHtml(t('peers.create'))}</button>
+      ${scr.peersMessage ? `<span class="scr-muted" id="peer-message">${escapeHtml(scr.peersMessage)}</span>` : ''}
+    </div>
+  </div>`;
+}
+
+// ---- ticker page: an overlay opened from the ticker cell of the table (plan stages 6 and 7) ----
+
+type TickerPageState = {
+  ticker: string | null;
+  tab: string;
+  group: string; // a SIMILAR_CONFIG group id or 'custom'
+  custom: string[];
+  picked: Record<string, boolean>; // hits ticked for "Add to peer group"
+  message: string;
+};
+
+const tickerPage: TickerPageState = { ticker: null, tab: 'similar', group: 'business', custom: [], picked: {}, message: '' };
+const TICKER_PAGE_TABS = ['similar'];
+let similarCache: { universe: Universe; ctx: SimilarContext } | null = null;
+let lastSimilar: { ticker: string; metrics: string[]; result: SimilarResult } | null = null;
+
+function restoreSimilar(): void {
+  const saved = lsGetJson(SIMILAR_KEY, null);
+  if (!saved || typeof saved !== 'object') return;
+  if (saved.group === 'custom' || SIMILAR_CONFIG.groups.some(g => g.id === saved.group)) tickerPage.group = saved.group;
+  if (Array.isArray(saved.custom)) tickerPage.custom = saved.custom.filter((m: unknown) => typeof m === 'string' && !!REGISTRY.byId[m]);
+}
+
+function persistSimilar(): void {
+  lsSet(SIMILAR_KEY, JSON.stringify({ group: tickerPage.group, custom: tickerPage.custom }));
+}
+
+function similarContext(): { universe: Universe; ctx: SimilarContext } | null {
+  const universe = screenerUniverse();
+  if (!universe) return null;
+  if (!similarCache || similarCache.universe !== universe) similarCache = { universe, ctx: createSimilarContext(universe.rows) };
+  return similarCache;
+}
+
+function similarMetrics(): string[] {
+  if (tickerPage.group === 'custom') return tickerPage.custom;
+  const group = SIMILAR_CONFIG.groups.filter(g => g.id === tickerPage.group)[0] || SIMILAR_CONFIG.groups[0];
+  return group.metrics;
+}
+
+function similarGroupTitle(): { en: string; ru: string } {
+  const group = SIMILAR_CONFIG.groups.filter(g => g.id === tickerPage.group)[0];
+  return group ? group.title : { en: 'Own set', ru: 'Свой набор' };
+}
+
+function metricLabel(metric: string): string {
+  const def = REGISTRY.byId[metric];
+  return def ? pick(def.name) : metric;
+}
+
+function metricValueText(metric: string, value: number): string {
+  const def = REGISTRY.byId[metric];
+  const unit = def ? def.unit : 'ratio';
+  if (unit === 'percent') return formatPercent(value);
+  if (unit === 'pp') return formatPoints(value);
+  if (unit === 'usd') return formatMoney(value);
+  if (unit === 'count') return formatInteger(value);
+  return formatRatio(value);
+}
+
+function openTickerPage(ticker: string, tab = ''): void {
+  tickerPage.ticker = normalizeTicker(ticker);
+  if (tab && TICKER_PAGE_TABS.indexOf(tab) >= 0) tickerPage.tab = tab;
+  tickerPage.picked = {};
+  tickerPage.message = '';
+  el.tickerPage.hidden = false;
+  renderTickerPage();
+  el.tickerPageClose.focus();
+}
+
+function closeTickerPage(): void {
+  tickerPage.ticker = null;
+  el.tickerPage.hidden = true;
+}
+
+function similarTabHtml(ticker: string, index: number): string {
+  const ctx = similarContext();
+  if (!ctx) return '';
+  const metrics = similarMetrics();
+  const result = similarTo(ctx.ctx, index, metrics);
+  lastSimilar = { ticker, metrics, result };
+  const pickedKnown = Object.keys(tickerPage.picked).some(key => result.hits.some(hit => hit.ticker === key));
+  if (!pickedKnown) result.hits.slice(0, 3).forEach(hit => { tickerPage.picked[hit.ticker] = true; }); // the three closest are picked to start with
+  const seg = SIMILAR_CONFIG.groups.map(g => ({ id: g.id, label: pick(g.title) })).concat([{ id: 'custom', label: t('similar.custom') }])
+    .map(item => `<button type="button" data-tp-act="group" data-value="${item.id}" aria-pressed="${tickerPage.group === item.id}">${escapeHtml(item.label)}</button>`).join('');
+  const custom = tickerPage.group === 'custom'
+    ? `<input type="text" id="tp-custom" class="scr-input tp-custom" list="tp-metric-list" value="${escapeHtml(tickerPage.custom.join(', '))}" placeholder="${escapeHtml(t('similar.custom.placeholder'))}" title="${escapeHtml(t('similar.custom.tip'))}" aria-label="${escapeHtml(t('similar.custom'))}" />
+       <datalist id="tp-metric-list">${REGISTRY.metrics.filter(isNumericMetric).map(m => `<option value="${escapeHtml(m.id)}">${escapeHtml(pick(m.name))}</option>`).join('')}</datalist>`
+    : '';
+  const info = result.usable.length
+    ? `${t('similar.using', { count: result.usable.length, metrics: result.usable.map(metricLabel).join(', ') })}; ${t('similar.needed', { count: result.needed })}${result.skipped.length ? `; ${t('similar.skipped', { ticker, metrics: result.skipped.map(metricLabel).join(', ') })}` : ''}`
+    : '';
+  const s = store;
+  const rows = result.hits.map((hit, k) => `<tr data-hit="${escapeHtml(hit.ticker)}">
+      <td><input type="checkbox" data-tp-pick="${escapeHtml(hit.ticker)}" ${tickerPage.picked[hit.ticker] ? 'checked' : ''} aria-label="${escapeHtml(`${t('similar.col.pick')} ${hit.ticker}`)}" /></td>
+      <td class="tp-num">${k + 1}</td>
+      <td><button type="button" class="tp-link" data-tp-open="${escapeHtml(hit.ticker)}">${escapeHtml(hit.ticker)}</button></td>
+      <td>${escapeHtml(s ? s.name[hit.index] : '')}</td>
+      <td class="tp-num tp-sim">${hit.similarity.toFixed(1)}%</td>
+      <td class="tp-num">${hit.common}</td>
+      <td class="tp-diff">${hit.differences.map(d => escapeHtml(`${metricLabel(d.metric)} ${metricValueText(d.metric, d.x)} vs ${metricValueText(d.metric, d.y)} (${t(d.gap > 0 ? 'similar.higher' : 'similar.lower')})`)).join('<br>')}</td>
+    </tr>`).join('');
+  const names = Object.keys(scr.peers).sort();
+  const inGroups = groupsOf(scr.peers, ticker);
+  const groupSelect = `<select id="tp-peer-group" class="scr-input" aria-label="${escapeHtml(t('similar.addTo'))}">${names.map(name => optionHtml(name, name, inGroups.indexOf(name) >= 0 && inGroups[0] === name)).join('')}${optionHtml('', t('similar.groupNew'), !names.length)}</select>
+    <input type="text" id="tp-peer-name" class="scr-input" placeholder="${escapeHtml(t('similar.groupName'))}" aria-label="${escapeHtml(t('similar.groupName'))}" value="${escapeHtml(names.length ? '' : `${ticker} peers`)}" />`;
+  const pct = Math.round(SIMILAR_CONFIG.tolerance * 100);
+  return `<section class="tp-section" data-tp-section="similar">
+    <div class="tp-row"><h3>${escapeHtml(t('similar.title', { ticker }))}</h3>
+      <span class="scr-label">${escapeHtml(t('similar.group'))}</span><div class="scr-seg" role="group">${seg}</div>${custom}</div>
+    <p class="scr-muted" id="tp-similar-info">${escapeHtml(info)}</p>
+    <p class="scr-muted">${escapeHtml(inGroups.length ? t('similar.inGroups', { ticker, names: inGroups.join(', ') }) : t('similar.noGroups', { ticker }))}</p>
+    ${result.hits.length ? `<div class="scr-table-wrap themed-scroll tp-table-wrap"><table class="scr-conds tp-table" id="tp-similar-table">
+      <thead><tr><th>${escapeHtml(t('similar.col.pick'))}</th><th>#</th><th>${escapeHtml(t('similar.col.ticker'))}</th><th>${escapeHtml(t('similar.col.name'))}</th><th title="${escapeHtml(t('similar.col.similarity.tip'))}">${escapeHtml(t('similar.col.similarity'))}</th><th>${escapeHtml(t('similar.col.common'))}</th><th>${escapeHtml(t('similar.col.diff', { ticker }))}</th></tr></thead>
+      <tbody>${rows}</tbody></table></div>` : `<p class="scr-error">${escapeHtml(t('similar.none', { ticker }))}</p>`}
+    <div class="scr-ed-foot">
+      ${groupSelect}
+      <button type="button" class="dd-act" data-tp-act="add-peers" title="${escapeHtml(t('similar.addTo.tip', { ticker }))}">${escapeHtml(t('similar.addTo'))}</button>
+      <button type="button" class="dd-act" data-tp-act="make-filter" title="${escapeHtml(t('similar.filter.tip', { ticker, pct }))}" ${result.usable.length ? '' : 'disabled'}>${escapeHtml(t('similar.filter', { ticker }))}</button>
+      ${tickerPage.message ? `<span class="scr-muted" id="tp-message">${escapeHtml(tickerPage.message)}</span>` : ''}
+    </div>
+  </section>`;
+}
+
+function renderTickerPage(): void {
+  const ticker = tickerPage.ticker;
+  if (!ticker) return;
+  const s = store;
+  const index = s ? s.keyIndex.get(ticker) : undefined;
+  el.tickerPageTitle.textContent = index === undefined || !s ? ticker : `${ticker} · ${s.name[index]}`;
+  el.tickerPageClose.title = t('tp.close');
+  el.tickerPageClose.setAttribute('aria-label', t('tp.close'));
+  el.tickerPageTabs.innerHTML = TICKER_PAGE_TABS.map(tab => `<button type="button" role="tab" data-tp-tab="${tab}" aria-selected="${tickerPage.tab === tab}">${escapeHtml(t(`tp.tab.${tab}`))}</button>`).join('');
+  if (index === undefined || !s) {
+    el.tickerPageBody.innerHTML = `<p class="scr-muted">${escapeHtml(t('tp.noStock', { ticker }))}</p>`;
+    return;
+  }
+  el.tickerPageBody.innerHTML = similarTabHtml(ticker, index);
+}
+
+/** Adds X and the picked hits to the chosen group, or to a new group named in the input */
+function addSimilarToPeers(): string[] {
+  const ticker = tickerPage.ticker;
+  if (!ticker) return [];
+  const select: any = document.getElementById('tp-peer-group');
+  const nameInput: any = document.getElementById('tp-peer-name');
+  const typed = groupName(nameInput ? nameInput.value : '');
+  const name = typed || groupName(select ? select.value : '');
+  if (!name) { tickerPage.message = t('peers.badName'); renderTickerPage(); return []; }
+  const picked = lastSimilar && lastSimilar.ticker === ticker ? lastSimilar.result.hits.filter(hit => tickerPage.picked[hit.ticker]).map(hit => hit.ticker) : [];
+  const next = cleanTickers((scr.peers[name] || []).concat([ticker], picked));
+  tickerPage.message = t('similar.added', { name, tickers: next.join(', ') });
+  applyPeers(setGroup(scr.peersOverlay, scr.peersRepo, name, next), tickerPage.message);
+  return next;
+}
+
+/** "Make a filter from X": a new own preset, chosen and opened in the screener; the page closes so the table shows it */
+function makeFilterFromTicker(): string {
+  const ticker = tickerPage.ticker;
+  const s = store;
+  const universe = screenerUniverse();
+  const index = ticker && s ? s.keyIndex.get(ticker) : undefined;
+  if (!ticker || !universe || index === undefined) return '';
+  const preset = filterFromX(universe.rows[index], similarMetrics(), { group: tickerPage.group, groupTitle: similarGroupTitle(), taken: takenIds() });
+  if (!preset) return '';
+  scr.browserOwn = scr.browserOwn.concat([preset]);
+  persistOwn();
+  scr.chips[preset.id] = 'in';
+  scr.expanded = preset.id;
+  closeTickerPage();
+  screenerChanged(t('similar.filtered', { ticker, title: pick(preset.title) }));
+  return preset.id;
+}
+
+function onTickerPageClick(event: any): void {
+  const target = event.target;
+  if (!target || typeof target.closest !== 'function') return;
+  if (target === el.tickerPage) { closeTickerPage(); return; }
+  const tab = target.closest('[data-tp-tab]');
+  if (tab) { tickerPage.tab = tab.dataset.tpTab; renderTickerPage(); return; }
+  const open = target.closest('[data-tp-open]');
+  if (open) { openTickerPage(open.dataset.tpOpen); return; }
+  const button = target.closest('[data-tp-act]');
+  if (!button) return;
+  const act = button.dataset.tpAct;
+  if (act === 'group') { tickerPage.group = button.dataset.value; tickerPage.picked = {}; persistSimilar(); renderTickerPage(); }
+  else if (act === 'add-peers') addSimilarToPeers();
+  else if (act === 'make-filter') makeFilterFromTicker();
+}
+
+function onTickerPageChange(event: any): void {
+  const target = event.target;
+  if (!target) return;
+  if (target.dataset && target.dataset.tpPick) { tickerPage.picked[target.dataset.tpPick] = !!target.checked; return; }
+  if (target.id === 'tp-custom') {
+    tickerPage.custom = String(target.value || '').split(/[\s,;]+/).map(m => m.trim()).filter(m => !!REGISTRY.byId[m]).filter((m, k, all) => all.indexOf(m) === k);
+    persistSimilar();
+    renderTickerPage();
+  }
+}
+
+function bindTickerPageEvents(): void {
+  el.tickerPage.addEventListener('click', onTickerPageClick);
+  el.tickerPage.addEventListener('change', onTickerPageChange);
+  el.tickerPageClose.addEventListener('click', closeTickerPage);
+  document.addEventListener('keydown', (event: any) => { if (event.key === 'Escape' && tickerPage.ticker && !guideOpen) closeTickerPage(); });
+}
+
 // ---- language switch and guide ----
 
 function applyLanguage(): void {
@@ -5165,6 +5543,7 @@ function switchLanguage(locale: string): void {
   renderScreener();
   renderGuide();
   render();
+  if (tickerPage.ticker) renderTickerPage();
 }
 
 function paragraphs(text: string): string {
@@ -5234,10 +5613,13 @@ function init(): void {
   restoreSearches();
   restoreTabSorts();
   restoreScreener();
+  restorePeers();
+  restoreSimilar();
   applySortForTab(state.activeTab);
   applyTheme(lsGet(THEME_KEY) === 'dark');
   bindEvents();
   bindScreenerEvents();
+  bindTickerPageEvents();
   applyLanguage();
   renderScreener();
   syncSearchInput();
@@ -5372,6 +5754,9 @@ init();
 Object.assign(window, { state, render, catalogIds, catalogFilterColumns, detectedCatalogType, filterExpressionFor, gridTypeCache, menuColumns });
 // screener hooks of stocks-screener-uitest.ts
 Object.assign(window, { scr, exportPreset, importPresetText, presetShareUrl, presetResults, effectivePreset, switchLanguage, applyClear });
+// peers and ticker page hooks (plan stages 6 and 7, stocks-ticker-uitest.ts)
+Object.assign(window, { tickerPage, openTickerPage, closeTickerPage, exportPeers, importPeersText, addSimilarToPeers, makeFilterFromTicker, screenerUniverse });
+Object.defineProperty(window, 'lastSimilar', { get: () => lastSimilar });
 Object.defineProperty(window, 'store', { get: () => store });
 // scoring hooks (plan stage 5)
 Object.assign(window, { scoringText, scoringSortArray, sortIds });
