@@ -10,6 +10,7 @@ import {
   annualSeries, buildAnnualRows, compactIndexText, completeMetrics, CONTROL_NAMES, dividendMetrics, fundamentalsMetrics, installSystemCa, isCertError, mergeAnnual,
   isOperatingTicker, minusMonths, normalizeTicker, parseChart, periodEve, parseRange, parseRanges, parseRetryAfter, parseSecTickers, parseSummary, parseYahooAnnual, priceReturns, readConfig, resolveControls,
   indexDocument, parseWatchlist, range52wPosition, pruneCompanies, resolveWatchlist, run, runtimeControls, sampleHistory, useApiRoot, useWatchlistDir, valuationMetrics, withMetricKeys, type ChartDay, type Snapshot,
+  coverageMarkdown, metaText, scaleCheck, FEED_SCHEMA_VERSION,
 } from './update-data.ts';
 
 // ---------------------------------------------------------------------------
@@ -46,6 +47,13 @@ function syntheticFacts(): any {
       },
     },
   };
+}
+
+/** Every USD value multiplied (a filing tagged in thousands by mistake) */
+function scaled(facts: any, factor: number): any {
+  if (factor === 1) return facts;
+  for (const node of Object.values<any>(facts.facts['us-gaap'])) for (const row of node.units.USD ?? []) row.val *= factor;
+  return facts;
 }
 
 /** Every field Yahoo fundamentals-timeseries could fill is present in every SEC year. */
@@ -179,6 +187,22 @@ describe('parsing', () => {
     const annual = parseYahooAnnual({ timeseries: { result: [{ meta: { type: ['annualCapitalExpenditure'] }, annualCapitalExpenditure: [{ asOfDate: '2025-09-30', reportedValue: { raw: -12 } }] }] } });
     expect(annual.get('2025-09-30')).toEqual({ capex: 12 });
     expect(() => parseChart({})).toThrow('no result');
+  });
+
+  test('SEC layer inputs: split events, Yahoo TTM revenue for the scale check, meta.json with one-line value arrays', () => {
+    const chart = parseChart({ chart: { result: [{ meta: {}, timestamp: [1598880600], indicators: { quote: [{ close: [129] }] }, events: { splits: { 1598880600: { numerator: 4, denominator: 1 }, 1: { numerator: 0, denominator: 1 } } } }] } });
+    expect(chart.splits).toEqual([{ date: '2020-08-31', ratio: 4 }]);
+    expect(parseSummary({ quoteSummary: { result: [{ financialData: { totalRevenue: { raw: 4.2e11 } } }] } }).totalRevenue).toBe(4.2e11);
+    expect(scaleCheck(416e9, 400e9)).toEqual({ ok: true, diffPct: 4 });
+    expect(scaleCheck(416e12, 400e9)?.ok).toBe(false); // a ×1000 tagging error
+    expect([scaleCheck(null, 1), scaleCheck(-1, 1), scaleCheck(1, 0)]).toEqual([null, null, null]);
+    const text = metaText({ a: 1, list: [1, null, 'x'], rows: [{ b: [] }], skip: undefined, empty: {} });
+    expect(text).toBe('{\n  "a": 1,\n  "list": [1,null,"x"],\n  "rows": [\n    {\n      "b": []\n    }\n  ],\n  "empty": {}\n}\n');
+    expect(JSON.parse(text)).toEqual({ a: 1, list: [1, null, 'x'], rows: [{ b: [] }], empty: {} });
+    const coverage = coverageMarkdown([{ sector: 'Tech', metrics: { pe: 10, athBasis: 'daily closes' } }, { sector: 'Tech', metrics: { pe: null } }, { sector: null, metrics: { pe: 5 } }]);
+    expect(coverage).toContain('| metric | all (3) | Tech (2) | Unknown (1) |');
+    expect(coverage).toContain('| pe | 67 | 50 | 100 |');
+    expect(coverage).not.toContain('| athBasis |'); // text metrics have no coverage row
   });
 
   test('Yahoo only fills gaps and adds missing years, it never overrides SEC', () => {
@@ -323,6 +347,8 @@ describe('pipeline', () => {
   let failSecFor = '';
   let chartLength = 400;
   let chartSkip = 0; // candles missing at the start: a truncated Yahoo answer
+  let yahooRevenue = 0; // financialData.totalRevenue of the snapshot (0: not reported)
+  let secScale = 1; // a tagging error that multiplies every SEC value
 
   const chartPayload = () => {
     const start = Date.parse('2020-01-02T00:00:00Z') / 1000;
@@ -343,12 +369,13 @@ describe('pipeline', () => {
       if (failSummaryFor && url.includes(`/${failSummaryFor}?`)) return new Response('boom', { status: 500 });
       const body = summary(url.includes('/CCC') ? 'ETF' : 'EQUITY');
       if (url.includes('/EEE')) delete (body.quoteSummary.result[0].price as any).marketCap; // a warrant has no market cap
+      if (yahooRevenue) (body.quoteSummary.result[0].financialData as any).totalRevenue = { raw: yahooRevenue };
       return json(body);
     }
     if (url.includes('/v8/finance/chart/')) return failChartFor && url.includes(`/${failChartFor}?`) ? new Response('boom', { status: 500 }) : json(chartPayload());
     if (url.includes('fundamentals-timeseries')) return json({ timeseries: { result: [] } });
     if (url.includes('companyfacts') && failSecFor && url.includes(failSecFor)) return new Response('boom', { status: 500 });
-    if (url.includes('companyfacts')) return url.includes('CIK0000000006') ? new Response('nope', { status: 404 }) : json(syntheticFacts()); // FFF has no XBRL facts
+    if (url.includes('companyfacts')) return url.includes('CIK0000000006') ? new Response('nope', { status: 404 }) : json(scaled(syntheticFacts(), secScale)); // FFF has no XBRL facts
     return new Response('not found', { status: 404 });
   }) as typeof fetch;
 
@@ -362,6 +389,8 @@ describe('pipeline', () => {
     failSecFor = '';
     chartLength = 400;
     chartSkip = 0;
+    yahooRevenue = 0;
+    secScale = 1;
   });
   afterEach(async () => {
     globalThis.fetch = realFetch;
@@ -488,6 +517,31 @@ describe('pipeline', () => {
     await writeFile(join(dir, 'All.csv'), '');
     await run(controls());
     expect(await tickers()).toEqual(['AAA', 'BBB']);
+  });
+
+  test('the SEC layer: arrays by field and schemaVersion in meta.json; a revenue far from Yahoo\'s withholds the new SEC values', async () => {
+    await run(controls());
+    const index = await readIndex();
+    expect([index.schemaVersion, index.companies[0].ttmAsOf, index.companies[0].fundamentalsAsOf]).toEqual([FEED_SCHEMA_VERSION, '2026-12-31', '2026-12-31']);
+    const meta = JSON.parse(await readText('companies/AAA/meta.json'));
+    expect(meta.schemaVersion).toBe(FEED_SCHEMA_VERSION);
+    expect(meta.fundamentals.sec.fy.end).toEqual(['2026-12-31', '2025-12-31', '2024-12-31', '2023-12-31', '2022-12-31', '2021-12-31']);
+    expect(meta.fundamentals.sec.fy.revenue[0]).toBe(161); // 100 × 1.1^5, whole dollars
+    expect(meta.fundamentals.sec.ttm).toMatchObject({ end: '2026-12-31', period: 'TTM', basis: 'fy', revenue: 161 });
+    expect(meta.fundamentals.checks.scale).toBeNull(); // the mock snapshot reports no revenue
+    expect(index.companies[0].metrics.operatingMargin).toBe(19.88); // operating income 20 × 1.1^5 over revenue 100 × 1.1^5, whole dollars: 32 / 161
+    expect(await readText('companies/AAA/meta.json')).toContain('"end": ["2026-12-31","2025-12-31"');
+    // the next filing comes in thousands by mistake: SEC is 1000× Yahoo's revenue, the published SEC values stay
+    secScale = 1000;
+    yahooRevenue = 161.051; // 100 × 1.1^5
+    expect(await run(controls({ TICKERS: 'AAA' }))).toMatchObject({ updated: 1, failed: 0 });
+    const after = JSON.parse(await readText('companies/AAA/meta.json'));
+    expect(after.fundamentals.sec).toEqual(meta.fundamentals.sec);
+    expect(after.fundamentals.annual).toEqual(meta.fundamentals.annual);
+    expect(after.fundamentals.checks.scale).toEqual({ ok: false, diffPct: 99900 });
+    secScale = 1;
+    expect(await run(controls({ TICKERS: 'AAA' }))).toMatchObject({ updated: 1 });
+    expect(JSON.parse(await readText('companies/AAA/meta.json')).fundamentals.checks.scale).toEqual({ ok: true, diffPct: 0.03 }); // SEC stores whole dollars: 161
   });
 
   test('a failed source keeps the stock exactly as published', async () => {

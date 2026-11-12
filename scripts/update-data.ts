@@ -3,11 +3,14 @@
 /// <reference types="bun" />
 import { appendFile, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { FUNDAMENTAL_METRIC_KEYS, fundamentalMetrics, isFinancial, ownEbitdaMetrics, withSectorExceptions } from './metrics/fundamentals';
 import { pctFrom52wHigh, swingMetrics } from './metrics/swing';
+import { parseCompanyFacts, type SecFundamentals, type Split } from './sec/companyfacts';
+import { TAGS } from './sec/tags';
 
 // Stocks listed on Nasdaq, NYSE and Cboe: static ./api/stocks feed.
 //   universe      SEC company_tickers_exchange.json (ticker, CIK, exchange)
-//   fundamentals  SEC EDGAR XBRL companyfacts (annual 10-K series, up to ~15 years)
+//   fundamentals  SEC EDGAR XBRL companyfacts (annual 10-K series up to ~15 years; scripts/sec: 10-K and 10-Q quarters and TTM)
 //   market data   Yahoo Finance chart API (history, dividends, returns)
 //   snapshot      Yahoo Finance quoteSummary (market cap, TTM and forward valuation; needs cookie + crumb)
 
@@ -322,32 +325,6 @@ export type AnnualRow = {
   debt: number | null; equity: number | null; taxRate: number | null;
 };
 
-const TAGS = {
-  revenue: ['RevenueFromContractWithCustomerExcludingAssessedTax', 'Revenues', 'SalesRevenueNet', 'RevenueFromContractWithCustomerIncludingAssessedTax', 'SalesRevenueGoodsNet', 'SalesRevenueServicesNet'],
-  costOfRevenue: ['CostOfRevenue', 'CostOfGoodsAndServicesSold', 'CostOfGoodsSold'],
-  grossProfit: ['GrossProfit'],
-  operatingIncome: ['OperatingIncomeLoss'],
-  netIncome: ['NetIncomeLoss', 'ProfitLoss'],
-  da: ['DepreciationDepletionAndAmortization', 'DepreciationAndAmortization', 'DepreciationAmortizationAndAccretionNet', 'DepreciationAmortizationAndOther'],
-  ocf: ['NetCashProvidedByUsedInOperatingActivities', 'NetCashProvidedByUsedInOperatingActivitiesContinuingOperations'],
-  capex: ['PaymentsToAcquirePropertyPlantAndEquipment', 'PaymentsToAcquireProductiveAssets', 'PaymentsForCapitalImprovements'],
-  dividends: ['PaymentsOfDividends', 'PaymentsOfDividendsCommonStock'],
-  pretax: ['IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest', 'IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments'],
-  tax: ['IncomeTaxExpenseBenefit'],
-  assets: ['Assets'],
-  currentAssets: ['AssetsCurrent'],
-  currentLiabilities: ['LiabilitiesCurrent'],
-  cash: ['CashAndCashEquivalentsAtCarryingValue', 'CashCashEquivalentsAndShortTermInvestments', 'CashAndCashEquivalentsAtCarryingValueIncludingRestrictedCash'],
-  shortInvestments: ['MarketableSecuritiesCurrent', 'ShortTermInvestments', 'AvailableForSaleSecuritiesDebtSecuritiesCurrent'],
-  longInvestments: ['MarketableSecuritiesNoncurrent', 'AvailableForSaleSecuritiesDebtSecuritiesNoncurrent', 'LongTermInvestments'],
-  receivables: ['AccountsReceivableNetCurrent', 'ReceivablesNetCurrent'],
-  debtCombined: ['DebtLongtermAndShorttermCombinedAmount'],
-  debtNoncurrent: ['LongTermDebtNoncurrent', 'LongTermDebtAndCapitalLeaseObligations'],
-  debtCurrent: ['LongTermDebtCurrent', 'DebtCurrent', 'LongTermDebtAndCapitalLeaseObligationsCurrent'],
-  debtTotalFallback: ['LongTermDebt'],
-  commercialPaper: ['CommercialPaper', 'ShortTermBorrowings'],
-  equity: ['StockholdersEquity', 'StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest'],
-};
 
 /** Annual rows, newest first. `us-gaap` only: foreign private issuers report IFRS and get no rows. */
 export function buildAnnualRows(facts: JsonRecord, limit = 15): AnnualRow[] {
@@ -536,7 +513,7 @@ export function fundamentalsMetrics(rows: AnnualRow[]): JsonRecord {
 // Yahoo chart: history, dividends, returns
 
 export type ChartDay = { date: string; close: number; adjClose: number; volume: number };
-export type ParsedChart = { days: ChartDay[]; dividends: Array<{ date: string; amount: number }>; price: number | null; exchangeName: string; currency: string };
+export type ParsedChart = { days: ChartDay[]; dividends: Array<{ date: string; amount: number }>; splits: Split[]; price: number | null; exchangeName: string; currency: string };
 
 export function parseChart(payload: JsonRecord): ParsedChart {
   const result = payload?.chart?.result?.[0];
@@ -556,7 +533,14 @@ export function parseChart(payload: JsonRecord): ParsedChart {
     if (amount !== null) dividends.push({ date: isoDate(Number(epoch)), amount });
   }
   dividends.sort((a, b) => a.date.localeCompare(b.date));
-  return { days, dividends, price: numberOrNull(result.meta?.regularMarketPrice), exchangeName: String(result.meta?.fullExchangeName ?? result.meta?.exchangeName ?? ''), currency: String(result.meta?.currency ?? '') };
+  const splits: Split[] = [];
+  for (const [epoch, item] of Object.entries(result.events?.splits ?? {})) {
+    const numerator = numberOrNull((item as JsonRecord)?.numerator);
+    const denominator = numberOrNull((item as JsonRecord)?.denominator);
+    if (numerator && denominator && numerator > 0 && denominator > 0) splits.push({ date: isoDate(Number(epoch)), ratio: numerator / denominator });
+  }
+  splits.sort((a, b) => a.date.localeCompare(b.date));
+  return { days, dividends, splits, price: numberOrNull(result.meta?.regularMarketPrice), exchangeName: String(result.meta?.fullExchangeName ?? result.meta?.exchangeName ?? ''), currency: String(result.meta?.currency ?? '') };
 }
 
 function anchorDay(days: ChartDay[], target: string): ChartDay | null {
@@ -680,6 +664,7 @@ export type Snapshot = {
   marketCap: number | null; enterpriseValue: number | null; sharesOutstanding: number | null; beta: number | null;
   pe: number | null; forwardPe: number | null; ps: number | null; forwardRevenue: number | null; evEbitda: number | null; pb: number | null;
   freeCashflow: number | null; ebitda: number | null; week52High: number | null; week52Low: number | null;
+  totalRevenue?: number | null; // TTM revenue (financialData.totalRevenue): the scale check of the SEC layer
 };
 
 export function parseSummary(payload: JsonRecord): Snapshot {
@@ -700,6 +685,7 @@ export function parseSummary(payload: JsonRecord): Snapshot {
     forwardRevenue: numberOrNull(trend?.revenueEstimate?.avg), evEbitda: numberOrNull(ks.enterpriseToEbitda), pb: numberOrNull(ks.priceToBook),
     freeCashflow: numberOrNull(fd.freeCashflow), ebitda: numberOrNull(fd.ebitda),
     week52High: numberOrNull(sd.fiftyTwoWeekHigh), week52Low: numberOrNull(sd.fiftyTwoWeekLow),
+    totalRevenue: numberOrNull(fd.totalRevenue),
   };
 }
 
@@ -763,6 +749,27 @@ export function compactIndexText(value: unknown): string {
   return `{\n${lines.join(',\n')}\n}\n`;
 }
 
+/** meta.json: indented like JSON.stringify(v, null, 2), but an array of plain values stays on one line (the SEC series are arrays by field) */
+export function metaText(value: unknown): string {
+  const plain = (v: unknown) => v === null || typeof v !== 'object';
+  const render = (v: unknown, pad: string): string | undefined => {
+    if (v === undefined || typeof v === 'function') return undefined;
+    if (v === null || typeof v !== 'object') return JSON.stringify(v);
+    if (Array.isArray(v)) {
+      if (!v.length) return '[]';
+      if (v.every(plain)) return JSON.stringify(v);
+      return `[\n${v.map((item) => `${pad}  ${render(item, `${pad}  `) ?? 'null'}`).join(',\n')}\n${pad}]`;
+    }
+    const lines: string[] = [];
+    for (const [k, item] of Object.entries(v as JsonRecord)) {
+      const text = render(item, `${pad}  `);
+      if (text !== undefined) lines.push(`${pad}  ${JSON.stringify(k)}: ${text}`);
+    }
+    return lines.length ? `{\n${lines.join(',\n')}\n${pad}}` : '{}';
+  };
+  return `${render(value, '') ?? 'null'}\n`;
+}
+
 async function writeIfChanged(file: URL, value: unknown, format: (value: unknown) => string = (v) => `${JSON.stringify(v, null, 2)}\n`): Promise<boolean> {
   const text = format(value);
   try {
@@ -780,7 +787,10 @@ async function readJson(file: URL): Promise<JsonRecord | null> {
   try { return JSON.parse(await readFile(file, 'utf8')) as JsonRecord; } catch { return null; }
 }
 
-const ROW_KEYS = ['ticker', 'name', 'exchange', 'sector', 'industry', 'cik', 'currency', 'financialCurrency', 'dataFile', 'price', 'asOfDate', 'fundamentalsAsOf', 'fundamentalsBasis', 'metrics'];
+/** Version of the feed layout in index.json and every meta.json; the feed only ever gains fields (plan 0, 1.8) */
+export const FEED_SCHEMA_VERSION = 1;
+// fundamentalsAsOf: end of the latest fiscal year of the annual rows; ttmAsOf: end of the latest quarter behind the TTM metrics
+const ROW_KEYS = ['ticker', 'name', 'exchange', 'sector', 'industry', 'cik', 'currency', 'financialCurrency', 'dataFile', 'price', 'asOfDate', 'fundamentalsAsOf', 'ttmAsOf', 'fundamentalsBasis', 'metrics'];
 export const rowFromMeta = (meta: JsonRecord): JsonRecord => Object.fromEntries(ROW_KEYS.map((k) => [k, meta[k] ?? null]));
 
 const METRIC_KEYS = [
@@ -795,6 +805,8 @@ const METRIC_KEYS = [
   'perfYtd', 'perf1y', 'perf3y', 'perf5y', 'perf10y', 'ytd', 'tr1y', 'tr3y', 'tr5y', 'tr10y', 'cagr3y', 'cagr5y', 'cagr10y', 'siAnn',
   // price and swing metrics (scripts/metrics/swing.ts): split-adjusted, not dividend-adjusted daily closes of the Yahoo chart
   'pctFrom52wHigh', 'athPrice', 'athDate', 'athBasis', 'pctFromAth', 'volatility1y', 'sigmaFromMean60d', 'high60d', 'low60d',
+  // SEC quarters and TTM (scripts/metrics/fundamentals.ts, plan 1.5 and 1.7)
+  ...FUNDAMENTAL_METRIC_KEYS,
 ] as const;
 
 /** Every key of a published `metrics` object, in order: the screener registry must describe each one (src/core/metrics). */
@@ -815,6 +827,14 @@ export function withMetricKeys(row: JsonRecord): JsonRecord {
   for (const key of METRIC_KEYS) metrics[key] = m[key] === undefined ? null : m[key];
   for (const key of Object.keys(m)) if (!(key in metrics)) metrics[key] = m[key];
   return { ...row, metrics };
+}
+
+/** SEC TTM revenue against the Yahoo snapshot revenue (plan 1.8): more than 20% apart is a scale or tagging error */
+export const SCALE_TOLERANCE_PCT = 20;
+export function scaleCheck(secRevenue: unknown, yahooRevenue: unknown): { ok: boolean; diffPct: number } | null {
+  if (typeof secRevenue !== 'number' || typeof yahooRevenue !== 'number' || !(secRevenue > 0) || !(yahooRevenue > 0)) return null;
+  const diffPct = round((Math.abs(secRevenue - yahooRevenue) / yahooRevenue) * 100);
+  return { ok: diffPct <= SCALE_TOLERANCE_PCT, diffPct };
 }
 
 export function completeMetrics(parts: JsonRecord, performanceAsOf: string | null): JsonRecord {
@@ -916,7 +936,7 @@ function closeRange52w(days: ChartDay[]): { low: number | null; high: number | n
   return { low: round(Math.min(...closes), 4), high: round(Math.max(...closes), 4) };
 }
 
-export type Outcome = { row: JsonRecord } | { skipped: string };
+export type Outcome = { row: JsonRecord; checks?: JsonRecord } | { skipped: string };
 
 /** Preferred shares, warrants, rights and units ("BAC-PB", "XYZ-WT", "ABC-R", "SPAC-UN") are not stocks of the catalog. */
 export function isOperatingTicker(ticker: string): boolean {
@@ -955,9 +975,11 @@ export async function processCompany(listing: Listing, config: UpdaterConfig, pr
   let fundamentalsNote = '';
   let secFailed = false;
   let secMissing = false; // the CIK has no XBRL company facts at all (funds, trusts, non-filers)
+  let sec: SecFundamentals | null = null;
   try {
     const facts = await fetchJson(`${SEC_FACTS_URL}/CIK${toCik(listing.cik)}.json`, `[ sec       ] ${ticker}`, config);
     rows = buildAnnualRows(facts);
+    sec = parseCompanyFacts(facts, { splits: chart?.splits ?? [] });
   } catch (error) {
     if (!prevMeta && /: 404 /.test(String(error))) secMissing = true;
     else if (!prevMeta) throw error; // nothing to fall back to
@@ -965,11 +987,26 @@ export async function processCompany(listing: Listing, config: UpdaterConfig, pr
     if (secFailed) {
       note(`[ sec       ] ${ticker}: ${error instanceof Error ? error.message : String(error)} - keeping previous fundamentals`);
       rows = prevMeta?.fundamentals?.annual ?? [];
+      sec = prevMeta?.fundamentals?.sec ?? null;
     }
   }
+  // scale check (plan 1.8): SEC TTM revenue vs the Yahoo snapshot; a miss withholds this run's SEC values and keeps the published
+  // ones. Banks and insurers define revenue differently (net of interest expense or not), so for them it is only reported
+  const industry: string | null = snapshot?.industry ?? prevMeta?.industry ?? null;
+  const scale = secFailed ? null : scaleCheck(sec?.ttm?.revenue, snapshot?.totalRevenue);
+  let withheld = false;
+  if (scale && !scale.ok && !isFinancial(industry)) {
+    withheld = true;
+    console.warn(`[ check     ] ${ticker}: SEC TTM revenue is ${scale.diffPct}% away from Yahoo's - new SEC values withheld, published ones kept`);
+    rows = prevMeta?.fundamentals?.annual ?? [];
+    sec = prevMeta?.fundamentals?.sec ?? null;
+  }
+  const keepPublished = secFailed || (withheld && !!prevMeta);
+  const { checks: secChecks, ...secStored } = sec ?? ({} as Partial<SecFundamentals>);
+  const checks: JsonRecord = { ...((secChecks as JsonRecord | undefined) ?? (keepPublished ? prevMeta?.fundamentals?.checks ?? {} : {})), scale };
   // Yahoo only fills null fields: when the 4 latest SEC years carry every field it could fill, the request adds nothing to them
   const secComplete = rows.length >= 4 && rows.slice(0, 4).every((r) => YAHOO_FILLED_FIELDS.every((key) => r[key] !== null));
-  if (!config.skipYahoo && !secFailed && !secComplete) {
+  if (!config.skipYahoo && !keepPublished && !secComplete) {
     try {
       const merged = mergeAnnual(rows, await fetchYahooAnnual(ticker, config));
       rows = merged.rows;
@@ -1002,9 +1039,12 @@ export async function processCompany(listing: Listing, config: UpdaterConfig, pr
   }
 
   const fundamentals = fundamentalsMetrics(rows);
-  const parts: JsonRecord = { ...fundamentals, ...(market.valuation ?? {}), ...(market.returns ?? {}), ...(market.dividends ?? {}), ...(market.swing ?? {}), price: market.price, week52High: market.week52High, week52Low: market.week52Low, range52w: range52wPosition(market.price, market.week52Low, market.week52High), pctFrom52wHigh: pctFrom52wHigh(market.price, market.week52High) };
+  const secLayer = sec ? (secStored as SecFundamentals) : null;
+  const marketCap = numberOrNull(market.valuation?.marketCap);
+  const derived = fundamentalMetrics(secLayer, { marketCap, sector: snapshot?.sector ?? prevMeta?.sector ?? null, industry });
+  const parts: JsonRecord = { ...fundamentals, ...(market.valuation ?? {}), ...(market.returns ?? {}), ...(market.dividends ?? {}), ...(market.swing ?? {}), ...derived, ...ownEbitdaMetrics(secLayer, marketCap), price: market.price, week52High: market.week52High, week52Low: market.week52Low, range52w: range52wPosition(market.price, market.week52Low, market.week52High), pctFrom52wHigh: pctFrom52wHigh(market.price, market.week52High) };
   if (parts.marketCap === undefined || parts.marketCap === null) parts.marketCap = null;
-  const metrics = completeMetrics(parts, market.asOfDate ?? null);
+  const metrics = withSectorExceptions(completeMetrics(parts, market.asOfDate ?? null), industry) as JsonRecord;
   if (metrics.marketCap === null) return { skipped: 'no market cap (unit, warrant, preferred share or note)' };
   if (secMissing && !rows.length) return { skipped: 'no SEC company facts and no statements (fund, trust or non-filer)' };
 
@@ -1013,7 +1053,8 @@ export async function processCompany(listing: Listing, config: UpdaterConfig, pr
     cik: listing.cik, currency: snapshot?.currency || chart?.currency || prevMeta?.currency || null, financialCurrency: snapshot?.financialCurrency || prevMeta?.financialCurrency || null,
     dataFile: `./companies/${ticker}/meta.json`, price: market.price, asOfDate: market.asOfDate,
     // a failed SEC download reuses the previous annual rows, so their basis travels with them (a Yahoo-only stock stays Yahoo)
-    fundamentalsAsOf: rows[0]?.end ?? null, fundamentalsBasis: (secFailed ? prevMeta?.fundamentalsBasis : null) ?? (rows.length ? FUNDAMENTALS_BASIS[fundamentalsSource] : fundamentalsNote), metrics,
+    fundamentalsAsOf: rows[0]?.end ?? null, ttmAsOf: typeof secLayer?.ttm?.end === 'string' ? secLayer.ttm.end : null,
+    fundamentalsBasis: (keepPublished ? prevMeta?.fundamentalsBasis : null) ?? (rows.length ? FUNDAMENTALS_BASIS[fundamentalsSource] : fundamentalsNote), metrics,
   };
 
   // 4. post-fetch filters keep the previously published state of unselected companies
@@ -1026,11 +1067,15 @@ export async function processCompany(listing: Listing, config: UpdaterConfig, pr
 
   // 5. ordered writes of a published stock only: history pages, then meta.json, then stale pages removed
   for (const file of historyFiles) await writeIfChanged(new URL(file.path, dir), file.page);
-  const meta = { ...row, sources: { universe: SEC_TICKERS_URL, fundamentals: `${SEC_FACTS_URL}/CIK${toCik(listing.cik)}.json`, market: 'Yahoo Finance chart API', snapshot: 'Yahoo Finance quoteSummary' }, market, fundamentals: { asOf: rows[0]?.end ?? null, annual: rows }, history };
-  await writeIfChanged(new URL('meta.json', dir), meta);
+  const meta = {
+    schemaVersion: FEED_SCHEMA_VERSION, ...row,
+    sources: { universe: SEC_TICKERS_URL, fundamentals: `${SEC_FACTS_URL}/CIK${toCik(listing.cik)}.json`, market: 'Yahoo Finance chart API', snapshot: 'Yahoo Finance quoteSummary' },
+    market, fundamentals: { asOf: rows[0]?.end ?? null, annual: rows, sec: secLayer, checks }, history,
+  };
+  await writeIfChanged(new URL('meta.json', dir), meta, metaText);
   await pruneHistoryPages(dir, Array.isArray(history.pages) ? history.pages : []);
   void previous;
-  return { row };
+  return { row, checks };
 }
 
 // ---------------------------------------------------------------------------
@@ -1125,9 +1170,10 @@ export function withIsMine(row: JsonRecord, mine: ReadonlySet<string> | null): J
 
 export function indexDocument(companies: JsonRecord[], mineTickers?: string[]): JsonRecord {
   return {
+    schemaVersion: FEED_SCHEMA_VERSION,
     generatedAt: stamp(),
     source: {
-      provider: 'U.S. exchange-listed stocks (Nasdaq, NYSE, Cboe)', market: 'us', universe: SEC_TICKERS_URL, fundamentals: 'SEC EDGAR XBRL companyfacts (annual 10-K)',
+      provider: 'U.S. exchange-listed stocks (Nasdaq, NYSE, Cboe)', market: 'us', universe: SEC_TICKERS_URL, fundamentals: 'SEC EDGAR XBRL companyfacts (annual 10-K; 10-K and 10-Q quarters and TTM in companies/<T>/meta.json fundamentals.sec)',
       history: 'Yahoo Finance public chart API (adjusted close)', snapshot: 'Yahoo Finance quoteSummary (market cap, TTM and forward valuation)',
     },
     counts: { companies: companies.length },
@@ -1179,6 +1225,7 @@ export async function run(controls: Record<string, string | undefined>, options:
   const queue = at > 0 ? universe.slice(at).concat(universe.slice(0, at)) : universe.slice();
   const total = config.maxFetches > 0 ? Math.min(config.maxFetches, queue.length) : queue.length;
   const results: JsonRecord[] = [];
+  const checkFails: Record<string, string[]> = { balance: [], grossProfit: [], quarterSum: [], scale: [] };
   const started = Date.now();
   let processed = 0;
   let skipped = 0;
@@ -1197,6 +1244,7 @@ export async function run(controls: Record<string, string | undefined>, options:
         const out = await processCompany(listing, config, previous.get(listing.ticker) ?? null);
         if ('skipped' in out) { skipped += 1; console.log(`[ ${`${String(n).padStart(String(total).length)}/${total}`.padEnd(9)} ] ${listing.ticker.padEnd(6)} skipped: ${out.skipped}`); continue; }
         results.push(out.row);
+        for (const name of Object.keys(checkFails)) if (out.checks?.[name] && out.checks[name].ok === false) checkFails[name].push(`${listing.ticker} ${out.checks[name].diffPct}%`);
         const m = out.row.metrics;
         console.log(`[ ${`${String(n).padStart(String(total).length)}/${total}`.padEnd(9)} ] ${listing.ticker.padEnd(6)} updated  cap ${m.marketCap === null ? '-' : `$${round(m.marketCap / 1e9, 1)}B`}  P/E ${m.pe ?? '-'}  FY ${out.row.fundamentalsAsOf ?? '-'}`);
       } catch (error) {
@@ -1240,8 +1288,26 @@ export async function run(controls: Record<string, string | undefined>, options:
     console.log(`NEW STOCKS (${added.length}): ${listNames(added)}`);
     if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY, `NEW STOCKS (${added.length}): ${listNames(added)}\n`, 'utf8');
   }
-  if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY, `### Stocks data update\n\n- updated: ${results.length}\n- skipped: ${skipped}\n- failed: ${failed}\n- companies: ${companies.length}\n`, 'utf8');
+  const checkLines = Object.keys(checkFails).filter((name) => checkFails[name].length).map((name) => `data check ${name}: ${checkFails[name].length} (${listNames(checkFails[name], 20)})`);
+  for (const line of checkLines) console.log(`[ check     ] ${line}`);
+  if (process.env.GITHUB_STEP_SUMMARY) {
+    await appendFile(process.env.GITHUB_STEP_SUMMARY, `### Stocks data update\n\n- updated: ${results.length}\n- skipped: ${skipped}\n- failed: ${failed}\n- companies: ${companies.length}\n${checkLines.map((l) => `- ${l}\n`).join('')}\n`, 'utf8');
+    await appendFile(process.env.GITHUB_STEP_SUMMARY, coverageMarkdown(companies), 'utf8');
+  }
   return { updated: results.length, skipped, failed, rows: companies.length };
+}
+
+/** Coverage of every numeric metric (share of companies with a value), overall and per sector: the step summary table (plan 1.8) */
+export function coverageMarkdown(companies: JsonRecord[]): string {
+  if (!companies.length) return '';
+  const sectors = Array.from(new Set(companies.map((c) => String(c.sector ?? 'Unknown')))).sort();
+  const keys = METRIC_KEYS.filter((k) => !companies.some((c) => typeof c.metrics?.[k] === 'string')); // numeric metrics only
+  const share = (rows: JsonRecord[], k: string) => (rows.length ? `${Math.round((rows.filter((c) => typeof c.metrics?.[k] === 'number').length / rows.length) * 100)}` : '');
+  const bySector = sectors.map((s) => companies.filter((c) => String(c.sector ?? 'Unknown') === s));
+  const head = `| metric | all (${companies.length}) | ${sectors.map((s, i) => `${s} (${bySector[i].length})`).join(' | ')} |`;
+  const rule = `|---|---|${sectors.map(() => '---').join('|')}|`;
+  const lines = keys.map((k) => `| ${k} | ${share(companies, k)} | ${bySector.map((rows) => share(rows, k)).join(' | ')} |`);
+  return `#### Metric coverage, % of companies with a value\n\n${head}\n${rule}\n${lines.join('\n')}\n\n`;
 }
 
 const USAGE = `

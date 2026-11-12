@@ -155,21 +155,21 @@ const VALUATION: MetricDef[] = [
     },
   }),
   def({
-    id: 'evEbitda', name: { en: 'EV/EBITDA', ru: 'EV/EBITDA' }, formula: 'enterprise value / EBITDA of the trailing twelve months (Yahoo enterpriseToEbitda)',
-    unit: 'ratio', basis: 'ttm', source: 'yahoo-summary', direction: 'lower-is-better', thresholds: { good: 10, bad: 20 }, nullWhen: { en: 'EBITDA is not positive or ' + ADR_NULL.en, ru: 'EBITDA не положительна или ' + ADR_NULL.ru }, sectorNotes: FIN_NOTE,
+    id: 'evEbitda', name: { en: 'EV/EBITDA', ru: 'EV/EBITDA' }, formula: 'EV / EBITDA TTM; EV = market cap + debt + minority interest + preferred stock - cash - short-term investments (balance of the last quarter), EBITDA = operating income + D&A, TTM (SEC 10-K and 10-Q)',
+    unit: 'ratio', basis: 'ttm', source: 'computed', direction: 'lower-is-better', thresholds: { good: 10, bad: 20 }, nullWhen: { en: 'EBITDA or EV is zero or negative, or debt, cash, operating income or D&A is not tagged', ru: 'EBITDA или EV нулевые или отрицательные либо долг, кэш, операционная прибыль или амортизация не размечены' }, sectorNotes: { en: `${FIN_NOTE.en}. Empty for banks and insurers`, ru: `${FIN_NOTE.ru}. У банков и страховых пусто` },
     short: { en: 'Business price over operating cash earnings', ru: 'Цена бизнеса к операционной прибыли до амортизации' },
     guide: {
-      en: 'EV/EBITDA compares the price of the whole business, debt included, with its earnings before interest, taxes, depreciation and amortization. It is neutral to capital structure, so it compares companies with different debt better than P/E. Below 10 is usually cheap, above 20 expensive. The value currently uses Yahoo\'s EBITDA, which can differ from the EBITDA of ebitdaMargin',
-      ru: 'EV/EBITDA сравнивает цену всего бизнеса вместе с долгом с прибылью до процентов, налогов и амортизации. Метрика не зависит от структуры капитала и поэтому лучше P/E сравнивает компании с разным долгом. Ниже 10 обычно дёшево, выше 20 - дорого. Сейчас берётся EBITDA из Yahoo, она может отличаться от EBITDA в ebitdaMargin',
+      en: 'EV/EBITDA compares the price of the whole business, debt included, with its earnings before interest, taxes, depreciation and amortization. It is neutral to capital structure, so it compares companies with different debt better than P/E. Below 10 is usually cheap, above 20 expensive. Since the quarterly SEC layer (plan 1.5) both parts are the updater\'s own: EBITDA is operating income plus depreciation and amortization of the trailing twelve months, EV is the market cap plus debt, minority interest and preferred stock minus cash and short-term investments of the last quarter (before, the value was Yahoo\'s enterpriseToEbitda)',
+      ru: 'EV/EBITDA сравнивает цену всего бизнеса вместе с долгом с прибылью до процентов, налогов и амортизации. Метрика не зависит от структуры капитала и поэтому лучше P/E сравнивает компании с разным долгом. Ниже 10 обычно дёшево, выше 20 - дорого. С квартальным слоем SEC (план 1.5) обе части считает сам апдейтер: EBITDA - операционная прибыль плюс амортизация за последние двенадцать месяцев, EV - капитализация плюс долг, доля меньшинства и привилегированные акции минус кэш и краткосрочные вложения последнего квартала (раньше бралось enterpriseToEbitda из Yahoo)',
     },
   }),
   def({
-    id: 'fcfToEbitda', name: { en: 'FCF / EBITDA', ru: 'FCF / EBITDA' }, formula: 'free cash flow / EBITDA × 100, both TTM from Yahoo',
-    unit: 'percent', basis: 'ttm', source: 'computed', direction: 'higher-is-better', thresholds: { good: 60 }, nullWhen: { en: 'EBITDA is not positive or a value is missing', ru: 'EBITDA не положительна или нет одного из значений' }, sectorNotes: FIN_NOTE,
+    id: 'fcfToEbitda', name: { en: 'FCF / EBITDA', ru: 'FCF / EBITDA' }, formula: '(operating cash flow - capex) / (operating income + D&A) × 100, both TTM (SEC 10-K and 10-Q)',
+    unit: 'percent', basis: 'ttm', source: 'sec', direction: 'higher-is-better', thresholds: { good: 60 }, nullWhen: { en: 'EBITDA is not positive or a value is missing', ru: 'EBITDA не положительна или нет одного из значений' }, sectorNotes: { en: `${FIN_NOTE.en}. Empty for banks and insurers`, ru: `${FIN_NOTE.ru}. У банков и страховых пусто` },
     short: { en: 'Share of EBITDA that turns into free cash', ru: 'Какая доля EBITDA превращается в свободные деньги' },
     guide: {
-      en: 'Cash conversion: how much of EBITDA is left as free cash flow after interest, taxes, working capital and capital spending. Above 60% is a cash machine, below 30% means heavy investment or high interest. A negative value means the company burns cash despite positive EBITDA',
-      ru: 'Конверсия в деньги: сколько EBITDA остаётся свободным денежным потоком после процентов, налогов, оборотного капитала и капзатрат. Выше 60% - денежная машина, ниже 30% - большие инвестиции или высокие проценты. Отрицательное значение означает, что компания сжигает деньги при положительной EBITDA',
+      en: 'Cash conversion: how much of EBITDA is left as free cash flow after interest, taxes, working capital and capital spending. Above 60% is a cash machine, below 30% means heavy investment or high interest. A negative value means the company burns cash despite positive EBITDA. Both are the updater\'s own TTM values from the SEC filings since the quarterly layer (plan 1.5); before, both came from Yahoo',
+      ru: 'Конверсия в деньги: сколько EBITDA остаётся свободным денежным потоком после процентов, налогов, оборотного капитала и капзатрат. Выше 60% - денежная машина, ниже 30% - большие инвестиции или высокие проценты. Отрицательное значение означает, что компания сжигает деньги при положительной EBITDA. С квартальным слоем (план 1.5) оба значения - собственные TTM апдейтера по отчётности SEC; раньше оба брались из Yahoo',
     },
   }),
   def({
@@ -221,7 +221,7 @@ const DIVIDENDS: MetricDef[] = [
     id: 'payoutRatio', name: { en: 'Payout ratio', ru: 'Доля прибыли на дивиденды' }, formula: 'dividends paid / net income × 100, latest fiscal year (SEC 10-K)',
     unit: 'percent', basis: 'fy', source: 'sec', direction: 'lower-is-better', thresholds: { good: 60, bad: 90 },
     nullWhen: { en: 'net income is zero or negative, or no dividends are reported', ru: 'чистая прибыль нулевая или отрицательная либо дивиденды не отражены' },
-    sectorNotes: { en: 'REITs and MLPs pay out most of their cash by design and look over 100% on net income; the planned approximate FFO payout replaces it for REITs', ru: 'REIT и MLP по устройству раздают почти все деньги и на чистой прибыли выглядят выше 100%; для REIT его заменит запланированный payout от приблизительного FFO' },
+    sectorNotes: { en: 'REITs and MLPs pay out most of their cash by design and look over 100% on net income; ffoPayoutApprox (payout of the approximate FFO) replaces it for REITs', ru: 'REIT и MLP по устройству раздают почти все деньги и на чистой прибыли выглядят выше 100%; для REIT его заменяет ffoPayoutApprox (payout от приблизительного FFO)' },
     short: { en: 'Share of profit paid as dividends', ru: 'Какая доля прибыли уходит на дивиденды' },
     guide: {
       en: 'Dividends paid divided by net income of the latest fiscal year from the 10-K cash flow statement. Below 60% leaves room to grow the dividend, above 90% means the dividend depends on profits not falling. A loss leaves it empty rather than negative; then look at the FCF payout',
@@ -275,13 +275,13 @@ const BALANCE: MetricDef[] = [
     },
   }),
   def({
-    id: 'netDebtToEbitda', name: { en: 'Net debt / EBITDA', ru: 'Чистый долг / EBITDA' }, formula: '(debt - cash and short-term investments - long-term investments) / EBITDA, latest fiscal year',
-    unit: 'ratio', basis: 'fy', source: 'sec', direction: 'lower-is-better', thresholds: { good: 2.5, bad: 3 },
+    id: 'netDebtToEbitda', name: { en: 'Net debt / EBITDA', ru: 'Чистый долг / EBITDA' }, formula: '(debt - cash - short-term investments - long-term investments) / (operating income + D&A); balance of the last quarter, EBITDA TTM',
+    unit: 'ratio', basis: 'ttm', source: 'sec', direction: 'lower-is-better', thresholds: { good: 2.5, bad: 3 },
     nullWhen: { en: 'EBITDA is zero or negative or a value is missing', ru: 'EBITDA нулевая или отрицательная либо нет значения' }, sectorNotes: FIN_NOTE,
     short: { en: 'Years of EBITDA needed to repay net debt', ru: 'За сколько лет EBITDA погасит чистый долг' },
     guide: {
-      en: 'Debt minus cash and investments, divided by the EBITDA of the latest fiscal year (operating income plus depreciation and amortization from the 10-K). A negative value means more cash than debt. Below 2.5 is safe, above 3 is high for most industries. It reads better than debt to equity when buybacks have wiped out equity',
-      ru: 'Долг минус кэш и вложения, делённый на EBITDA последнего финансового года (операционная прибыль плюс амортизация из 10-K). Отрицательное значение - денег больше, чем долга. Ниже 2,5 - безопасно, выше 3 - много для большинства отраслей. Метрика понятнее долга к капиталу, когда выкупы обнулили капитал',
+      en: 'Debt minus cash and investments of the last quarter, divided by the EBITDA of the trailing twelve months (operating income plus depreciation and amortization from the 10-K and 10-Q; it used the latest fiscal year before the quarterly layer). Empty for banks and insurers. A negative value means more cash than debt. Below 2.5 is safe, above 3 is high for most industries. It reads better than debt to equity when buybacks have wiped out equity',
+      ru: 'Долг минус кэш и вложения на последний квартал, делённый на EBITDA за последние двенадцать месяцев (операционная прибыль плюс амортизация из 10-K и 10-Q; до квартального слоя бралась EBITDA последнего финансового года). У банков и страховых пусто. Отрицательное значение - денег больше, чем долга. Ниже 2,5 - безопасно, выше 3 - много для большинства отраслей. Метрика понятнее долга к капиталу, когда выкупы обнулили капитал',
     },
   }),
   def({
@@ -700,6 +700,212 @@ const SWINGS: MetricDef[] = [
 ];
 
 // ---------------------------------------------------------------------------
+// SEC quarters and TTM (plan 1.2, 1.5, 1.7; scripts/sec/companyfacts.ts and scripts/metrics/fundamentals.ts). TTM = last fiscal
+// year + current year-to-date - the same year-to-date a year earlier (the fiscal year itself when the latest filing is a 10-K);
+// balance lines at the TTM date are the last quarter. ttmAsOf on the row is the end of that quarter
+
+const TTM_NOTE: Text = {
+  en: 'TTM is the last fiscal year plus the current year-to-date minus the same year-to-date a year earlier, from the 10-K and 10-Q facts of SEC EDGAR; balance sheet lines are those of the last quarter, whose end is ttmAsOf',
+  ru: 'TTM - последний финансовый год плюс текущий период с начала года минус тот же период годом раньше, по фактам 10-K и 10-Q из SEC EDGAR; строки баланса берутся на последний квартал, его дата - ttmAsOf',
+};
+const FIN_EMPTY: Text = {
+  en: 'Empty for banks and insurers (Yahoo industry Banks or Insurance), plan 1.7: their EBITDA, current ratio and free cash flow carry no meaning',
+  ru: 'Пусто у банков и страховых (отрасль Yahoo Banks или Insurance), план 1.7: EBITDA, текущая ликвидность и свободный денежный поток у них не имеют смысла',
+};
+const ttm = (spec: Spec): MetricDef => def({ ...spec, guide: { en: `${spec.guide.en}. ${TTM_NOTE.en}`, ru: `${spec.guide.ru}. ${TTM_NOTE.ru}` } });
+
+const SEC_DERIVED: MetricDef[] = [
+  ttm({
+    id: 'operatingMargin', name: { en: 'Operating margin', ru: 'Операционная маржа' }, formula: 'operating income / revenue × 100, TTM (SEC 10-K and 10-Q)',
+    unit: 'percent', basis: 'ttm', source: 'sec', direction: 'higher-is-better', thresholds: { good: 15 },
+    nullWhen: { en: 'revenue is zero or negative or operating income is not tagged (banks report none)', ru: 'выручка нулевая или отрицательная либо операционная прибыль не размечена (у банков её нет)' },
+    short: { en: 'Operating income as a percent of revenue', ru: 'Операционная прибыль в процентах от выручки' },
+    guide: {
+      en: 'Operating income of the trailing twelve months divided by revenue of the same months. It shows what the core business earns before interest and taxes, so it is cleaner than the net margin, which one-off gains and write-downs move. Above 15% is strong for most industries; watch its trend in operatingMarginSlope3y',
+      ru: 'Операционная прибыль за последние двенадцать месяцев, делённая на выручку за те же месяцы. Показывает, сколько зарабатывает основной бизнес до процентов и налогов, поэтому чище чистой маржи, которую двигают разовые доходы и списания. Выше 15% - сильно для большинства отраслей; тренд смотрят в operatingMarginSlope3y',
+    },
+  }),
+  def({
+    id: 'grossMarginSlope3y', name: { en: 'Gross margin trend 3Y', ru: 'Тренд валовой маржи за 3 года' }, formula: 'least-squares slope of the gross margins of the latest 4 fiscal years (FY-3 to FY0), percentage points per year',
+    unit: 'pp', basis: 'fy', source: 'sec', direction: 'higher-is-better', thresholds: { good: 0 },
+    nullWhen: { en: 'one of the 4 fiscal years is missing, not a year apart, or has no positive revenue or gross profit', ru: 'нет одного из 4 финансовых лет, года не идут подряд или в году нет положительной выручки или валовой прибыли' },
+    short: { en: 'Yearly change of the gross margin trend', ru: 'Годовое изменение тренда валовой маржи' },
+    guide: {
+      en: 'The slope of a straight line fitted through the gross margins of the latest four fiscal years (10-K), in percentage points per year. A rising gross margin means pricing power or a better product mix; a falling one with rising revenue means growth is bought with price cuts. Unlike the two-point grossMarginDelta3y it is not thrown off by one odd year',
+      ru: 'Наклон прямой, проведённой через валовые маржи последних четырёх финансовых лет (10-K), в процентных пунктах за год. Растущая валовая маржа - ценовая власть или лучший состав продаж; падающая при растущей выручке - рост куплен скидками. В отличие от разницы двух точек grossMarginDelta3y одна странная годовая точка его не сбивает',
+    },
+  }),
+  def({
+    id: 'operatingMarginSlope3y', name: { en: 'Operating margin trend 3Y', ru: 'Тренд операционной маржи за 3 года' }, formula: 'least-squares slope of the operating margins of the latest 4 fiscal years (FY-3 to FY0), percentage points per year',
+    unit: 'pp', basis: 'fy', source: 'sec', direction: 'higher-is-better', thresholds: { good: 0 },
+    nullWhen: { en: 'one of the 4 fiscal years is missing, not a year apart, or has no positive revenue or operating income line', ru: 'нет одного из 4 финансовых лет, года не идут подряд или в году нет положительной выручки или строки операционной прибыли' },
+    short: { en: 'Yearly change of the operating margin trend', ru: 'Годовое изменение тренда операционной маржи' },
+    guide: {
+      en: 'The slope of a straight line fitted through the operating margins of the latest four fiscal years (10-K), in percentage points per year. A positive slope means the business gets more profitable as it grows (operating leverage); unlike a two-point delta it is not thrown off by one odd year. The undervalued preset asks for a slope above 0',
+      ru: 'Наклон прямой, проведённой через операционные маржи последних четырёх финансовых лет (10-K), в процентных пунктах за год. Положительный наклон - бизнес становится рентабельнее по мере роста (операционный рычаг); в отличие от разницы двух точек одна странная годовая точка его не сбивает. Пресет «Недооценённые» требует наклон выше 0',
+    },
+  }),
+  ttm({
+    id: 'cfoToNi', name: { en: 'Cash conversion (CFO / NI)', ru: 'Конверсия в деньги (CFO / NI)' }, formula: 'operating cash flow / net income, TTM', unit: 'ratio', basis: 'ttm', source: 'sec', direction: 'neutral', thresholds: { good: 1 },
+    nullWhen: { en: 'net income is zero or negative or a value is missing', ru: 'чистая прибыль нулевая или отрицательная либо нет значения' },
+    short: { en: 'Operating cash per dollar of reported profit', ru: 'Операционные деньги на доллар отчётной прибыли' },
+    guide: {
+      en: 'Operating cash flow divided by net income, both over the trailing twelve months. Between 0.8 and 1.5 earnings are backed by cash. Persistently below 0.8 means profits sit in receivables or inventory, the main red flag of the plan ("net income grows, cash flow does not"); far above 1.5 usually means large non-cash charges',
+      ru: 'Операционный денежный поток, делённый на чистую прибыль, оба за последние двенадцать месяцев. От 0,8 до 1,5 прибыль подкреплена деньгами. Устойчиво ниже 0,8 - прибыль оседает в дебиторке или запасах, это главный красный флаг плана («прибыль растёт, денежный поток нет»); намного выше 1,5 - обычно большие неденежные списания',
+    },
+  }),
+  ttm({
+    id: 'fcfToNi', name: { en: 'FCF to net income', ru: 'FCF к чистой прибыли' }, formula: '(operating cash flow - capex) / net income, TTM', unit: 'ratio', basis: 'ttm', source: 'sec', direction: 'higher-is-better', thresholds: { good: 0.8 },
+    nullWhen: { en: 'net income is zero or negative or a value is missing', ru: 'чистая прибыль нулевая или отрицательная либо нет значения' }, sectorNotes: FIN_EMPTY,
+    short: { en: 'Free cash per dollar of reported profit', ru: 'Свободные деньги на доллар отчётной прибыли' },
+    guide: {
+      en: 'Free cash flow (operating cash flow minus capital expenditures) divided by net income over the trailing twelve months. It is the stricter cash conversion: around 1 or above means the profit is available to owners; far below 1 means a capital-hungry phase or profits that do not turn into cash',
+      ru: 'Свободный денежный поток (операционный поток минус капзатраты), делённый на чистую прибыль за последние двенадцать месяцев. Это более строгая конверсия: около 1 и выше - прибыль доступна владельцам; намного ниже 1 - фаза больших вложений или прибыль, которая не превращается в деньги',
+    },
+  }),
+  ttm({
+    id: 'interestCoverage', name: { en: 'Interest coverage', ru: 'Покрытие процентов' }, formula: 'EBIT / interest expense, TTM; EBIT = operating income, else pretax income + interest expense',
+    unit: 'ratio', basis: 'ttm', source: 'sec', direction: 'higher-is-better', thresholds: { good: 5, bad: 1.5 },
+    nullWhen: { en: 'interest expense is zero, negative or not tagged; with zero debt interestCoverageNote says "no debt"', ru: 'процентные расходы нулевые, отрицательные или не размечены; при нулевом долге interestCoverageNote говорит «no debt»' }, sectorNotes: FIN_EMPTY,
+    short: { en: 'How many times operating profit covers interest', ru: 'Во сколько раз операционная прибыль покрывает проценты' },
+    guide: {
+      en: 'Operating income (EBIT) of the trailing twelve months divided by the interest expense of the same months. Above 5 the debt is easily serviced, below 1.5 a weak year can make interest unpayable, a negative value means an operating loss. Not every filer tags interest expense: then the value is empty, and a company with zero debt gets the note "no debt" instead of a number',
+      ru: 'Операционная прибыль (EBIT) за последние двенадцать месяцев, делённая на процентные расходы за те же месяцы. Выше 5 - долг обслуживается легко, ниже 1,5 - слабый год может сделать проценты неподъёмными, отрицательное значение - операционный убыток. Не все эмитенты размечают процентные расходы: тогда значение пустое, а компания с нулевым долгом получает пометку «no debt» вместо числа',
+    },
+  }),
+  def({
+    id: 'interestCoverageNote', name: { en: 'Interest coverage note', ru: 'Пометка к покрытию процентов' }, formula: '"no debt" when the debt at the TTM date is 0 and there is no interest expense, else empty',
+    unit: 'text', basis: 'ttm', source: 'sec', direction: 'neutral', sectorNotes: FIN_EMPTY,
+    short: { en: 'Why interest coverage is empty: no debt', ru: 'Почему покрытие процентов пустое: нет долга' },
+    guide: {
+      en: 'Explains an empty interestCoverage: "no debt" means the balance sheet of the last quarter shows zero debt and no interest is paid, which is the best possible coverage rather than missing data. An empty note next to an empty coverage means the interest expense is simply not tagged',
+      ru: 'Объясняет пустое interestCoverage: «no debt» означает, что в балансе последнего квартала долг нулевой и проценты не платятся, это лучшее возможное покрытие, а не нехватка данных. Пустая пометка рядом с пустым покрытием значит, что процентные расходы просто не размечены',
+    },
+  }),
+  ttm({
+    id: 'cashRunwayMonths', name: { en: 'Cash runway', ru: 'Запас кэша' }, formula: '(cash + short-term investments) / (-FCF TTM / 12), months; only when FCF TTM < 0',
+    unit: 'count', basis: 'ttm', source: 'sec', direction: 'higher-is-better', thresholds: { good: 24, bad: 12 },
+    nullWhen: { en: 'free cash flow is zero or positive (the company does not burn cash) or a value is missing', ru: 'свободный денежный поток нулевой или положительный (компания не сжигает деньги) или нет значения' }, sectorNotes: FIN_EMPTY,
+    short: { en: 'Months the cash lasts at the current burn', ru: 'На сколько месяцев хватит денег при текущем расходе' },
+    guide: {
+      en: 'For a company that burns cash: cash and short-term investments of the last quarter divided by the monthly burn, where the burn is the negative free cash flow of the trailing twelve months divided by 12. Below 12 months the company will likely raise money soon (dilution or debt), which is the stop factor of the growing archetype; above 24 it has time. Empty for companies with positive free cash flow',
+      ru: 'Для компании, которая сжигает деньги: кэш и краткосрочные вложения последнего квартала, делённые на месячный расход, где расход - отрицательный свободный денежный поток за двенадцать месяцев, делённый на 12. Меньше 12 месяцев - компания скоро будет привлекать деньги (размытие или долг), это стоп-фактор архетипа растущих; больше 24 - время есть. Пусто у компаний с положительным свободным потоком',
+    },
+  }),
+  ttm({
+    id: 'altmanZ', name: { en: 'Altman Z-score', ru: 'Altman Z-score' }, formula: 'classic: 1.2·X1 + 1.4·X2 + 3.3·X3 + 0.6·market cap / liabilities + 1.0·revenue / assets; Z\'\': 6.56·X1 + 3.26·X2 + 6.72·X3 + 1.05·equity / liabilities; X1 = working capital / assets, X2 = retained earnings / assets, X3 = EBIT TTM / assets',
+    unit: 'ratio', basis: 'ttm', source: 'computed', direction: 'higher-is-better', thresholds: { good: 2.99, bad: 1.81 },
+    nullWhen: { en: 'a bank, insurer or REIT, or a line is missing (current assets, current liabilities, retained earnings, liabilities, operating income); assets or liabilities not positive', ru: 'банк, страховая или REIT либо нет строки (оборотные активы, краткосрочные обязательства, нераспределённая прибыль, обязательства, операционная прибыль); активы или обязательства не положительны' },
+    sectorNotes: { en: 'The classic formula is for manufacturers (Yahoo sectors Industrials, Basic Materials, Consumer Cyclical, Consumer Defensive, Energy, Technology, Healthcare): distress below 1.81, safe above 2.99. Other sectors get Z\'\': distress below 1.1, safe above 2.6. altmanVariant says which one', ru: 'Классическая формула - для производственных компаний (сектора Yahoo Industrials, Basic Materials, Consumer Cyclical, Consumer Defensive, Energy, Technology, Healthcare): дистресс ниже 1,81, безопасно выше 2,99. Остальные сектора получают Z\'\': дистресс ниже 1,1, безопасно выше 2,6. Вариант записан в altmanVariant' },
+    short: { en: 'Bankruptcy risk score from the balance sheet and profits', ru: 'Оценка риска банкротства по балансу и прибыли' },
+    guide: {
+      en: 'Edward Altman\'s bankruptcy predictor combines liquidity (working capital to assets), accumulated profits (retained earnings to assets), operating profitability (EBIT to assets), the cushion of equity over liabilities and, in the classic version, asset turnover. Balance lines are those of the last quarter, EBIT and revenue are TTM. Manufacturers get the classic score (distress below 1.81, safe above 2.99), other sectors the Z\'\' score without the sales term (distress below 1.1, safe above 2.6). Large buybacks shrink retained earnings and can pull a healthy company down, so read it together with interest coverage',
+      ru: 'Предиктор банкротства Эдварда Альтмана объединяет ликвидность (оборотный капитал к активам), накопленную прибыль (нераспределённая прибыль к активам), операционную рентабельность (EBIT к активам), запас капитала над обязательствами и, в классическом варианте, оборачиваемость активов. Строки баланса - на последний квартал, EBIT и выручка - TTM. Производственные компании получают классическую оценку (дистресс ниже 1,81, безопасно выше 2,99), остальные - Z\'\' без слагаемого продаж (дистресс ниже 1,1, безопасно выше 2,6). Большие выкупы уменьшают нераспределённую прибыль и могут занизить оценку здоровой компании, поэтому её читают вместе с покрытием процентов',
+    },
+  }),
+  def({
+    id: 'altmanVariant', name: { en: 'Altman Z variant', ru: 'Вариант Altman Z' }, formula: '"classic" for the manufacturing sectors, "z2" (Z\'\') for the others; empty when altmanZ is empty',
+    unit: 'category', basis: 'meta', source: 'computed', direction: 'neutral',
+    short: { en: 'Which Altman formula and thresholds apply', ru: 'Какая формула Альтмана и какие пороги применены' },
+    guide: {
+      en: 'The variant behind altmanZ: "classic" (manufacturers, uses market cap and sales, distress below 1.81, safe above 2.99) or "z2" (Z\'\' for non-manufacturers, uses book equity and no sales term, distress below 1.1, safe above 2.6). The two scales differ, so compare scores only within one variant',
+      ru: 'Вариант формулы altmanZ: «classic» (производственные компании, капитализация и продажи, дистресс ниже 1,81, безопасно выше 2,99) или «z2» (Z\'\' для непроизводственных, балансовый капитал и без продаж, дистресс ниже 1,1, безопасно выше 2,6). Шкалы разные, поэтому оценки сравнивают только внутри одного варианта',
+    },
+  }),
+  def({
+    id: 'piotroskiF', name: { en: 'Piotroski F-score', ru: 'Piotroski F-score' }, formula: 'one point each, latest fiscal year vs the one before: NI / assets > 0, CFO > 0, NI / assets up, CFO > NI, long-term debt / assets down (or none), current ratio up, diluted weighted shares not up, gross margin up, revenue / assets up',
+    unit: 'count', basis: 'fy', source: 'sec', direction: 'higher-is-better', thresholds: { good: 7, bad: 3 },
+    nullWhen: { en: 'any of the 9 tests cannot be computed (a missing line in either year, banks and insurers)', ru: 'хотя бы один из 9 пунктов не считается (нет строки в одном из лет, банки и страховые)' }, sectorNotes: FIN_EMPTY,
+    short: { en: 'Nine yes-or-no tests of improving financial health, 0 to 9', ru: 'Девять проверок улучшения финансового здоровья, от 0 до 9' },
+    guide: {
+      en: 'Joseph Piotroski\'s score gives a point for each of nine tests on the latest two fiscal years (10-K): profitable (return on assets above 0), cash generating (CFO above 0), more profitable than a year ago, cash flow above net income, less long-term debt relative to assets (or none in both years), better current ratio, no dilution (diluted weighted shares not higher), higher gross margin and higher asset turnover. Return on assets uses year-end assets. 7 to 9 is a strong, improving business, 0 to 3 a weak one. The score is empty rather than partial when any test cannot be computed',
+      ru: 'Оценка Джозефа Пиотроски даёт балл за каждую из девяти проверок на двух последних финансовых годах (10-K): прибыльность (доходность активов выше 0), денежный поток (CFO выше 0), рентабельность выше прошлогодней, денежный поток выше чистой прибыли, долгосрочный долг к активам снизился (или его нет в обоих годах), текущая ликвидность выросла, нет размытия (средневзвешенное разводнённое число акций не выросло), валовая маржа выросла, оборачиваемость активов выросла. Доходность активов считается на активы конца года. 7-9 - сильный улучшающийся бизнес, 0-3 - слабый. Если хотя бы одна проверка не считается, оценка пустая, а не частичная',
+    },
+  }),
+  def({
+    id: 'niVolatility5y', name: { en: 'Net income volatility 5Y', ru: 'Волатильность чистой прибыли за 5 лет' }, formula: 'sample standard deviation of the 5 yearly net income growth rates of the latest 6 fiscal years, percentage points',
+    unit: 'pp', basis: 'fy', source: 'sec', direction: 'lower-is-better', thresholds: { good: 25 },
+    nullWhen: { en: 'fewer than 6 consecutive fiscal years or a base year with net income of zero or less', ru: 'меньше 6 финансовых лет подряд или базовый год с чистой прибылью не больше нуля' },
+    short: { en: 'How uneven profit growth has been', ru: 'Насколько неровно росла прибыль' },
+    guide: {
+      en: 'The standard deviation of the yearly growth rates of net income over five years, in percentage points; it needs six consecutive fiscal years (10-K) whose base years are profitable. Low values mark predictable earnings, the trait of stable compounders. The starting threshold of the undervalued preset is 25 and will be tuned after the first real runs',
+      ru: 'Стандартное отклонение годовых темпов роста чистой прибыли за пять лет в процентных пунктах; нужно шесть финансовых лет подряд (10-K) с прибыльными базовыми годами. Низкие значения - предсказуемая прибыль, черта стабильных компаний. Стартовый порог пресета «Недооценённые» - 25, он будет подстроен после первых реальных прогонов',
+    },
+  }),
+  def({
+    id: 'fcfVolatility5y', name: { en: 'FCF volatility 5Y', ru: 'Волатильность FCF за 5 лет' }, formula: 'sample standard deviation of the 5 yearly FCF (CFO - capex) growth rates of the latest 6 fiscal years, percentage points',
+    unit: 'pp', basis: 'fy', source: 'sec', direction: 'lower-is-better', thresholds: { good: 30 },
+    nullWhen: { en: 'fewer than 6 consecutive fiscal years or a base year with FCF of zero or less', ru: 'меньше 6 финансовых лет подряд или базовый год с FCF не больше нуля' }, sectorNotes: FIN_EMPTY,
+    short: { en: 'How uneven free cash flow growth has been', ru: 'Насколько неровно рос свободный денежный поток' },
+    guide: {
+      en: 'The standard deviation of the yearly growth rates of free cash flow over five years, in percentage points, from six consecutive fiscal years (10-K) with positive base years. FCF is naturally lumpier than earnings because capital spending comes in waves, so its threshold is looser. Very high values mean the cash flow cannot be extrapolated',
+      ru: 'Стандартное отклонение годовых темпов роста свободного денежного потока за пять лет в процентных пунктах, по шести финансовым годам подряд (10-K) с положительными базовыми годами. FCF от природы неровнее прибыли, потому что капзатраты идут волнами, поэтому порог мягче. Очень высокие значения означают, что денежный поток нельзя экстраполировать',
+    },
+  }),
+  ttm({
+    id: 'capexToCfo', name: { en: 'CapEx to operating cash flow', ru: 'Капзатраты к операционному потоку' }, formula: 'capital expenditures / operating cash flow × 100, TTM',
+    unit: 'percent', basis: 'ttm', source: 'sec', direction: 'lower-is-better', thresholds: { good: 30, bad: 80 },
+    nullWhen: { en: 'operating cash flow is zero or negative or capex is not tagged', ru: 'операционный поток нулевой или отрицательный либо капзатраты не размечены' },
+    short: { en: 'Share of operating cash reinvested in fixed assets', ru: 'Доля операционных денег, вложенная в основные средства' },
+    guide: {
+      en: 'Capital expenditures divided by operating cash flow over the trailing twelve months. Below 30% leaves most of the cash for owners; above 80% the business consumes its own cash to grow or to stand still. Compare with the 3-year change of capex intensity to tell a build-out from a structural need',
+      ru: 'Капзатраты, делённые на операционный денежный поток за последние двенадцать месяцев. Ниже 30% - большая часть денег остаётся владельцам; выше 80% - бизнес съедает собственные деньги, чтобы расти или просто стоять на месте. Сравнивают с изменением доли капзатрат за 3 года, чтобы отличить стройку от структурной потребности',
+    },
+  }),
+  ttm({
+    id: 'capexToRevenue', name: { en: 'CapEx intensity', ru: 'Капиталоёмкость' }, formula: 'capital expenditures / revenue × 100, TTM',
+    unit: 'percent', basis: 'ttm', source: 'sec', direction: 'lower-is-better',
+    nullWhen: { en: 'revenue is zero or negative or capex is not tagged', ru: 'выручка нулевая или отрицательная либо капзатраты не размечены' },
+    short: { en: 'Capital spending as a percent of revenue', ru: 'Капзатраты в процентах от выручки' },
+    guide: {
+      en: 'Capital expenditures divided by revenue over the trailing twelve months. Software and services spend a few percent, utilities, telecom and chipmakers 15-30% and more. It sets how much of the operating margin can become free cash flow, so compare it within an industry',
+      ru: 'Капзатраты, делённые на выручку за последние двенадцать месяцев. Софт и услуги тратят несколько процентов, коммунальные компании, связь и производители чипов - 15-30% и больше. Она определяет, какая часть операционной маржи может стать свободным денежным потоком, поэтому её сравнивают внутри отрасли',
+    },
+  }),
+  def({
+    id: 'capexToRevenueDelta3y', name: { en: 'CapEx intensity change 3Y', ru: 'Изменение доли капзатрат за 3 года' }, formula: 'capex / revenue × 100 of the latest fiscal year - the same of the fiscal year 3 years earlier, percentage points', unit: 'pp', basis: 'fy', source: 'sec', direction: 'lower-is-better', thresholds: { good: 0 },
+    nullWhen: { en: 'revenue (positive) or capex is missing for an endpoint, or the fiscal years are not 3 years apart', ru: 'нет выручки (положительной) или капзатрат в одной из крайних точек либо года не отстоят на 3 года' },
+    short: { en: 'Change of capital spending as a share of revenue', ru: 'Изменение капзатрат как доли выручки' },
+    guide: {
+      en: 'Capital expenditures as a share of revenue in the latest fiscal year (10-K) minus the same share three fiscal years earlier, in percentage points. Zero or below means growth does not need ever more investment, which is what the cash-flow machines preset wants. A rising share can be a deliberate build-out; read it together with revenue growth',
+      ru: 'Доля капзатрат в выручке последнего финансового года (10-K) минус та же доля три финансовых года назад, в процентных пунктах. Ноль и ниже - росту не нужно всё больше вложений, именно этого ждёт пресет «Кэшфлоу-машины». Растущая доля может быть сознательной стройкой; её читают вместе с ростом выручки',
+    },
+  }),
+  ...([3, 5] as const).map((n) => def({
+    id: `niGrowth${n}y`, name: { en: `Net income growth ${n}Y`, ru: `Рост чистой прибыли за ${n === 3 ? '3 года' : '5 лет'}` }, formula: `((net income FY0 / net income FY-${n})^(1/${n}) - 1) × 100 (SEC 10-K)`,
+    unit: 'percent', basis: 'fy', source: 'sec', direction: 'higher-is-better', thresholds: n === 5 ? { good: 8 } : undefined,
+    nullWhen: { en: `an endpoint is missing, zero or negative (a CAGR needs two positive endpoints) or the fiscal years are not ${n} years apart`, ru: `нет одной из крайних точек или она не положительна (CAGR требует двух положительных точек) либо года не отстоят на ${n === 3 ? '3 года' : '5 лет'}` },
+    short: { en: `Average yearly net income growth over ${n} fiscal years (CAGR)`, ru: `Среднегодовой рост чистой прибыли за ${n === 3 ? '3 года' : '5 лет'} (CAGR)` },
+    guide: {
+      en: `Compound annual growth of net income over ${n} fiscal years from the 10-K: both endpoints must be positive and exactly ${n} years apart. Compare it with epsGrowth${n}y: EPS growing much faster than net income means buybacks, not a better business, do the work`,
+      ru: `Среднегодовой темп роста чистой прибыли за ${n === 3 ? 'три года' : 'пять лет'} по 10-K: обе крайние точки должны быть положительными и отстоять ровно на ${n === 3 ? '3 года' : '5 лет'}. Сравнивают с epsGrowth${n}y: если EPS растёт намного быстрее чистой прибыли, работу делают выкупы, а не улучшение бизнеса`,
+    },
+  })),
+  ttm({
+    id: 'ffoApprox', name: { en: 'Approximate FFO', ru: 'Приблизительный FFO' }, formula: 'REITs only: net income + depreciation and amortization - gains on sale of property, TTM (a missing gain line counts 0)',
+    unit: 'usd', basis: 'ttm', source: 'sec', direction: 'higher-is-better', appliesTo: STOCK,
+    nullWhen: { en: 'not a REIT (Yahoo industry starting with REIT) or net income or D&A is missing', ru: 'не REIT (отрасль Yahoo не начинается с REIT) или нет чистой прибыли либо амортизации' },
+    sectorNotes: { en: 'Real FFO (NAREIT) and AFFO are non-GAAP numbers the REIT publishes in its press release; they are not tagged in XBRL, so this approximation can differ from them', ru: 'Настоящий FFO (по NAREIT) и AFFO - показатели вне GAAP из пресс-релиза REIT; в XBRL они не размечены, поэтому приближение может от них отличаться' },
+    short: { en: 'REIT earnings with property depreciation added back', ru: 'Прибыль REIT с возвращённой амортизацией недвижимости' },
+    guide: {
+      en: 'Funds from operations, approximated from the filings: net income plus depreciation and amortization minus gains on the sale of property, over the trailing twelve months. Property depreciation is a large non-cash charge for a REIT, so net income understates what it earns. The D&A line of the cash flow statement stands in for real estate depreciation (the Schedule III figure is annual only), so the value is approximate; it is not the AFFO REITs report, which also subtracts maintenance capex',
+      ru: 'Средства от операций, приближённо по отчётности: чистая прибыль плюс амортизация минус прибыль от продажи объектов, за последние двенадцать месяцев. Амортизация недвижимости - большой неденежный расход REIT, поэтому чистая прибыль занижает его заработок. Вместо амортизации недвижимости берётся строка амортизации из отчёта о движении денег (цифра Schedule III есть только за год), поэтому значение приблизительное; это не AFFO из отчётов REIT, где вычитаются ещё и поддерживающие капзатраты',
+    },
+  }),
+  ttm({
+    id: 'ffoPayoutApprox', name: { en: 'Approximate FFO payout', ru: 'Доля приблизительного FFO на дивиденды' }, formula: 'REITs only: dividends paid / ffoApprox × 100, TTM',
+    unit: 'percent', basis: 'ttm', source: 'sec', direction: 'lower-is-better', thresholds: { good: 80, bad: 100 },
+    nullWhen: { en: 'not a REIT, approximate FFO zero or negative, or no dividends are tagged', ru: 'не REIT, приблизительный FFO нулевой или отрицательный либо дивиденды не размечены' },
+    sectorNotes: { en: 'Replaces payoutRatio and fcfPayout for REITs in conditions and scores (plan 1.7)', ru: 'Для REIT заменяет payoutRatio и fcfPayout в условиях и оценках (план 1.7)' },
+    short: { en: 'Share of approximate FFO paid as dividends', ru: 'Какая доля приблизительного FFO уходит на дивиденды' },
+    guide: {
+      en: 'Dividends paid over the trailing twelve months divided by the approximate FFO of the same months. REITs must distribute most of their taxable income, so a payout on net income looks over 100% even when the dividend is safe; on FFO below 80% is comfortable and above 100% means the dividend is not covered by operations',
+      ru: 'Дивиденды, выплаченные за последние двенадцать месяцев, делённые на приблизительный FFO за те же месяцы. REIT обязаны раздавать большую часть налогооблагаемого дохода, поэтому payout от чистой прибыли выглядит выше 100%, даже когда дивиденд надёжен; от FFO ниже 80% - комфортно, выше 100% - дивиденд не покрыт операциями',
+    },
+  }),
+];
+
+// ---------------------------------------------------------------------------
 // planned metrics (plan stage 1.5): presets reference them already; the engine reports them as unavailable until published
 
 const PLANNED: MetricDef[] = [
@@ -746,51 +952,6 @@ const PLANNED: MetricDef[] = [
     guide: {
       en: 'The current dividend yield divided by the average yield of the last five years, computed by the updater. Above 1 the stock pays more than usual for its price, a classic buy signal for stable dividend payers; check that the dividend itself is safe, since a yield spike can precede a cut',
       ru: 'Текущая дивидендная доходность, делённая на среднюю доходность за пять лет, считается апдейтером. Выше 1 - бумага платит больше обычного относительно цены, классический сигнал покупки для стабильных плательщиков; при этом проверяют надёжность дивиденда, потому что всплеск доходности может предшествовать сокращению',
-    },
-  }),
-  def({
-    id: 'operatingMarginSlope3y', name: { en: 'Operating margin trend 3Y', ru: 'Тренд операционной маржи за 3 года' }, formula: 'slope of a linear fit over 4 annual operating margins, percentage points per year', unit: 'pp', basis: 'fy', source: 'planned', direction: 'higher-is-better', thresholds: { good: 0 },
-    nullWhen: { en: 'fewer than 4 annual points', ru: 'меньше 4 годовых точек' },
-    short: { en: 'Yearly change of the operating margin trend', ru: 'Годовое изменение тренда операционной маржи' },
-    guide: {
-      en: 'The slope of a straight line fitted through the operating margins of the last four fiscal years, in percentage points per year. A positive slope means the business gets more profitable as it grows; unlike a two-point delta it is not thrown off by one odd year',
-      ru: 'Наклон прямой, проведённой через операционные маржи последних четырёх финансовых лет, в процентных пунктах за год. Положительный наклон - бизнес становится рентабельнее по мере роста; в отличие от разницы двух точек одна странная годовая точка его не сбивает',
-    },
-  }),
-  def({
-    id: 'niVolatility5y', name: { en: 'Net income volatility 5Y', ru: 'Волатильность чистой прибыли за 5 лет' }, formula: 'standard deviation of yearly net income growth rates over 5 years, percentage points', unit: 'pp', basis: 'fy', source: 'planned', direction: 'lower-is-better', thresholds: { good: 25 },
-    nullWhen: { en: 'fewer than 6 annual points with a positive base', ru: 'меньше 6 годовых точек с положительной базой' },
-    short: { en: 'How uneven profit growth has been', ru: 'Насколько неровно росла прибыль' },
-    guide: {
-      en: 'The standard deviation of the yearly growth rates of net income over five years, in percentage points; it needs six annual points with a positive base. Low values mark predictable earnings, the trait of stable compounders. The starting threshold of the undervalued preset is 25 and will be tuned after the first real runs',
-      ru: 'Стандартное отклонение годовых темпов роста чистой прибыли за пять лет в процентных пунктах; нужно шесть годовых точек с положительной базой. Низкие значения - предсказуемая прибыль, черта стабильных компаний. Стартовый порог пресета «Недооценённые» - 25, он будет подстроен после первых реальных прогонов',
-    },
-  }),
-  def({
-    id: 'fcfVolatility5y', name: { en: 'FCF volatility 5Y', ru: 'Волатильность FCF за 5 лет' }, formula: 'standard deviation of yearly FCF growth rates over 5 years, percentage points', unit: 'pp', basis: 'fy', source: 'planned', direction: 'lower-is-better', thresholds: { good: 30 },
-    nullWhen: { en: 'fewer than 6 annual points with a positive base', ru: 'меньше 6 годовых точек с положительной базой' },
-    short: { en: 'How uneven free cash flow growth has been', ru: 'Насколько неровно рос свободный денежный поток' },
-    guide: {
-      en: 'The standard deviation of the yearly growth rates of free cash flow over five years, in percentage points. FCF is naturally lumpier than earnings because capital spending comes in waves, so its threshold is looser. Very high values mean the cash flow cannot be extrapolated',
-      ru: 'Стандартное отклонение годовых темпов роста свободного денежного потока за пять лет в процентных пунктах. FCF от природы неровнее прибыли, потому что капзатраты идут волнами, поэтому порог мягче. Очень высокие значения означают, что денежный поток нельзя экстраполировать',
-    },
-  }),
-  def({
-    id: 'cfoToNi', name: { en: 'Cash conversion (CFO / NI)', ru: 'Конверсия в деньги (CFO / NI)' }, formula: 'operating cash flow / net income, TTM', unit: 'ratio', basis: 'ttm', source: 'planned', direction: 'neutral', thresholds: { good: 1 },
-    nullWhen: { en: 'net income is zero or negative', ru: 'чистая прибыль нулевая или отрицательная' },
-    short: { en: 'Operating cash per dollar of reported profit', ru: 'Операционные деньги на доллар отчётной прибыли' },
-    guide: {
-      en: 'Operating cash flow divided by net income. Between 0.8 and 1.5 earnings are backed by cash. Persistently below 0.8 means profits sit in receivables or inventory, the main red flag of the plan ("net income grows, cash flow does not"); far above 1.5 usually means large non-cash charges',
-      ru: 'Операционный денежный поток, делённый на чистую прибыль. От 0,8 до 1,5 прибыль подкреплена деньгами. Устойчиво ниже 0,8 - прибыль оседает в дебиторке или запасах, это главный красный флаг плана («прибыль растёт, денежный поток нет»); намного выше 1,5 - обычно большие неденежные списания',
-    },
-  }),
-  def({
-    id: 'capexToRevenueDelta3y', name: { en: 'CapEx intensity change 3Y', ru: 'Изменение доли капзатрат за 3 года' }, formula: 'capex / revenue now - capex / revenue 3 fiscal years earlier, percentage points', unit: 'pp', basis: 'fy', source: 'planned', direction: 'lower-is-better', thresholds: { good: 0 },
-    nullWhen: { en: 'revenue or capex is missing for an endpoint', ru: 'нет выручки или капзатрат в одной из крайних точек' },
-    short: { en: 'Change of capital spending as a share of revenue', ru: 'Изменение капзатрат как доли выручки' },
-    guide: {
-      en: 'Capital expenditures as a share of revenue today minus the same share three fiscal years earlier, in percentage points. Zero or below means growth does not need ever more investment, which is what the cash-flow machines preset wants. A rising share can be a deliberate build-out; read it together with revenue growth',
-      ru: 'Доля капзатрат в выручке сейчас минус та же доля три финансовых года назад, в процентных пунктах. Ноль и ниже - росту не нужно всё больше вложений, именно этого ждёт пресет «Кэшфлоу-машины». Растущая доля может быть сознательной стройкой; её читают вместе с ростом выручки',
     },
   }),
 ];
@@ -852,7 +1013,7 @@ const FIELDS: MetricDef[] = [
   }),
 ];
 
-const BASE: MetricDef[] = [...MARKET, ...VALUATION, ...DIVIDENDS, ...BALANCE, ...GROWTH, ...MARGINS, ...PERFORMANCE, ...TOTAL_RETURN, ...META, ...SWINGS, ...PLANNED, ...FIELDS];
+const BASE: MetricDef[] = [...MARKET, ...VALUATION, ...DIVIDENDS, ...BALANCE, ...GROWTH, ...MARGINS, ...PERFORMANCE, ...TOTAL_RETURN, ...META, ...SWINGS, ...SEC_DERIVED, ...PLANNED, ...FIELDS];
 
 const textCompanion = (base: MetricDef): MetricDef => def({
   id: `${base.id}Text`, name: { en: `${base.name.en} (text)`, ru: `${base.name.ru} (текст)` }, formula: `issuer display text of ${base.id}`,

@@ -18,9 +18,9 @@ export const METRIC_GROUPS: ReadonlyArray<{ id: MetricGroup; title: Text }> = [
 const LISTS: Record<string, MetricGroup> = {};
 const put = (group: MetricGroup, ids: string[]) => ids.forEach((id) => { LISTS[id] = group; });
 put('valuation', ['marketCap', 'enterpriseValue', 'sharesOutstanding', 'pe', 'forwardPe', 'ps', 'forwardPs', 'pFcf', 'evEbitda', 'pb', 'peg', 'forwardToTtmPe', 'pePct5y', 'pFcfPct5y']);
-put('quality', ['roic', 'fcfToEbitda', 'operatingMarginSlope3y', 'cfoToNi', 'niVolatility5y', 'fcfVolatility5y', 'capexToRevenueDelta3y']);
-put('safety', ['currentRatio', 'quickRatio', 'debtToEquity', 'netDebtToEbitda', 'beta']);
-put('dividends', ['dividendYield', 'dividendRate', 'payoutRatio', 'fcfPayout', 'yieldVsAvg5y']);
+put('quality', ['roic', 'fcfToEbitda', 'operatingMargin', 'grossMarginSlope3y', 'operatingMarginSlope3y', 'cfoToNi', 'fcfToNi', 'niVolatility5y', 'fcfVolatility5y', 'capexToCfo', 'capexToRevenue', 'capexToRevenueDelta3y', 'ffoApprox']);
+put('safety', ['currentRatio', 'quickRatio', 'debtToEquity', 'netDebtToEbitda', 'interestCoverage', 'interestCoverageNote', 'cashRunwayMonths', 'altmanZ', 'altmanVariant', 'piotroskiF', 'beta']);
+put('dividends', ['dividendYield', 'dividendRate', 'payoutRatio', 'fcfPayout', 'ffoPayoutApprox', 'yieldVsAvg5y']);
 put('fields', ['ticker', 'type', 'sector', 'industry', 'isMine', 'size']);
 
 export function metricGroup(def: MetricDef): MetricGroup {
