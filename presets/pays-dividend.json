@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "id": "pays-dividend",
+  "title": {
+    "en": "Pays a dividend",
+    "ru": "Платят дивиденд"
+  },
+  "description": {
+    "en": "A refinement: dividend yield above 0. It is always combined with AND on top of the chosen presets, so one click narrows any selection to payers",
+    "ru": "Уточнение: дивидендная доходность выше 0. Всегда добавляется через И поверх выбранных пресетов, поэтому один клик оставляет в любой выборке только плательщиков"
+  },
+  "appliesTo": [
+    "stock",
+    "etf"
+  ],
+  "match": "all",
+  "refine": true,
+  "conditions": [
+    {
+      "metric": "dividendYield",
+      "op": ">",
+      "value": 0,
+      "scope": "absolute",
+      "missing": "fail"
+    }
+  ]
+}

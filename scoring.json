@@ -1,0 +1,275 @@
+{
+  "schemaVersion": 1,
+  "minGroupSize": 20,
+  "minWeightShare": 0.5,
+  "colors": { "good": 70, "bad": 40 },
+  "whyLimit": 6,
+  "defaultArchetype": "stable",
+  "archetypes": {
+    "stable": {
+      "title": { "en": "Stable", "ru": "Стабильная" },
+      "scoreWeights": { "cheap": 0.25, "quality": 0.2, "safety": 0.25, "dividend": 0.15, "entry": 0.15 },
+      "buy": 65,
+      "reject": 35,
+      "stopFactors": ["altman-distress-classic", "altman-distress-z2", "fcf-negative-3y"]
+    },
+    "growth": {
+      "title": { "en": "Growth", "ru": "Растущая" },
+      "scoreWeights": { "cheap": 0.2, "quality": 0.35, "safety": 0.15, "dividend": 0, "entry": 0.3 },
+      "buy": 65,
+      "reject": 35,
+      "stopFactors": ["cash-runway-short"]
+    },
+    "volatile": {
+      "title": { "en": "Volatile", "ru": "Волатильная" },
+      "scoreWeights": { "cheap": 0.15, "quality": 0.1, "safety": 0.25, "dividend": 0, "entry": 0.5 },
+      "buy": 70,
+      "reject": 35,
+      "stopFactors": ["altman-distress-classic", "altman-distress-z2"]
+    }
+  },
+  "archetypeRules": [
+    {
+      "id": "volatile-price",
+      "archetype": "volatile",
+      "title": { "en": "Volatility 45% a year or more", "ru": "Волатильность от 45% в год" },
+      "appliesTo": ["stock", "etf"],
+      "match": "all",
+      "conditions": [{ "metric": "volatility1y", "op": ">=", "value": 45, "scope": "absolute", "missing": "fail" }]
+    },
+    {
+      "id": "growth-reit-ffo",
+      "archetype": "growth",
+      "title": { "en": "REIT: approximate FFO grows 15% a year over 3 years", "ru": "REIT: приблизительный FFO растёт на 15% в год за 3 года" },
+      "appliesTo": ["stock"],
+      "match": "all",
+      "conditions": [
+        { "metric": "isReit", "op": "=", "value": true, "scope": "absolute", "missing": "fail" },
+        { "metric": "ffoGrowth3y", "op": ">=", "value": 15, "scope": "absolute", "missing": "fail" }
+      ]
+    },
+    {
+      "id": "stable-reit",
+      "archetype": "stable",
+      "title": { "en": "REIT without fast FFO growth (revenue growth does not count)", "ru": "REIT без быстрого роста FFO (рост выручки не считается)" },
+      "appliesTo": ["stock"],
+      "match": "all",
+      "conditions": [{ "metric": "isReit", "op": "=", "value": true, "scope": "absolute", "missing": "fail" }]
+    },
+    {
+      "id": "growth-revenue-3y",
+      "archetype": "growth",
+      "title": { "en": "Revenue grows 15% a year over 3 years", "ru": "Выручка растёт на 15% в год за 3 года" },
+      "appliesTo": ["stock"],
+      "match": "all",
+      "conditions": [{ "metric": "revenueGrowth3y", "op": ">=", "value": 15, "scope": "absolute", "missing": "fail" }]
+    },
+    {
+      "id": "growth-burning",
+      "archetype": "growth",
+      "title": { "en": "Revenue up 25% in a year while free cash flow is negative", "ru": "Выручка +25% за год при отрицательном свободном потоке" },
+      "appliesTo": ["stock"],
+      "match": "all",
+      "conditions": [
+        { "metric": "revenueGrowth", "op": ">=", "value": 25, "scope": "absolute", "missing": "fail" },
+        { "metric": "fcfMargin", "op": "<", "value": 0, "scope": "absolute", "missing": "fail" }
+      ]
+    },
+    {
+      "id": "stable-payer",
+      "archetype": "stable",
+      "title": { "en": "Pays a dividend", "ru": "Платит дивиденд" },
+      "appliesTo": ["stock"],
+      "match": "all",
+      "conditions": [{ "metric": "dividendYield", "op": ">", "value": 0, "scope": "absolute", "missing": "fail" }]
+    },
+    {
+      "id": "stable-calm",
+      "archetype": "stable",
+      "title": { "en": "Volatility below 30% a year", "ru": "Волатильность ниже 30% в год" },
+      "appliesTo": ["stock", "etf"],
+      "match": "all",
+      "conditions": [{ "metric": "volatility1y", "op": "<", "value": 30, "scope": "absolute", "missing": "fail" }]
+    }
+  ],
+  "scores": {
+    "cheap": {
+      "title": { "en": "Cheap", "ru": "Дёшево" },
+      "appliesTo": ["stock"],
+      "items": [
+        { "metric": "peg", "weight": { "stable": 1, "growth": 1.5, "volatile": 1 } },
+        { "metric": "pegHist", "weight": 1 },
+        { "metric": "forwardToTtmPe", "weight": 1 },
+        { "metric": "pePct5y", "weight": { "stable": 1, "growth": 0.5, "volatile": 1 } },
+        { "metric": "pFcfPct5y", "weight": 1 },
+        { "metric": "forwardPe", "weight": 1, "scope": "sector" },
+        { "metric": "forwardPe", "weight": 0.5, "scope": "peers" }
+      ]
+    },
+    "quality": {
+      "title": { "en": "Quality", "ru": "Качественно" },
+      "appliesTo": ["stock"],
+      "items": [
+        { "metric": "roic", "weight": 1.5 },
+        { "metric": "grossMarginSlope3y", "weight": 1 },
+        { "metric": "operatingMarginSlope3y", "weight": 1 },
+        { "metric": "cfoToNi", "weight": 1, "direction": "higher-is-better" },
+        { "metric": "fcfToNi", "weight": 1 }
+      ]
+    },
+    "safety": {
+      "title": { "en": "Safety", "ru": "Безопасно" },
+      "appliesTo": ["stock"],
+      "items": [
+        { "metric": "debtToEquity", "weight": 1 },
+        { "metric": "netDebtToEbitda", "weight": 1 },
+        { "metric": "interestCoverage", "weight": 1 },
+        { "metric": "altmanZ", "weight": 1 },
+        { "metric": "piotroskiF", "weight": 1 },
+        { "metric": "niVolatility5y", "weight": { "stable": 1.5, "growth": 0.5, "volatile": 1 } },
+        { "metric": "fcfVolatility5y", "weight": { "stable": 1.5, "growth": 0.5, "volatile": 1 } }
+      ]
+    },
+    "dividend": {
+      "title": { "en": "Dividend", "ru": "Дивиденд" },
+      "appliesTo": ["stock", "etf"],
+      "payersOnly": true,
+      "items": [
+        { "metric": "dividendStreak", "weight": 2 },
+        { "metric": "dividendCut10y", "weight": 2, "good": false },
+        { "metric": "dividendGrowth5y", "weight": 1.5 },
+        { "metric": "ffoPayoutApprox", "or": ["fcfPayout"], "weight": 1.5 },
+        { "metric": "dividendYield", "weight": 1 }
+      ]
+    },
+    "entry": {
+      "title": { "en": "Entry point", "ru": "Точка входа" },
+      "appliesTo": ["stock", "etf"],
+      "items": [
+        { "metric": "pctFrom52wHigh", "weight": 1, "direction": "lower-is-better" },
+        { "metric": "pctFromAth", "weight": 1, "direction": "lower-is-better" },
+        { "metric": "range52w", "weight": 1, "direction": "lower-is-better" },
+        { "metric": "sigmaFromMean60d", "weight": 1, "direction": "lower-is-better" }
+      ],
+      "adjust": [{ "when": { "metric": "epsRevision30d", "op": "<", "value": 0, "scope": "absolute", "missing": "fail" }, "factor": 0.75 }]
+    }
+  },
+  "stopFactors": [
+    {
+      "id": "altman-distress-classic",
+      "title": { "en": "Altman Z in the distress zone", "ru": "Altman Z в зоне дистресса" },
+      "appliesTo": ["stock"],
+      "match": "all",
+      "conditions": [
+        { "metric": "altmanVariant", "op": "=", "value": "classic", "scope": "absolute", "missing": "fail" },
+        { "metric": "altmanZ", "op": "<", "value": 1.81, "scope": "absolute", "missing": "fail" }
+      ]
+    },
+    {
+      "id": "altman-distress-z2",
+      "title": { "en": "Altman Z'' in the distress zone", "ru": "Altman Z'' в зоне дистресса" },
+      "appliesTo": ["stock"],
+      "match": "all",
+      "conditions": [
+        { "metric": "altmanVariant", "op": "=", "value": "z2", "scope": "absolute", "missing": "fail" },
+        { "metric": "altmanZ", "op": "<", "value": 1.1, "scope": "absolute", "missing": "fail" }
+      ]
+    },
+    {
+      "id": "fcf-negative-3y",
+      "title": { "en": "Negative free cash flow 3 years in a row", "ru": "Отрицательный свободный поток 3 года подряд" },
+      "appliesTo": ["stock"],
+      "match": "all",
+      "conditions": [{ "metric": "fcfNegativeYears", "op": ">=", "value": 3, "scope": "absolute", "missing": "fail" }]
+    },
+    {
+      "id": "cash-runway-short",
+      "title": { "en": "Cash for less than 12 months", "ru": "Кэша меньше чем на 12 месяцев" },
+      "appliesTo": ["stock"],
+      "match": "all",
+      "conditions": [{ "metric": "cashRunwayMonths", "op": "<", "value": 12, "scope": "absolute", "missing": "fail" }]
+    }
+  ],
+  "flags": [
+    {
+      "id": "ni-up-cfo-not",
+      "title": { "en": "Profit grows, cash flow does not", "ru": "Прибыль растёт, денежный поток нет" },
+      "appliesTo": ["stock"],
+      "match": "all",
+      "conditions": [
+        { "metric": "niGrowth3y", "op": ">=", "value": 10, "scope": "absolute", "missing": "fail" },
+        { "metric": "cfoGrowth3y", "op": "<=", "value": 2, "scope": "absolute", "missing": "fail" }
+      ],
+      "or": [
+        {
+          "match": "all",
+          "conditions": [
+            { "metric": "niGrowth3y", "op": ">", "value": 0, "scope": "absolute", "missing": "fail" },
+            { "metric": "cfoToNi", "op": "<", "value": 0.5, "scope": "absolute", "missing": "fail" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "margin-down-revenue-up",
+      "title": { "en": "Margin falls while revenue grows", "ru": "Маржа падает при росте выручки" },
+      "appliesTo": ["stock"],
+      "match": "all",
+      "conditions": [
+        { "metric": "operatingMarginSlope3y", "op": "<=", "value": -1, "scope": "absolute", "missing": "fail" },
+        { "metric": "revenueGrowth3y", "op": ">=", "value": 5, "scope": "absolute", "missing": "fail" }
+      ]
+    },
+    {
+      "id": "high-debt",
+      "title": { "en": "Debt to equity above 2", "ru": "Долг к капиталу выше 2" },
+      "appliesTo": ["stock"],
+      "match": "all",
+      "conditions": [{ "metric": "debtToEquity", "op": ">", "value": 2, "scope": "absolute", "missing": "fail" }]
+    },
+    {
+      "id": "eps-outgrows-ni",
+      "title": { "en": "EPS grows faster than profit (buybacks)", "ru": "EPS растёт быстрее прибыли (выкуп)" },
+      "appliesTo": ["stock"],
+      "match": "all",
+      "conditions": [{ "metric": "epsNiGrowthGap3y", "op": ">=", "value": 5, "scope": "absolute", "missing": "fail" }]
+    },
+    {
+      "id": "fcf-below-ni",
+      "title": { "en": "Free cash flow far below profit (capex phase)", "ru": "Свободный поток намного ниже прибыли (фаза capex)" },
+      "appliesTo": ["stock"],
+      "match": "all",
+      "conditions": [{ "metric": "fcfToNi", "op": "<=", "value": 0.5, "scope": "absolute", "missing": "fail" }]
+    },
+    {
+      "id": "revenue-below-market",
+      "title": { "en": "Revenue grows slower than its market", "ru": "Выручка растёт медленнее рынка" },
+      "appliesTo": ["stock"],
+      "match": "all",
+      "enabled": false,
+      "conditions": [{ "metric": "revenueGrowthVsTam", "op": "<", "value": 0, "scope": "absolute", "missing": "fail" }]
+    },
+    {
+      "id": "balance-jump",
+      "title": { "en": "Large change of {balanceYoyMaxLine} in a year", "ru": "Крупное изменение {balanceYoyMaxLine} за год" },
+      "appliesTo": ["stock"],
+      "match": 1,
+      "conditions": [
+        { "metric": "balanceYoyMaxChange", "op": ">=", "value": 50, "scope": "absolute", "missing": "fail" },
+        { "metric": "balanceYoyMaxChange", "op": "<=", "value": -50, "scope": "absolute", "missing": "fail" }
+      ]
+    }
+  ],
+  "notes": [
+    { "condition": { "metric": "dividendCut10y", "op": "=", "value": true, "scope": "absolute", "missing": "fail" }, "text": { "en": "dividend cut in 10 years", "ru": "сокращал дивиденд за 10 лет" } },
+    { "condition": { "metric": "dividendStreak", "op": ">=", "value": 5, "scope": "absolute", "missing": "fail" }, "text": { "en": "streak {value} years", "ru": "стрик {value} лет" } },
+    { "condition": { "metric": "fcfPayout", "op": ">", "value": 70, "scope": "absolute", "missing": "fail" }, "text": { "en": "FCF payout {value} > {threshold}", "ru": "FCF payout {value} > {threshold}" } },
+    { "condition": { "metric": "ffoPayoutApprox", "op": ">", "value": 90, "scope": "absolute", "missing": "fail" }, "text": { "en": "FFO payout {value} > {threshold}", "ru": "FFO payout {value} > {threshold}" } },
+    { "condition": { "metric": "cashRunwayMonths", "op": "<", "value": 24, "scope": "absolute", "missing": "fail" }, "text": { "en": "cash for {value} months", "ru": "кэша на {value} мес." }, "archetypes": ["growth"] },
+    { "condition": { "metric": "epsRevision30d", "op": "<", "value": 0, "scope": "absolute", "missing": "fail" }, "text": { "en": "EPS estimate {value} in 30 days", "ru": "прогноз EPS {value} за 30 дней" } },
+    { "condition": { "metric": "pctFrom52wHigh", "op": "<=", "value": -20, "scope": "absolute", "missing": "fail" }, "text": { "en": "{value} from 52W high", "ru": "{value} от 52-нед. максимума" } },
+    { "condition": { "metric": "pctFromAth", "op": "<=", "value": -30, "scope": "absolute", "missing": "fail" }, "text": { "en": "{value} from ATH", "ru": "{value} от исторического максимума" } },
+    { "condition": { "metric": "sigmaFromMean60d", "op": "<=", "value": -2, "scope": "absolute", "missing": "fail" }, "text": { "en": "sigma {value} from the 60-day mean", "ru": "σ {value} от 60-дневной средней" } },
+    { "condition": { "metric": "peg", "op": "<=", "value": 1, "scope": "absolute", "missing": "fail" }, "text": { "en": "PEG {value} <= {threshold}", "ru": "PEG {value} <= {threshold}" } }
+  ]
+}

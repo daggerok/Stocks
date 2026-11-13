@@ -1,0 +1,158 @@
+<!DOCTYPE html><html lang=en><meta charset=UTF-8><meta name=viewport content="width=device-width, initial-scale=1.0"><meta name=description content="Stocks of Nasdaq, NYSE and Cboe in one sortable table: dividends, FCF payout, liquidity and leverage ratios, growth, margins, ROIC, valuation multiples, performance and total returns. Independent unofficial tool; data comes from the static feed generated from SEC EDGAR and Yahoo Finance."><title>Stocks</title><link rel=icon type=image/x-icon href=/Stocks/favicon.954d8a23.ico><link rel=preconnect href=https://fonts.googleapis.com><link rel=preconnect href=https://fonts.gstatic.com crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&amp;display=swap" rel=stylesheet><link href=/Stocks/Stocks.20953a66.css rel=stylesheet><script>!function(){var t=!1;try{t="dark"===localStorage.getItem("stocks-theme")}catch(t){}document.documentElement.classList.toggle("dark",t),document.documentElement.style.backgroundColor=t?"#020617":"#f8fafc"}();</script><body class="bg-slate-50 dark:bg-slate-900 dark:text-slate-100 duration-300 font-sans min-h-screen text-slate-900 transition-colors">
+  <div class="animate-fade-in flex flex-col min-h-screen">
+
+    <main class="flex-1 lg:pt-0 max-w-full p-4 pb-0 sm:p-8 sm:pb-0 space-y-6 w-full">
+
+      <div id=top-panels class="lg:bg-slate-50 lg:dark:bg-slate-900 lg:pt-8 lg:space-y-6 lg:sticky lg:top-0 lg:z-40 max-lg:contents">
+        
+        <nav id=selected-tabs-panel class="backdrop-blur-sm bg-white border border-slate-200 dark:bg-slate-800/80 dark:border-slate-700 flex flex-wrap gap-x-3 gap-y-2 items-center lg:grid lg:grid-cols-[minmax(11rem,1fr)_minmax(0,auto)_minmax(min-content,1fr)] max-lg:dark:bg-slate-800 max-lg:mb-6 max-lg:sticky max-lg:top-0 max-lg:z-40 px-4 rounded-xl shadow-xs" aria-label="Selected stock detail views" data-i18n-aria="Selected stock detail views">
+          <div class="flex flex-1 flex-wrap gap-x-3 gap-y-1.5 items-center lg:min-w-0 min-w-0 order-1 sm:flex-nowrap">
+            <div class="flex gap-3 items-start min-w-0 sm:shrink-0">
+              <svg fill=none stroke=currentColor class="dark:text-blue-400 h-6 mt-0.5 shrink-0 text-blue-600 w-6" viewBox="0 0 24 24"><path stroke-linecap=round stroke-linejoin=round stroke-width=2 d="m22 7-8.5 8.5-5-5L2 17"/><path stroke-linecap=round stroke-linejoin=round stroke-width=2 d="M16 7h6v6"/></svg>
+              <h1 class="dark:text-white font-bold leading-tight min-w-0 text-slate-900 text-xl tracking-tight">Stocks</h1>
+            </div>
+            <span id=app-subtitle class="dark:text-slate-400 hidden sm:min-w-0 text-slate-500 text-sm truncate xl:block xl:flex-1"></span>
+          </div>
+          <div id=selected-tabs-bar class="[&amp;>*]:shrink-0 [&amp;>*]:whitespace-nowrap [justify-content:safe_center] basis-full flex flex-nowrap gap-1.5 items-center lg:basis-auto lg:order-2 max-w-full order-3 overflow-x-auto py-0.5 themed-scroll"></div>
+          <div class="flex gap-3 items-center lg:justify-self-end lg:ml-0 lg:order-3 ml-auto order-2 shrink-0">
+            <span id=load-warning hidden class="bg-rose-100 border border-rose-200 dark:bg-rose-900/40 dark:border-rose-700/50 dark:text-rose-300 font-semibold px-3 py-1.5 rounded-full text-rose-700 text-xs"></span>
+            <button type=button aria-controls=app-summary aria-expanded=false aria-label="Stock catalog information" data-i18n-aria="Stock catalog information" id=ticker-count class="bg-blue-100 border border-blue-200 dark:bg-blue-900/50 dark:border-blue-500/30 dark:text-blue-300 font-semibold px-3.5 py-1.5 rounded-full text-blue-700 text-sm whitespace-nowrap">
+              Loading…
+            </button>
+            <span id=app-summary role=region aria-label="Stock catalog information" data-i18n-aria="Stock catalog information" hidden>
+              Search every stock, select stocks via the “Use” checkbox, then open the Watchlist tab.
+            </span>
+            <div id=lang-switch class=lang-switch role=group aria-label=Language data-i18n-aria=Language><button type=button data-lang=en aria-pressed=true>EN</button><button type=button data-lang=ru aria-pressed=false>RU</button></div>
+            <button type=button id=signals-btn class=guide-btn aria-expanded=false aria-controls=signals-page>Signals</button>
+            <button type=button id=guide-btn class=guide-btn aria-expanded=false aria-controls=guide-panel>Guide</button>
+            <button id=theme-toggle class="bg-slate-100 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 dark:hover:bg-slate-700 hover:bg-slate-200 leading-none p-1.5 rounded-lg text-base transition" title="Toggle Theme" data-i18n-title="Toggle Theme">🌙</button>
+          </div>
+        </nav>
+
+        
+        <div class="backdrop-blur-sm bg-white border border-slate-200 dark:bg-slate-800/80 dark:border-slate-700 flex flex-wrap gap-x-2.5 gap-y-2.5 items-center max-lg:mb-6 px-3 py-4 relative rounded-xl shadow-xs z-50">
+
+          <div class="flex items-center lg:flex-1 lg:max-w-sm lg:min-w-[8rem] lg:w-auto relative w-full">
+            <input id=search-input placeholder="Search stocks..." disabled class="bg-white border border-slate-200 dark:bg-slate-900 dark:border-slate-700 dark:placeholder-slate-500 dark:text-slate-100 disabled:cursor-not-allowed disabled:opacity-50 focus:border-blue-500 focus:outline-hidden pl-4 placeholder-slate-400 pr-8 py-2 rounded-lg text-slate-900 text-sm transition w-full">
+            <button type=button id=search-clear-btn class="-translate-y-1/2 absolute dark:hover:bg-slate-800 dark:hover:text-slate-200 dark:text-slate-500 flex focus:outline-hidden h-5 hidden hover:bg-slate-100 hover:text-slate-700 items-center justify-center leading-none right-2.5 rounded-full text-slate-400 text-sm top-1/2 transition w-5" title="Clear search filter" data-i18n-title="Clear search filter" aria-label="Clear search filter" data-i18n-aria="Clear search filter">✕</button>
+            <div id=search-suggest class=sg-panel role=listbox aria-label="Filter suggestions" data-i18n-aria="Filter suggestions" hidden></div>
+          </div>
+
+          
+          <div id=tabs-bar class="flex gap-1.5 hidden items-center py-1 shrink-0"></div>
+
+  <div class=dd-root>
+            <button type=button id=exchange-btn class=dd-trigger aria-haspopup=dialog aria-expanded=false aria-controls=exchange-panel><span class=dd-label data-i18n=Exchanges:>Exchanges:</span><span class=dd-value id=exchange-summary>...</span><span class=dd-badge id=exchange-badge hidden></span><svg width=16 height=16 fill=none stroke=currentColor stroke-linecap=round stroke-linejoin=round stroke-width=2 aria-hidden=true class=dd-chev viewBox="0 0 20 20"><path d="m5 8 5 5 5-5"/></svg></button>
+            <div id=exchange-panel class=dd-panel hidden></div>
+          </div>
+          <div class=dd-root>
+            <button type=button id=sector-btn class=dd-trigger aria-haspopup=dialog aria-expanded=false aria-controls=sector-panel><span class=dd-label data-i18n=Sectors:>Sectors:</span><span class=dd-value id=sector-summary>...</span><span class=dd-badge id=sector-badge hidden></span><svg width=16 height=16 fill=none stroke=currentColor stroke-linecap=round stroke-linejoin=round stroke-width=2 aria-hidden=true class=dd-chev viewBox="0 0 20 20"><path d="m5 8 5 5 5-5"/></svg></button>
+            <div id=sector-panel class="dd-panel dd-panel-wide" hidden></div>
+          </div>
+          <div class=dd-root>
+            <button type=button id=columns-btn class=dd-trigger aria-haspopup=dialog aria-expanded=false aria-controls=columns-panel><span class=dd-label data-i18n=Columns:>Columns:</span><span class=dd-value id=columns-summary>...</span><span class=dd-badge id=columns-badge hidden></span><svg width=16 height=16 fill=none stroke=currentColor stroke-linecap=round stroke-linejoin=round stroke-width=2 aria-hidden=true class=dd-chev viewBox="0 0 20 20"><path d="m5 8 5 5 5-5"/></svg></button>
+            <div id=columns-panel class=dd-panel hidden></div>
+          </div>
+          <button type=button id=filters-btn class=dd-trigger aria-pressed=true title="Show or hide the row of filter inputs under the column headers" data-i18n-title="Show or hide the row of filter inputs under the column headers"><span class=dd-label data-i18n=Filters:>Filters:</span><span class=dd-value id=filters-summary>on</span><span class=dd-badge id=filters-badge hidden></span></button>
+          <button type=button id=clear-filters-btn class=dd-act hidden title="Clear every column filter of the shown table" data-i18n-title="Clear every column filter of the shown table" data-i18n="Clear filters">Clear filters</button>
+          <button type=button id=rank-btn class=dd-trigger aria-pressed=false title="Sticky #: number the rows by their rank in the sorted table before the column filters, so filtered rows keep their rank (1, 4, 7...). Off: 1..N of the shown rows" data-i18n-title="Sticky #: number the rows by their rank in the sorted table before the column filters, so filtered rows keep their rank (1, 4, 7...). Off: 1..N of the shown rows"><span class=dd-label data-i18n="Sticky #:">Sticky #:</span><span class=dd-value id=rank-summary>off</span></button>
+          <label class="cursor-pointer dark:text-slate-300 gap-2 inline-flex items-center text-slate-600" title="Hide stocks whose prices are older than the given number of days or have no known as-of date" data-i18n-title="Hide stocks whose prices are older than the given number of days or have no known as-of date">
+            <input type=checkbox id=stale-toggle class="accent-blue-600 cursor-pointer h-4 w-4">
+            <span class=whitespace-nowrap data-i18n="Hide stale >">Hide stale &gt;</span>
+            <input type=number id=stale-days min=1 max=3650 value=10 class="bg-white border border-slate-200 dark:bg-slate-900 dark:border-slate-700 dark:text-slate-100 focus:border-blue-500 focus:outline-hidden px-1 py-2 rounded-lg text-center text-slate-900 text-sm w-12">
+            <span data-i18n=d>d</span>
+          </label>
+          <span id=load-progress class="dark:text-slate-400 empty:hidden text-slate-500 text-xs" aria-live=polite></span>
+
+
+          <div class="flex flex-wrap gap-1.5 items-center justify-end lg:ml-auto lg:w-auto shrink-0 w-full">
+            <button id=copy-btn disabled class="active:scale-95 bg-slate-100 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 dark:disabled:hover:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-200 disabled:cursor-not-allowed disabled:hover:bg-slate-100 disabled:opacity-50 font-medium hover:bg-slate-200 px-3 py-2 rounded-lg text-slate-700 text-sm transition" data-i18n="Copy Tickers">Copy Tickers</button>
+            <button id=export-csv-btn disabled class="active:scale-95 bg-blue-600 disabled:cursor-not-allowed disabled:hover:bg-blue-600 disabled:opacity-50 font-medium hover:bg-blue-500 px-3 py-2 rounded-lg text-sm text-white transition" data-i18n="Export .csv">Export .csv</button>
+            <button id=export-txt-btn disabled class="active:scale-95 bg-emerald-600 disabled:cursor-not-allowed disabled:hover:bg-emerald-600 disabled:opacity-50 font-medium hover:bg-emerald-500 px-3 py-2 rounded-lg text-sm text-white transition" data-i18n="Export .txt">Export .txt</button>
+            <button id=reset-btn disabled title="Choose what to reset to the first-visit view: selection, searches, sorts, exchanges, sectors and columns, hide stale, column filters, Sticky #, scroll positions and the blacklist (the theme is kept)" data-i18n-title="Choose what to reset to the first-visit view: selection, searches, sorts, exchanges, sectors and columns, hide stale, column filters, Sticky #, scroll positions and the blacklist (the theme is kept)" data-i18n=Clear class="active:scale-95 bg-rose-100 border border-rose-200 dark:bg-rose-900/40 dark:border-rose-700/50 dark:disabled:hover:bg-rose-900/40 dark:hover:bg-rose-800/60 dark:text-rose-300 disabled:cursor-not-allowed disabled:hover:bg-rose-100 disabled:opacity-50 font-medium hover:bg-rose-200 px-3 py-2 rounded-lg text-rose-700 text-sm transition">Clear</button>
+            <button id=blacklist-btn class="active:scale-95 bg-slate-100 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 dark:hover:bg-slate-700 dark:text-slate-200 font-medium hover:bg-slate-200 px-3 py-2 rounded-lg text-slate-700 text-sm transition" title="Manage the blacklist of stocks hidden from All Stocks (kept in browser localStorage)" data-i18n-title="Manage the blacklist of stocks hidden from All Stocks (kept in browser localStorage)" data-i18n=Blacklist aria-expanded=false>Blacklist</button>
+          </div>
+
+        </div>
+      </div>
+
+      
+      <section id=screener-panel class="backdrop-blur-sm bg-white border border-slate-200 dark:bg-slate-800/80 dark:border-slate-700 px-3 py-3 rounded-xl scr-panel shadow-xs" aria-label=Screener data-i18n-aria=Screener></section>
+
+      <div id=blacklist-panel class="backdrop-blur-sm bg-white border border-slate-200 dark:bg-slate-800/80 dark:border-slate-700 px-4 rounded-xl shadow-xs">
+        <div class="flex flex-col gap-2.5 sm:flex-row sm:items-center">
+          <input id=blacklist-input placeholder="Add tickers to blacklist (e.g. BRK-B, GOOG)" data-i18n-placeholder="Add tickers to blacklist (e.g. BRK-B, GOOG)" class="bg-white border border-slate-200 dark:bg-slate-900 dark:border-slate-700 dark:placeholder-slate-500 dark:text-slate-100 focus:border-blue-500 focus:outline-hidden placeholder-slate-400 px-4 py-2 rounded-lg sm:w-80 text-slate-900 text-sm transition w-full">
+          <div class="flex flex-wrap gap-2.5 items-center">
+            <button id=blacklist-add-btn class="active:scale-95 bg-blue-600 font-medium hover:bg-blue-500 px-4 py-2 rounded-lg text-sm text-white transition" data-i18n=Add>Add</button>
+            <button id=blacklist-clear-btn class="active:scale-95 bg-rose-100 border border-rose-200 dark:bg-rose-900/40 dark:border-rose-700/50 dark:hover:bg-rose-800/60 dark:text-rose-300 font-medium hover:bg-rose-200 px-3 py-2 rounded-lg text-rose-700 text-sm transition" data-i18n="Clear Blacklist">Clear Blacklist</button>
+          </div>
+        </div>
+        <div id=blacklist-chips class="flex flex-wrap gap-1.5 mt-3"></div>
+        <p id=blacklist-empty class="dark:text-slate-500 mt-3 text-slate-400 text-xs" data-i18n="The blacklist is empty. Blacklisted stocks disappear from All Stocks (and from selection), and are kept in your browser localStorage.">The blacklist is empty. Blacklisted stocks disappear from All Stocks (and from selection), and are kept in your browser localStorage.</p>
+      </div>
+
+      <div class="backdrop-blur-sm bg-white border border-slate-200 dark:bg-slate-800/50 dark:border-slate-700 overflow-hidden relative rounded-xl shadow-xs">
+        <div id=busy-overlay class=busy-overlay role=status aria-live=polite><div class=busy-spinner></div><span id=busy-label>Loading the stock feed…</span></div>
+        <div id=table-scroll class="overflow-x-auto overflow-y-auto themed-scroll">
+          <table class="text-left w-full whitespace-nowrap">
+            <thead id=table-head class="backdrop-blur-sm bg-slate-50 border-b border-slate-200 dark:bg-slate-900/95 dark:border-slate-700 dark:text-slate-400 sticky text-slate-500 text-xs top-0 tracking-wider uppercase z-20">
+              <tr>
+                <th class="px-4 py-3.5 text-center w-12" title="Row index">#</th>
+                <th class="px-4 py-3.5" title="Column 1">Column 1</th>
+              </tr>
+            </thead>
+            <tbody id=table-body class="dark:divide-slate-700/50 divide-slate-100 divide-y text-sm">
+              <tr>
+                <td colspan=10 class="dark:text-slate-500 py-12 text-center text-slate-400">Loading the stock catalog…</td>
+              </tr>
+            </tbody>
+          </table>
+          <div id=static-load-sentinel class="cursor-pointer dark:text-slate-400 hidden py-3 text-center text-slate-500 text-xs" aria-live=polite>
+            <span id=static-load-status></span>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <footer class="dark:text-slate-400 flex h-4 items-center justify-center leading-none px-4 sm:h-8 sm:px-8 text-center text-slate-500 text-xs">
+      <a href=https://github.com/daggerok/Stocks target=_blank rel="noopener noreferrer" class="dark:hover:text-slate-100 hover:text-slate-800 transition-colors">daggerok © <span id=footer-year>2026</span></a>
+    </footer>
+    
+    <div id=guide-panel class=guide-overlay hidden>
+      <div class=guide-card role=dialog aria-modal=true aria-labelledby=guide-title>
+        <div class=guide-head>
+          <h2 id=guide-title>Guide</h2>
+          <input type=search id=guide-search class=guide-search placeholder="Search metrics and sections…" autocomplete=off>
+          <button type=button id=guide-close class=guide-close title=Close aria-label=Close>✕</button>
+        </div>
+        <div id=guide-body class="guide-body themed-scroll"></div>
+      </div>
+    </div>
+    
+    <div id=signals-page class=guide-overlay hidden>
+      <div class=guide-card role=dialog aria-modal=true aria-labelledby=signals-title>
+        <div class=guide-head>
+          <h2 id=signals-title>Signals</h2>
+          <span class=flex-1></span>
+          <button type=button id=signals-close class=guide-close title=Close aria-label=Close>✕</button>
+        </div>
+        <div id=signals-body class="guide-body themed-scroll"></div>
+      </div>
+    </div>
+    
+    <div id=ticker-page class=guide-overlay hidden>
+      <div class="guide-card tp-card" role=dialog aria-modal=true aria-labelledby=tp-title>
+        <div class=guide-head>
+          <h2 id=tp-title>Ticker</h2>
+          <nav id=tp-tabs class=tp-tabs role=tablist></nav>
+          <button type=button id=tp-close class=guide-close title=Close aria-label=Close data-i18n-title=Close data-i18n-aria=Close>✕</button>
+        </div>
+        <div id=tp-body class="guide-body themed-scroll"></div>
+      </div>
+    </div>
+    <script>document.getElementById("footer-year").textContent=String(new Date().getFullYear());</script>
+  </div>
+
+  <script src=/Stocks/Stocks.5726b3c5.js type=module></script>
+
+
