@@ -919,6 +919,22 @@ describe('network 2', () => {
     await expect(restoreFeed(SITE)).rejects.toThrow('exists');
   });
 
+  test('--restore-from -y replaces a local feed, but only after the published index was fetched and checked', async () => {
+    await writeFile(join(dir, 'index.json'), '{"companies": [{"ticker": "OLD"}]}');
+    await mkdir(join(dir, 'companies', 'OLD'), { recursive: true });
+    const full = site;
+    site = {};
+    expect(await restoreFeed(SITE, 2, true)).toBeNull();
+    expect(await readFile(join(dir, 'index.json'), 'utf8')).toContain('OLD');
+    site = { ...full, [`${SITE}index.json`]: '{"companies": []}' };
+    await expect(restoreFeed(SITE, 2, true)).rejects.toThrow('lists no companies');
+    expect(await readFile(join(dir, 'index.json'), 'utf8')).toContain('OLD');
+    site = full;
+    expect(await restoreFeed(SITE, 2, true)).toEqual({ companies: 2, files: 8 });
+    for (const [url, text] of Object.entries(site)) expect(await readFile(join(dir, url.slice(SITE.length)), 'utf8')).toBe(text);
+    expect(await readdir(join(dir, 'companies'))).not.toContain('OLD');
+  });
+
   test('--restore-from: no published feed is an empty start, a broken feed fails before index.json is written', async () => {
     const full = site;
     site = {};
