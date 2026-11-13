@@ -1350,12 +1350,14 @@ async function writeFeedFile(file: URL, text: string): Promise<void> {
 /**
  * --restore-from [url]: downloads a published feed (index.json, update-state.json, every company meta.json and the
  * history pages its meta lists) into api/stocks, so the updater starts from the previous published state.
- * Refuses to overwrite a local index.json; index.json is written last, so an interrupted restore can simply be rerun.
+ * Refuses to overwrite a local index.json unless replace is set (-y, --yes): then api/stocks is removed after the published
+ * index.json was fetched and checked, so a missing or broken site never empties the local feed. index.json is written last,
+ * so an interrupted restore can simply be rerun.
  * Returns null when the site has no feed yet (404 on index.json): the next update then runs from an empty state.
  */
-export async function restoreFeed(base: string = PUBLISHED_FEED_URL, concurrency = 8): Promise<{ companies: number; files: number } | null> {
+export async function restoreFeed(base: string = PUBLISHED_FEED_URL, concurrency = 8, replace = false): Promise<{ companies: number; files: number } | null> {
   const root = base.endsWith('/') ? base : `${base}/`;
-  if (await readJson(indexFile())) throw new Error(`--restore-from: ${fileURLToPath(indexFile())} exists; remove ${fileURLToPath(API_ROOT)} first to replace the local feed`);
+  if (!replace && await readJson(indexFile())) throw new Error(`--restore-from: ${fileURLToPath(indexFile())} exists; add -y (--yes) or remove ${fileURLToPath(API_ROOT)} first to replace the local feed`);
   const indexText = await fetchFeedFile(`${root}index.json`);
   if (indexText === null) return null;
   const companies = JSON.parse(indexText).companies;
@@ -1363,6 +1365,7 @@ export async function restoreFeed(base: string = PUBLISHED_FEED_URL, concurrency
   const tickers = companies.map((row: JsonRecord) => String(row?.ticker ?? ''));
   const bad = tickers.filter((t: string) => !RESTORE_TICKER.test(t));
   if (bad.length) throw new Error(`--restore-from: unexpected tickers in the index: ${listNames(bad)}`);
+  if (replace) await rm(API_ROOT, { recursive: true, force: true });
   let files = 0;
   let next = 0;
   const worker = async (): Promise<void> => {
@@ -1696,7 +1699,10 @@ api/stocks is not in git: the update workflow publishes it as a GitHub Pages
 artifact. Restore the published feed into an empty api/stocks (the workflow does
 this when its Actions cache is empty; a local clone needs it once):
   ./scripts/update-data.ts --restore-from [url]
-(default url ${PUBLISHED_FEED_URL}; refuses to overwrite a local index.json)
+(default url ${PUBLISHED_FEED_URL}; refuses to overwrite a local index.json).
+-y or --yes replaces the local feed: api/stocks is removed once the published
+index.json is fetched and checked, then restored:
+  ./scripts/update-data.ts --restore-from -y
 
 Signals (plan stage 8): --signals also writes api/stocks/signals.json after the
 run: preset entries and exits, new and removed flags, status, archetype and large
@@ -1763,7 +1769,8 @@ async function main(): Promise<void> {
   }
   else if (process.argv.includes('--restore-from')) {
     const next = process.argv[process.argv.indexOf('--restore-from') + 1];
-    await restoreFeed(next && !next.startsWith('-') ? next : PUBLISHED_FEED_URL).then((done) => console.log(done
+    const replace = process.argv.some((arg) => arg === '-y' || arg === '--yes');
+    await restoreFeed(next && !next.startsWith('-') ? next : PUBLISHED_FEED_URL, 8, replace).then((done) => console.log(done
       ? `[ restore   ] ${done.companies} companies, ${done.files} files -> ${fileURLToPath(API_ROOT)}`
       : '[ restore   ] no published feed yet (index.json 404): the update starts from an empty state')).catch((error) => { console.error(error instanceof Error ? error.message : String(error)); process.exitCode = 1; });
   }
