@@ -132,6 +132,9 @@ jobs:
   update-data:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    # the only write: --publish pushes dist to the gh-pages branch
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -175,9 +178,9 @@ jobs:
           path: api/stocks
           key: feed-stocks-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: feed-stocks-
-      - name: Download the published api/stocks when the cache is empty
-        if: steps.feed-cache.outputs.cache-matched-key == ''
-        run: bun ./scripts/update-data.ts --restore-from https://daggerok.github.io/Stocks/api/stocks/
+      # the site wins when it is newer than the cache (a local --publish) or the cache is empty
+      - name: Download the published api/stocks when it is newer than the cache
+        run: bun ./scripts/update-data.ts --restore-from https://daggerok.github.io/Stocks/api/stocks/ --if-newer
       - name: Generate api/stocks static data
         run: bun ./scripts/update-data.ts --signals
       - name: Save api/stocks to the Actions cache
@@ -189,43 +192,18 @@ jobs:
           key: feed-stocks-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Build the site with the feed
         run: bun run build-github-pages
-      - name: Refuse a deploy without data
-        run: |
-          bun --eval '
-            const file = "dist/api/stocks/index.json";
-            const rows = (await Bun.file(file).json().catch(() => ({})))?.companies;
-            if (!Array.isArray(rows) || rows.length === 0) { console.error(file + " is missing or lists no companies: not deploying"); process.exit(1); }
-            console.log(file + ": " + rows.length + " companies");
-          '
-      # no actions/configure-pages here: it needs pages permissions this job does not have, and the artifact does not need it
-      - name: Upload the site as a Pages artifact
-        uses: actions/upload-pages-artifact@v5
-        with:
-          path: './dist'
-
-  deploy:
-    needs: update-data
-    runs-on: ubuntu-latest
-    permissions:
-      pages: write
-      id-token: write
-    # one Pages deployment at a time, shared with github-pages.yml
-    concurrency:
-      group: pages
-      cancel-in-progress: false
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v5
+      # GitHub Pages serves the gh-pages branch (Deploy from a branch): --publish refuses an index.json without companies
+      # and force-pushes dist as one parentless commit; the same command publishes a local run without Actions
+      - name: Publish the site to gh-pages
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: bun ./scripts/update-data.ts --publish --no-build
 
   signals-issue:
-    # once a week (the scheduled run, after the deploy so the links show the new data): one issue with the signals of the
+    # once a week (the scheduled run, after the publish so the links show the new data): one issue with the signals of the
     # last 7 days, assigned to the owner so it arrives as a notification; nothing to report opens no issue
     if: github.event_name == 'schedule'
-    needs: [update-data, deploy]
+    needs: update-data
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

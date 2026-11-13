@@ -3,6 +3,9 @@
 /// <reference types="bun" />
 import { appendFile, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { spawnSync } from 'node:child_process';
+import { readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { epsCagr3y, ESTIMATE_METRIC_KEYS, estimateMetrics, parseEstimates, type Estimates } from './metrics/estimates';
 import { capMultiples, FUNDAMENTAL_METRIC_KEYS, fundamentalMetrics, isFinancial, ownEbitdaMetrics, STALE_TTM_MULTIPLE_KEYS, staleAnnualTtm, TTM_AMOUNT_KEYS, ttmAmounts, withSectorExceptions } from './metrics/fundamentals';
 import { HISTORY_METRIC_KEYS, historyMetrics } from './metrics/history';
@@ -1355,17 +1358,21 @@ async function writeFeedFile(file: URL, text: string): Promise<void> {
  * so an interrupted restore can simply be rerun.
  * Returns null when the site has no feed yet (404 on index.json): the next update then runs from an empty state.
  */
-export async function restoreFeed(base: string = PUBLISHED_FEED_URL, concurrency = 8, replace = false): Promise<{ companies: number; files: number } | null> {
+export async function restoreFeed(base: string = PUBLISHED_FEED_URL, concurrency = 8, replace = false, ifNewer = false): Promise<{ companies: number; files: number } | null> {
   const root = base.endsWith('/') ? base : `${base}/`;
-  if (!replace && await readJson(indexFile())) throw new Error(`--restore-from: ${fileURLToPath(indexFile())} exists; add -y (--yes) or remove ${fileURLToPath(API_ROOT)} first to replace the local feed`);
+  const local = await readJson(indexFile());
+  if (!replace && !ifNewer && local) throw new Error(`--restore-from: ${fileURLToPath(indexFile())} exists; add -y (--yes) or remove ${fileURLToPath(API_ROOT)} first to replace the local feed`);
   const indexText = await fetchFeedFile(`${root}index.json`);
   if (indexText === null) return null;
   const companies = JSON.parse(indexText).companies;
   if (!Array.isArray(companies) || !companies.length) throw new Error(`--restore-from: ${root}index.json lists no companies`);
+  // --if-newer: keep a local feed (the Actions cache) unless the site is newer, e.g. after a local `--publish`
+  const localStamp = String(local?.generatedAt ?? '');
+  if (ifNewer && local && localStamp >= String(JSON.parse(indexText).generatedAt ?? '')) return { companies: Array.isArray(local.companies) ? local.companies.length : 0, files: 0 };
   const tickers = companies.map((row: JsonRecord) => String(row?.ticker ?? ''));
   const bad = tickers.filter((t: string) => !RESTORE_TICKER.test(t));
   if (bad.length) throw new Error(`--restore-from: unexpected tickers in the index: ${listNames(bad)}`);
-  if (replace) await rm(API_ROOT, { recursive: true, force: true });
+  if (replace || ifNewer) await rm(API_ROOT, { recursive: true, force: true });
   let files = 0;
   let next = 0;
   const worker = async (): Promise<void> => {
@@ -1396,6 +1403,58 @@ export async function restoreFeed(base: string = PUBLISHED_FEED_URL, concurrency
   if (signalsText !== null) { await writeFeedFile(signalsFile(), signalsText); files += 1; }
   await writeFeedFile(indexFile(), indexText);
   return { companies: tickers.length, files: files + 1 };
+}
+
+export const PAGES_BRANCH = 'gh-pages';
+
+/** Companies an index.json lists; throws when it is missing, broken or empty, so an empty site is never published. */
+export function publishableCompanies(file: string, text: string | null): number {
+  if (text === null) throw new Error(`--publish: ${file} is missing: not publishing (run ./scripts/update-data.ts or --restore-from first)`);
+  let rows: unknown;
+  try { rows = JSON.parse(text)?.companies; } catch { throw new Error(`--publish: ${file} is not valid JSON: not publishing`); }
+  if (!Array.isArray(rows) || rows.length === 0) throw new Error(`--publish: ${file} lists no companies: not publishing`);
+  return rows.length;
+}
+
+/**
+ * --publish [--no-build]: builds the site with the local api/stocks (bun run build-github-pages) and pushes dist to the
+ * gh-pages branch, which GitHub Pages serves (Deploy from a branch); locally no Actions run is needed. The workflows call
+ * it with --no-build after their own build. dist becomes ONE parentless commit (plumbing with its own index inside .git,
+ * no checkout of gh-pages, no clone), force-pushed, so the branch never keeps the history of a 360 MB feed; unchanged
+ * files are the same blobs, a push uploads only what changed. With GITHUB_TOKEN set (Actions) the token goes through a
+ * runtime-only credential helper, never into a URL, a file or the git config.
+ */
+export function publishSite(build = true): { companies: number; commit: string } {
+  const root = fileURLToPath(new URL('../', SCRIPTS_DIR));
+  const git = (args: string[], env: Record<string, string> = {}, inherit = false): string => {
+    const out = spawnSync('git', args, { cwd: root, env: { ...process.env, ...env }, encoding: 'utf8', stdio: inherit ? 'inherit' : ['ignore', 'pipe', 'inherit'], maxBuffer: 1 << 28 });
+    if (out.status !== 0) throw new Error(`--publish: git ${args.filter((a) => !a.startsWith('credential.')).join(' ')} failed with exit code ${out.status}`);
+    return String(out.stdout ?? '').trim();
+  };
+  const readText = (file: string): string | null => { try { return readFileSync(file, 'utf8'); } catch { return null; } };
+  if (build) {
+    const local = fileURLToPath(indexFile());
+    publishableCompanies(local, readText(local));
+    const out = spawnSync('bun', ['run', 'build-github-pages'], { cwd: root, stdio: 'inherit' });
+    if (out.status !== 0) throw new Error(`--publish: bun run build-github-pages failed with exit code ${out.status}`);
+  }
+  const dist = join(root, 'dist');
+  const index = join(dist, 'api', 'stocks', 'index.json');
+  const companies = publishableCompanies(index, readText(index));
+  writeFileSync(join(dist, '.nojekyll'), '');
+  const indexEnv = { GIT_INDEX_FILE: join(git(['rev-parse', '--absolute-git-dir']), 'gh-pages-publish.index') };
+  rmSync(indexEnv.GIT_INDEX_FILE, { force: true });
+  try {
+    git([`--work-tree=${dist}`, 'add', '--all', '--force', '.'], indexEnv);
+    const tree = git(['write-tree'], indexEnv);
+    const bot = process.env.GITHUB_ACTIONS ? ['-c', 'user.name=github-actions[bot]', '-c', 'user.email=41898282+github-actions[bot]@users.noreply.github.com'] : [];
+    const commit = git([...bot, 'commit-tree', tree, '-m', `deploy: site from ${git(['rev-parse', '--short', 'HEAD'])} with ${companies} companies`]);
+    const auth = process.env.GITHUB_TOKEN ? ['-c', 'credential.helper=', '-c', 'credential.helper=!f() { if test "$1" = get; then printf "username=x-access-token\\npassword=%s\\n" "$GITHUB_TOKEN"; fi; }; f'] : [];
+    git([...auth, 'push', '--force', 'origin', `${commit}:refs/heads/${PAGES_BRANCH}`], {}, true);
+    return { companies, commit };
+  } finally {
+    rmSync(indexEnv.GIT_INDEX_FILE, { force: true });
+  }
 }
 
 /** Watchlist tickers: All.txt splits on whitespace, commas and semicolons, All.csv takes the first cell of each row; "NYSE:TTE" and BRK.B work, a header cell is ignored. */
@@ -1700,9 +1759,16 @@ artifact. Restore the published feed into an empty api/stocks (the workflow does
 this when its Actions cache is empty; a local clone needs it once):
   ./scripts/update-data.ts --restore-from [url]
 (default url ${PUBLISHED_FEED_URL}; refuses to overwrite a local index.json).
+--if-newer (workflows, after the Actions cache) replaces it only when the site is newer.
 -y or --yes replaces the local feed: api/stocks is removed once the published
 index.json is fetched and checked, then restored:
   ./scripts/update-data.ts --restore-from -y
+
+Publish: GitHub Pages serves the gh-pages branch. --publish builds the site with
+the local api/stocks and force-pushes dist there as one commit (no Actions run;
+refuses an index.json without companies). The workflows add --no-build:
+  ./scripts/update-data.ts --signals && ./scripts/update-data.ts --publish
+  bun run publish-local
 
 Signals (plan stage 8): --signals also writes api/stocks/signals.json after the
 run: preset entries and exits, new and removed flags, status, archetype and large
@@ -1767,11 +1833,17 @@ async function main(): Promise<void> {
     if (!dir || dir.startsWith('-')) { console.error('usage: ./scripts/update-data.ts --signals-issue <dir> [siteUrl]'); process.exitCode = 2; }
     else await writeSignalsIssue(dir, site && !site.startsWith('-') ? site : PUBLISHED_SITE_URL).catch((error) => { console.error(error instanceof Error ? error.message : String(error)); process.exitCode = 1; });
   }
+  else if (process.argv.includes('--publish')) {
+    try {
+      const done = publishSite(!process.argv.includes('--no-build'));
+      console.log(`[ publish   ] ${PAGES_BRANCH} <- ${done.commit.slice(0, 9)} (${done.companies} companies): ${PUBLISHED_SITE_URL}`);
+    } catch (error) { console.error(error instanceof Error ? error.message : String(error)); process.exitCode = 1; }
+  }
   else if (process.argv.includes('--restore-from')) {
     const next = process.argv[process.argv.indexOf('--restore-from') + 1];
     const replace = process.argv.some((arg) => arg === '-y' || arg === '--yes');
-    await restoreFeed(next && !next.startsWith('-') ? next : PUBLISHED_FEED_URL, 8, replace).then((done) => console.log(done
-      ? `[ restore   ] ${done.companies} companies, ${done.files} files -> ${fileURLToPath(API_ROOT)}`
+    await restoreFeed(next && !next.startsWith('-') ? next : PUBLISHED_FEED_URL, 8, replace, process.argv.includes('--if-newer')).then((done) => console.log(done
+      ? (done.files ? `[ restore   ] ${done.companies} companies, ${done.files} files -> ${fileURLToPath(API_ROOT)}` : `[ restore   ] the local feed (${done.companies} companies) is as new as the site: kept`)
       : '[ restore   ] no published feed yet (index.json 404): the update starts from an empty state')).catch((error) => { console.error(error instanceof Error ? error.message : String(error)); process.exitCode = 1; });
   }
   else await runtimeControls().then((controls) => { installSystemCa(controls.USE_SYSTEM_CA ?? 'auto'); return run(controls, { signals: process.argv.includes('--signals') }); }).catch((error) => { console.error(error instanceof Error ? error.stack : String(error)); process.exitCode = 1; });
