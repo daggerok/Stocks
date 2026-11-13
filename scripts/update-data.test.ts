@@ -9,7 +9,7 @@ import { pathToFileURL } from 'node:url';
 import {
   annualSeries, buildAnnualRows, compactIndexText, completeMetrics, CONTROL_NAMES, dividendMetrics, fundamentalsMetrics, installSystemCa, isCertError, mergeAnnual,
   isOperatingTicker, minusMonths, normalizeTicker, parseChart, periodEve, parseRange, parseRanges, parseRetryAfter, parseSecTickers, parseSummary, parseYahooAnnual, priceReturns, readConfig, resolveControls,
-  indexDocument, parseWatchlist, range52wPosition, pruneCompanies, resolveWatchlist, restoreFeed, run, writeSignalsIssue, runtimeControls, sampleHistory, useApiRoot, useWatchlistDir, valuationMetrics, withMetricKeys, type ChartDay, type Snapshot,
+  indexDocument, parseWatchlist, range52wPosition, pruneCompanies, publishableCompanies, resolveWatchlist, restoreFeed, run, writeSignalsIssue, runtimeControls, sampleHistory, useApiRoot, useWatchlistDir, valuationMetrics, withMetricKeys, type ChartDay, type Snapshot,
   coverageMarkdown, metaText, scaleCheck, FEED_SCHEMA_VERSION, adrCoverage, adrFlag, annualRowsFromSec, FUNDAMENTALS_BASIS, SCALE_TOLERANCE_ANNUAL_PCT, staleForeignLayer,
   restateAnnualEps,
 } from './update-data.ts';
@@ -945,5 +945,23 @@ describe('network 2', () => {
     expect((await readdir(dir)).sort()).not.toContain('index.json');
     site = { ...full, [`${SITE}companies/AAA/meta.json`]: '{"ticker": "AAA", "history": {"pages": ["../../x.json"]}}' };
     await expect(restoreFeed(SITE)).rejects.toThrow('unexpected history pages');
+  });
+
+  test('--publish refuses a missing, broken or empty index.json and counts the companies of a good one', () => {
+    expect(() => publishableCompanies('index.json', null)).toThrow('is missing');
+    expect(() => publishableCompanies('index.json', '{')).toThrow('not valid JSON');
+    expect(() => publishableCompanies('index.json', '{"companies": []}')).toThrow('lists no companies');
+    expect(publishableCompanies('index.json', '{"companies": [{"ticker": "AAA"}, {"ticker": "BBB"}]}')).toBe(2);
+  });
+
+  test('--restore-from --if-newer keeps a local feed as new as the site and replaces an older one', async () => {
+    const newer = (stamp: string) => site[`${SITE}index.json`].replace('{\n', `{\n"generatedAt": "${stamp}",\n`);
+    site = { ...site, [`${SITE}index.json`]: newer('2026-11-13T00:00:00Z') };
+    await writeFile(join(dir, 'index.json'), '{"generatedAt": "2026-11-13T00:00:00Z", "companies": [{"ticker": "OLD"}]}');
+    expect(await restoreFeed(SITE, 2, false, true)).toEqual({ companies: 1, files: 0 });
+    expect(await readFile(join(dir, 'index.json'), 'utf8')).toContain('OLD');
+    await writeFile(join(dir, 'index.json'), '{"generatedAt": "2026-11-12T00:00:00Z", "companies": [{"ticker": "OLD"}]}');
+    expect(await restoreFeed(SITE, 2, false, true)).toEqual({ companies: 2, files: 8 });
+    expect(await readFile(join(dir, 'index.json'), 'utf8')).toContain('BRK-B');
   });
 });

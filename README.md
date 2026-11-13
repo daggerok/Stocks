@@ -61,17 +61,26 @@ Run `./scripts/update-data.ts -h` (or `--help`) to print every configuration var
 
 ### Publishing
 
-The feed is not committed: `api/stocks/` is in `.gitignore` and lives in two places, the published site and the Actions cache. The **Update Stocks data** workflow (weekly and manual)
+GitHub Pages serves the `gh-pages` branch (Settings -> Pages -> Deploy from a branch). `./scripts/update-data.ts --publish` (`bun run publish-local`) builds the site with the local `api/stocks`, refuses an `index.json` that is missing or lists no companies, and force-pushes `dist` to `gh-pages` as one parentless commit (git plumbing with its own index, no checkout of the branch, no clone): the branch never keeps the history of the feed, and unchanged files are the same blobs, so a push uploads only what changed. `--no-build` publishes an existing `dist`
 
-1. restores the previous `api/stocks` from the Actions cache (`feed-stocks-*`), and when there is none downloads the published one with `./scripts/update-data.ts --restore-from`, so the never-shrinking index and the rotation cursor (`update-state.json`) keep working
+Update and publish from your machine, no Actions run needed:
+
+```bash
+./scripts/update-data.ts --signals
+bun run publish-local
+```
+
+The feed is not committed: `api/stocks/` is in `.gitignore` and lives on the site, in the Actions cache and in your local folder. The **Update Stocks data** workflow (weekly and manual)
+
+1. restores the previous `api/stocks` from the Actions cache (`feed-stocks-*`), then `./scripts/update-data.ts --restore-from <site> --if-newer` replaces it with the published feed when the site is newer (a local publish) or the cache is empty, so the never-shrinking index and the rotation cursor (`update-state.json`) keep working
 2. runs the updater as before, then saves `api/stocks` to the cache (also after a partly failed run: every stock is either fully updated or kept)
-3. builds the site (`bun run build-github-pages` copies `api` into `dist`), refuses to deploy when `dist/api/stocks/index.json` is missing or lists no companies, and deploys `dist` as a GitHub Pages artifact
+3. builds the site (`bun run build-github-pages` copies `api` into `dist`) and runs `--publish --no-build` (job permission `contents: write`, the token only in that step)
 
-A code change pushed to `main` (the **GitHub Pages** workflow) restores the feed the same way before it builds, with the same guard, so it never replaces the site with one that has no data. The cache is evicted after 7 days without use; the site is the fallback, so a lost cache costs one download
+A code change pushed to `main` (the **GitHub Pages** workflow) restores the feed the same way before it builds and publishes with the same guard, so it never replaces the site with one that has no data. The cache is evicted after 7 days without use; the site is the fallback, so a lost cache costs one download
 
-Locally the updater still writes to `api/stocks`. `./scripts/update-data.ts --restore-from [url]` fills an empty `api/stocks` from the published feed (or another `.../api/stocks/` URL) and refuses to overwrite a local `index.json`: to start over, add `-y` (`--yes`), which removes `api/stocks` only after the published `index.json` was fetched and checked, or delete `api/stocks` first. A local run is not published; run the workflow for that
+Locally the updater still writes to `api/stocks`. `./scripts/update-data.ts --restore-from [url]` fills an empty `api/stocks` from the published feed (or another `.../api/stocks/` URL) and refuses to overwrite a local `index.json`: to start over, add `-y` (`--yes`), which removes `api/stocks` only after the published `index.json` was fetched and checked, or delete `api/stocks` first
 
-Defaults live in `scripts/update-data.config.json` (every control as a string). An explicitly set environment variable overrides the file, even when it is empty. The **Update Stocks data** GitHub Actions workflow uses the same resolver (`resolveControls` in `scripts/update-data.ts`): individual `workflow_dispatch` inputs are blank by default and inherit the file, and the `advanced` input accepts a JSON object with any control (for example `{"VERBOSE":"true"}`). Precedence: file defaults < advanced JSON < nonblank inputs < protected Actions variable or environment. `SEC_UA` and `USE_SYSTEM_CA` are set through `advanced`, and `SEC_UA` is also taken from the protected `SEC_UA` repository Actions variable when it is nonblank. The workflow always writes to `api/stocks` only and publishes it as a Pages artifact (see [Publishing](#publishing)). All supplied filters use **AND** logic
+Defaults live in `scripts/update-data.config.json` (every control as a string). An explicitly set environment variable overrides the file, even when it is empty. The **Update Stocks data** GitHub Actions workflow uses the same resolver (`resolveControls` in `scripts/update-data.ts`): individual `workflow_dispatch` inputs are blank by default and inherit the file, and the `advanced` input accepts a JSON object with any control (for example `{"VERBOSE":"true"}`). Precedence: file defaults < advanced JSON < nonblank inputs < protected Actions variable or environment. `SEC_UA` and `USE_SYSTEM_CA` are set through `advanced`, and `SEC_UA` is also taken from the protected `SEC_UA` repository Actions variable when it is nonblank. The workflow always writes to `api/stocks` only and publishes it to the `gh-pages` branch (see [Publishing](#publishing)). All supplied filters use **AND** logic
 
 ### Watchlist
 

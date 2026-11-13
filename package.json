@@ -18,7 +18,8 @@
     "logs": "pm2 logs",
     "stop": "pm2 kill",
     "test": "bun test",
-    "update": "bun scripts/update-data.ts"
+    "update": "bun scripts/update-data.ts",
+    "publish-local": "bun scripts/update-data.ts --publish"
   },
   "keywords": [
     "tailwind",
