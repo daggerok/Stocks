@@ -1,8 +1,6 @@
 name: Update Stocks data
 
 on:
-  schedule:
-    - cron: '0 0 * * 0'
   workflow_dispatch:
     inputs:
       max_fetches:
@@ -198,37 +196,3 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: bun ./scripts/update-data.ts --publish --no-build
-
-  signals-issue:
-    # once a week (the scheduled run, after the publish so the links show the new data): one issue with the signals of the
-    # last 7 days, assigned to the owner so it arrives as a notification; nothing to report opens no issue
-    if: github.event_name == 'schedule'
-    needs: update-data
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: read
-      issues: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - name: Setup bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-      - name: Restore api/stocks of this run from the Actions cache
-        uses: actions/cache/restore@v6
-        with:
-          path: api/stocks
-          key: feed-stocks-${{ github.run_id }}-${{ github.run_attempt }}
-          fail-on-cache-miss: true
-      - name: Write the issue text
-        id: issue
-        run: bun ./scripts/update-data.ts --signals-issue "$RUNNER_TEMP/signals-issue" https://daggerok.github.io/Stocks/
-      - name: Open the weekly signals issue
-        if: steps.issue.outputs.count != '0'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh issue create --repo "$GITHUB_REPOSITORY" --title "$(cat "$RUNNER_TEMP/signals-issue/title.txt")" --body-file "$RUNNER_TEMP/signals-issue/body.md" --assignee daggerok
