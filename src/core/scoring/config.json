@@ -204,7 +204,7 @@
       "conditions": [{ "metric": "marketCap", "op": "<", "value": 2000000000, "scope": "absolute", "missing": "fail" }]
     }
   ],
-  "buyRequiresScores": { "minWeight": 0.15 },
+  "buyRequiresScores": { "minWeight": 0.15, "exempt": [{ "score": "safety", "sector": ["Financial Services"] }] },
   "flags": [
     {
       "id": "ni-up-cfo-not",

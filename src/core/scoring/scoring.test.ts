@@ -310,3 +310,42 @@ describe('the shipped config', () => {
     expect(flagTexts(config, r[0], rows[0], 'ru')[0].title).toBe('Нерегулярный дивиденд');
   });
 });
+
+describe('buyRequiresScores.exempt: financials skip the Safety score (owner N46, 2026-11-15)', () => {
+  const config = loadScoringConfig();
+  const cheapKeys = { peg: 1, pegHist: 1, forwardToTtmPe: 1, pePct5y: 50, pFcfPct5y: 50 };
+  const safetyKeys = ['debtToEquity', 'netDebtToEbitda', 'interestCoverage', 'altmanZ', 'piotroskiF', 'niVolatility5y', 'fcfVolatility5y'];
+  // 25 volatile stocks with falling entry metrics; the last one (k = 24) is the best and may lose its cheap or safety metrics, in any sector
+  const build = (lastSector: string, drop: 'safety' | 'cheap' | 'none') => Array.from({ length: 25 }, (_, k) => {
+    const m: M = { volatility1y: 60, pctFrom52wHigh: -k, pctFromAth: -k, range52w: 100 - 4 * k, sigmaFromMean60d: 2 - k / 5, debtToEquity: 3 - k / 10, netDebtToEbitda: 3 - k / 10, interestCoverage: k, altmanZ: 3 + k, piotroskiF: k % 10, niVolatility5y: 50 - k, fcfVolatility5y: 50 - k, roic: k, grossMarginSlope3y: k, operatingMarginSlope3y: k, cfoToNi: k, fcfToNi: k, ...cheapKeys, forwardPe: 30 - k };
+    if (k === 24 && drop === 'safety') safetyKeys.forEach((key) => delete m[key]);
+    if (k === 24 && drop === 'cheap') [...Object.keys(cheapKeys), 'forwardPe'].forEach((key) => delete m[key]);
+    return stock(`V${k}`, m, k === 24 ? lastSector : 'Technology');
+  });
+  const last = (rows: ScreenerRow[], cfg = config) => computeScoring(createUniverse(rows), cfg).rows[24];
+
+  test('the shipped config lists Safety of Financial Services and validates', () => {
+    expect(config.buyRequiresScores?.exempt).toEqual([{ score: 'safety', sector: ['Financial Services'] }]);
+    expect(validateScoringConfig(config)).toEqual([]);
+    expect(validateScoringConfig({ ...config, buyRequiresScores: { minWeight: 0.15, exempt: [{ score: 'nope' as never, sector: ['X'] }] } })).toContain('buyRequiresScores.exempt needs entries of a known score and a non-empty list of sector names');
+    expect(validateScoringConfig({ ...config, buyRequiresScores: { minWeight: 0.15, exempt: [{ score: 'safety', sector: [] }] } })).toContain('buyRequiresScores.exempt needs entries of a known score and a non-empty list of sector names');
+  });
+
+  test('a Financial Services stock with an empty Safety score can be Buy zone; a non-financial one cannot', () => {
+    const fin = last(build('Financial Services', 'safety'));
+    expect([fin.scores.safety, fin.status, fin.missing]).toEqual([null, 'buy', []]);
+    const tech = last(build('Technology', 'safety'));
+    expect([tech.scores.safety, tech.status, tech.missing]).toEqual([null, 'watch', ['safety']]);
+    expect(last(build('Financial Services', 'none')).status).toBe('buy');
+  });
+
+  test('the exemption is only for Safety: a financial volatile stock with an empty Cheap score is still Watch (FUTU-like)', () => {
+    const r = last(build('Financial Services', 'cheap'));
+    expect([r.scores.cheap, r.status, r.missing]).toEqual([null, 'watch', ['cheap']]);
+  });
+
+  test('without the exempt list a Financial Services stock with empty Safety is Watch again', () => {
+    const r = last(build('Financial Services', 'safety'), { ...config, buyRequiresScores: { minWeight: 0.15 } });
+    expect([r.status, r.missing]).toEqual(['watch', ['safety']]);
+  });
+});

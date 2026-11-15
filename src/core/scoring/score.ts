@@ -100,9 +100,13 @@ const passes = (states: Uint8Array, i: number) => states[i] === PASS;
 export const scoreSkipped = (config: ScoringConfig, id: ScoreId, row: ScreenerRow): boolean =>
   config.scores[id].appliesTo.indexOf(row.type) < 0 || (!!config.scores[id].payersOnly && !((numeric(row.metrics.dividendYield) ?? 0) > 0));
 
+/** An empty score that buyRequiresScores.exempt excuses for the sector of this stock (Safety of Financial Services: banks and insurers have no debt metrics) */
+export const scoreExempt = (config: ScoringConfig, id: ScoreId, row: ScreenerRow): boolean =>
+  row.type === 'stock' && !!row.sector && (config.buyRequiresScores?.exempt ?? []).some((e) => e.score === id && e.sector.indexOf(row.sector as string) >= 0);
+
 /** Empty scores whose archetype weight is at least minWeight (buyRequiresScores), heaviest first */
 export function missingScores(config: ScoringConfig, weights: Record<ScoreId, number>, scores: Record<ScoreId, number | null>, row: ScreenerRow, minWeight: number): ScoreId[] {
-  return SCORE_IDS.filter((id) => (weights[id] ?? 0) > 0 && (weights[id] ?? 0) >= minWeight - 1e-9 && scores[id] === null && !scoreSkipped(config, id, row))
+  return SCORE_IDS.filter((id) => (weights[id] ?? 0) > 0 && (weights[id] ?? 0) >= minWeight - 1e-9 && scores[id] === null && !scoreSkipped(config, id, row) && !scoreExempt(config, id, row))
     .sort((x, y) => (weights[y] ?? 0) - (weights[x] ?? 0));
 }
 

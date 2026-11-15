@@ -102,10 +102,13 @@ export type ScoringConfig = {
    * a buy zone needs every score whose archetype weight is at least `minWeight` (a share of the score weights): an empty one makes
    * the row at most Watch and Why names it (owner 2026-11-15). A score that does not apply to the row (Dividend of a non-payer) is skipped
    */
-  buyRequiresScores?: { minWeight: number };
+  buyRequiresScores?: { minWeight: number; exempt?: BuyExemption[] };
   flags: Rule[];
   notes: Note[];
 };
+
+/** An empty `score` of a stock in one of these `sector`s does not count as missing data (owner N46, 2026-11-15: banks and insurers have empty debt metrics by design) */
+export type BuyExemption = { score: ScoreId; sector: string[] };
 
 /** The scoring of one row */
 export type RowScoring = {
