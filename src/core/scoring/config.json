@@ -190,6 +190,15 @@
       "conditions": [{ "metric": "cashRunwayMonths", "op": "<", "value": 12, "scope": "absolute", "missing": "fail" }]
     }
   ],
+  "buyCaps": [
+    {
+      "id": "small-cap",
+      "title": { "en": "Market cap below $2B", "ru": "Капитализация меньше $2 млрд" },
+      "appliesTo": ["stock"],
+      "match": "all",
+      "conditions": [{ "metric": "marketCap", "op": "<", "value": 2000000000, "scope": "absolute", "missing": "fail" }]
+    }
+  ],
   "flags": [
     {
       "id": "ni-up-cfo-not",

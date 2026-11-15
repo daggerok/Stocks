@@ -93,8 +93,8 @@ export function validateScoringConfig(config: ScoringConfig, registry: Registry 
       errors.push(...ruleErrors({ id: 'adjust', title: s.title, appliesTo: s.appliesTo, match: 'all', conditions: [a.when] }, at, registry));
     });
   });
-  (['stopFactors', 'flags'] as const).forEach((key) => {
-    const list = config[key];
+  (['stopFactors', 'buyCaps', 'flags'] as const).forEach((key) => {
+    const list = key === 'buyCaps' ? config.buyCaps ?? [] : config[key];
     if (!Array.isArray(list)) { errors.push(`${key} must be a list`); return; }
     list.forEach((r, i) => { const where = `${key} ${i + 1} (${r && r.id})`; errors.push(...ruleErrors(r, where, registry)); if (r) unique(r.id, where); });
   });

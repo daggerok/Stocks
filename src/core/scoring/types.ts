@@ -94,6 +94,8 @@ export type ScoringConfig = {
   archetypeRules: ArchetypeRule[];
   scores: Record<ScoreId, ScoreDef>;
   stopFactors: Rule[];
+  /** a row that passes any of these rules is at most Watch: a buy zone score becomes Watch (owner answer N19: no buy zone below a $2B market cap) */
+  buyCaps?: Rule[];
   flags: Rule[];
   notes: Note[];
 };
@@ -106,6 +108,8 @@ export type RowScoring = {
   status: Status | null;
   /** ids of the stop factors that fired */
   stops: string[];
+  /** ids of the buy caps that turned a buy zone score into Watch */
+  caps: string[];
   /** ids of the flags that fire */
   flags: string[];
   /** indexes of config.notes whose condition passes */

@@ -14,6 +14,13 @@ const tr = (locale: Locale, key: string, params?: Params): string => format(DICT
 
 const trim = (text: string): string => (text.indexOf('.') >= 0 ? text.replace(/0+$/, '').replace(/\.$/, '') : text);
 
+/** Large dollar amounts as $1.5B, $820M, $2T (market cap of the buy cap) */
+const usdShort = (v: number): string => {
+  const a = Math.abs(v);
+  const [d, s] = a >= 1e12 ? [1e12, 'T'] : a >= 1e9 ? [1e9, 'B'] : [1e6, 'M'];
+  return `${v < 0 ? '-' : ''}$${trim((a / d).toFixed(a / d >= 10 ? 0 : 1))}${s}`;
+};
+
 /** A metric value as the Why column shows it: 85%, 1.25, 7.5, yes */
 export function formatValue(def: MetricDef | undefined, value: unknown, locale: Locale): string {
   if (typeof value === 'boolean') return tr(locale, value ? 'bool.true' : 'bool.false');
@@ -23,6 +30,7 @@ export function formatValue(def: MetricDef | undefined, value: unknown, locale: 
   if (unit === 'percent') return `${trim(v.toFixed(Math.abs(v) >= 10 ? 0 : 1))}%`;
   if (unit === 'pp') return `${trim(v.toFixed(1))} ${tr(locale, 'scoring.pp')}`;
   if (unit === 'count') return trim(v.toFixed(1));
+  if (unit === 'usd' && Math.abs(v) >= 1e6) return usdShort(v);
   return trim(v.toFixed(2));
 }
 
@@ -31,7 +39,8 @@ export function conditionText(condition: Condition, row: ScreenerRow, locale: Lo
   if (['>', '>=', '<', '<='].indexOf(condition.op) < 0) return '';
   const def = registry.byId[condition.metric];
   const name = def ? pick(def.name, locale) : condition.metric;
-  return `${name} ${formatValue(def, fieldValue(row, condition.metric), locale)} ${condition.op} ${condition.value}`;
+  const threshold = def && def.unit === 'usd' ? formatValue(def, condition.value, locale) : String(condition.value);
+  return `${name} ${formatValue(def, fieldValue(row, condition.metric), locale)} ${condition.op} ${threshold}`;
 }
 
 /** A rule title with `{metricId}` placeholders filled from the row: "Large change of {balanceYoyMaxLine} in a year" -> "... of debt ..." */
@@ -62,6 +71,13 @@ export function whyParts(config: ScoringConfig, scoring: RowScoring, row: Screen
       if (rule) parts.push(tr(locale, 'scoring.why.stop', { reason: ruleText(rule, row, locale, registry) }));
     });
   } else if (scoring.statusScore === null || !a) parts.push(tr(locale, 'scoring.why.none'));
+  else if (scoring.caps && scoring.caps.length) {
+    parts.push(tr(locale, 'scoring.why.buy', { score: scoring.statusScore, buy: a.buy, reject: a.reject }));
+    scoring.caps.forEach((id) => {
+      const rule = (config.buyCaps ?? []).filter((r) => r.id === id)[0];
+      if (rule) parts.push(tr(locale, 'scoring.why.cap', { reason: ruleText(rule, row, locale, registry) }));
+    });
+  }
   else parts.push(tr(locale, `scoring.why.${scoring.status}`, { score: scoring.statusScore, buy: a.buy, reject: a.reject }));
   scoring.notes.forEach((k) => {
     const note = config.notes[k];

@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "id": "quality-on-sale",
+  "title": {
+    "en": "Quality on sale",
+    "ru": "Качество со скидкой"
+  },
+  "description": {
+    "en": "A strong business after a price drop: Quality and Safety scores of 55 or more, the price 15% or more below its 52-week high, a market cap of $10B or more and a status of Buy zone or Watch (no stop factor, not rejected). The drop is measured in absolute terms, so a falling market does not hide it the way the sector-relative Entry score does",
+    "ru": "Сильный бизнес после падения цены: оценки «Качественно» и «Безопасно» от 55, цена ниже годового максимума на 15% и больше, капитализация от $10 млрд и статус «Зона покупки» или «Наблюдать» (без стоп-фактора, не отклонена). Падение считается в абсолютных процентах, поэтому общее падение рынка не прячет его, как прячет оценку «Точка входа», которая сравнивает бумагу с сектором"
+  },
+  "appliesTo": [
+    "stock"
+  ],
+  "match": "all",
+  "conditions": [
+    {
+      "metric": "scoreQuality",
+      "op": ">=",
+      "value": 55,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "scoreSafety",
+      "op": ">=",
+      "value": 55,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "pctFrom52wHigh",
+      "op": "<=",
+      "value": -15,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "marketCap",
+      "op": ">=",
+      "value": 10000000000,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "status",
+      "op": "in",
+      "value": [
+        "buy",
+        "watch"
+      ],
+      "scope": "absolute",
+      "missing": "fail"
+    }
+  ]
+}

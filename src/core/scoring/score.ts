@@ -167,6 +167,7 @@ export function computeScoring(universe: Universe, config: ScoringConfig): Scori
   // 3. stop factors, flags and notes
   const stopPass: Record<string, Uint8Array> = {};
   config.stopFactors.filter((r) => r.enabled !== false).forEach((r) => { stopPass[r.id] = rulePass(universe, r); });
+  const capPass = (config.buyCaps ?? []).filter((r) => r.enabled !== false).map((r) => ({ id: r.id, pass: rulePass(universe, r) }));
   const flagPass = config.flags.filter((r) => r.enabled !== false).map((r) => ({ id: r.id, pass: rulePass(universe, r) }));
   const noteStates = config.notes.map((note) => evaluateCondition(universe, note.condition).states);
 
@@ -190,13 +191,15 @@ export function computeScoring(universe: Universe, config: ScoringConfig): Scori
     let status: Status | null = null;
     if (stops.length) status = 'rejected';
     else if (statusScore !== null) status = statusScore >= a.buy ? 'buy' : statusScore < a.reject ? 'rejected' : 'watch';
+    const caps = status === 'buy' ? capPass.filter((c) => c.pass[i] === 1).map((c) => c.id) : [];
+    if (caps.length) status = 'watch';
     const notes: number[] = [];
     config.notes.forEach((note, k) => {
       if (note.archetypes && note.archetypes.indexOf(archetype[i]) < 0) return;
       if (passes(noteStates[k], i)) notes.push(k);
     });
     out[i] = {
-      archetype: archetype[i], scores: rowScores, statusScore, status, stops,
+      archetype: archetype[i], scores: rowScores, statusScore, status, stops, caps,
       flags: flagPass.filter((f) => f.pass[i] === 1).map((f) => f.id), notes, adjusted: adjusted[i],
     };
   }
