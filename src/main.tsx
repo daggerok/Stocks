@@ -5148,7 +5148,7 @@ function chipHtml(p: Preset, results: Record<string, PresetResult>, own: OwnEntr
   const tip = t('screener.chip.tip', { title, count: count === null ? DASH : count.toLocaleString('en-US') });
   const open = scr.expanded === p.id;
   return `<span class="scr-chip${mode === 'in' ? ' is-in' : mode === 'out' ? ' is-out' : ''}${open ? ' is-open' : ''}${p.refine ? ' is-refine' : ''}" data-chip="${escapeHtml(p.id)}">`
-    + `<button type="button" class="scr-chip-main" data-act="chip" data-id="${escapeHtml(p.id)}" aria-pressed="${mode === 'in'}" title="${escapeHtml(tip)}">${mode === 'out' ? '¬ ' : ''}${escapeHtml(title)}${scr.drafts[p.id] ? `<span class="scr-edited" title="${escapeHtml(t('screener.chip.changed'))}">*</span>` : ''}${count === null ? '' : `<span class="scr-count">${count.toLocaleString('en-US')}</span>`}${own && !own.exported ? `<span class="scr-dot" title="${escapeHtml(t('screener.notExported.tip'))}"></span>` : ''}</button>`
+    + `<button type="button" class="scr-chip-main" data-act="chip" data-id="${escapeHtml(p.id)}" aria-pressed="${mode === 'in'}" title="${escapeHtml(tip)}"><span class="scr-chip-title">${mode === 'out' ? '¬ ' : ''}${escapeHtml(title)}</span>${scr.drafts[p.id] ? `<span class="scr-edited" title="${escapeHtml(t('screener.chip.changed'))}">*</span>` : ''}${count === null ? '' : `<span class="scr-count">${count.toLocaleString('en-US')}</span>`}${own && !own.exported ? `<span class="scr-dot" title="${escapeHtml(t('screener.notExported.tip'))}"></span>` : ''}</button>`
     + `<button type="button" class="scr-chip-btn" data-act="not" data-id="${escapeHtml(p.id)}" aria-pressed="${mode === 'out'}" title="${escapeHtml(t('screener.chip.exclude'))}" aria-label="${escapeHtml(`${t('screener.chip.exclude')}: ${title}`)}">¬</button>`
     + `<button type="button" class="scr-chip-btn" data-act="expand" data-id="${escapeHtml(p.id)}" aria-expanded="${open}" title="${escapeHtml(t('screener.chip.edit'))}" aria-label="${escapeHtml(`${t('screener.chip.edit')}: ${title}`)}">▾</button></span>`;
 }
@@ -5165,7 +5165,7 @@ function screenerStatusText(): string {
 
 function renderScreenerStatus(): void {
   const node = document.getElementById('scr-status');
-  if (node) node.textContent = screenerStatusText();
+  if (node) { node.textContent = screenerStatusText(); node.setAttribute('title', node.textContent); }
 }
 
 function metricDatalistHtml(): string {
@@ -5182,7 +5182,7 @@ function renderScreener(): void {
   if (!panel) return;
   const results = presetResults();
   const owns = ownEntries();
-  const seg = (items: Array<{ value: string; label: string; on: boolean; act: string; tip: string }>) => `<div class="scr-seg" role="group">${items.map(item => `<button type="button" data-act="${item.act}" data-value="${item.value}" aria-pressed="${item.on}" title="${escapeHtml(item.tip)}">${escapeHtml(item.label)}</button>`).join('')}</div>`;
+  const seg = (items: Array<{ value: string; label: string; on: boolean; act: string; tip: string }>) => `<div class="scr-seg scr-seg-${items[0] ? items[0].act : ''}" role="group">${items.map(item => `<button type="button" data-act="${item.act}" data-value="${item.value}" aria-pressed="${item.on}" title="${escapeHtml(item.tip)}">${escapeHtml(item.label)}</button>`).join('')}</div>`;
   const typeSeg = seg(TYPE_FILTERS.map(type => ({ value: type, label: t(type === 'stock' ? 'type.stocks' : type === 'etf' ? 'type.etfs' : 'type.all'), on: scr.type === type, act: 'type', tip: t('type.tip') })));
   const combineSeg = seg([false, true].map(any => ({ value: String(any), label: t(any ? 'screener.combine.any' : 'screener.combine.all'), on: scr.any === any, act: 'any', tip: t('screener.combine.tip') })));
   const main = scr.base.filter(p => !p.refine).map(p => chipHtml(scr.drafts[p.id] || p, results, null)).join('');
@@ -5190,20 +5190,21 @@ function renderScreener(): void {
   const own = owns.map(entry => chipHtml(scr.drafts[entry.preset.id] || entry.preset, results, entry)).join('');
   const loading = scr.status === 'loading' ? `<span class="scr-muted">${escapeHtml(t('screener.loading'))}</span>` : scr.status === 'failed' ? `<span class="scr-error">${escapeHtml(t('screener.unavailablePresets', { error: scr.error }))}</span>` : '';
   const chosen = Object.keys(scr.chips).length;
+  // language-stable layout (owner 2026-11-14): a head row of fixed-width controls, then the chips in grids of equal cells, so EN and RU wrap the same
   panel.innerHTML = `<div class="scr-bar">
       <span class="scr-label">${escapeHtml(t('screener.title'))}</span>
       ${typeSeg}${combineSeg}
-      <div class="scr-chips">${loading}${main}</div>
-      ${refine ? `<span class="scr-sep" title="${escapeHtml(t('screener.refine.tip'))}">${escapeHtml(t('screener.refine'))}</span><div class="scr-chips">${refine}</div>` : ''}
-      ${own ? `<span class="scr-sep">${escapeHtml(t('screener.own'))}</span><div class="scr-chips">${own}</div>` : ''}
+      <span id="scr-status" class="scr-muted" aria-live="polite" title="${escapeHtml(screenerStatusText())}">${escapeHtml(screenerStatusText())}</span>
       <span class="scr-tools">
         ${chosen ? `<button type="button" class="dd-act" data-act="clear" title="${escapeHtml(t('screener.clear.tip'))}">${escapeHtml(t('screener.clear'))}</button>` : ''}
         <button type="button" class="dd-act" data-act="peers" aria-expanded="${scr.peersOpen}" title="${escapeHtml(t('peers.button.tip'))}">${escapeHtml(t('peers.button'))} (${Object.keys(scr.peers).length})${peersAreExported() ? '' : '<span class="scr-dot"></span>'}</button>
         <label class="dd-act scr-import" title="${escapeHtml(t('screener.import.tip'))}">${escapeHtml(t('screener.import'))}<input type="file" id="scr-import-input" accept=".json,application/json" multiple hidden /></label>
       </span>
-      <span id="scr-status" class="scr-muted" aria-live="polite">${escapeHtml(screenerStatusText())}</span>
     </div>
-    ${!chosen && !scr.expanded && scr.status === 'ready' ? `<p class="scr-hint">${escapeHtml(t('screener.none'))}</p>` : ''}
+    <div class="scr-chips">${loading}${main}</div>
+    ${refine ? `<div class="scr-chips scr-chips-sep"><span class="scr-sep" title="${escapeHtml(t('screener.refine.tip'))}">${escapeHtml(t('screener.refine'))}</span>${refine}</div>` : ''}
+    ${own ? `<div class="scr-chips scr-chips-sep"><span class="scr-sep" title="${escapeHtml(t('screener.own'))}">${escapeHtml(t('screener.own'))}</span>${own}</div>` : ''}
+    ${!chosen && !scr.expanded && scr.status === 'ready' ? `<p class="scr-hint" title="${escapeHtml(t('screener.none'))}">${escapeHtml(t('screener.none'))}</p>` : ''}
     ${scr.peersOpen ? peersPanelHtml() : ''}
     ${scr.expanded && effectivePreset(scr.expanded) ? editorHtml(scr.expanded) + metricDatalistHtml() : ''}`;
 }

@@ -579,3 +579,55 @@
 .dark .tp-axis{stroke:#475569}
 .tp-table th.tp-num{text-align:right}
 #tp-tam-table,#tp-scenarios{width:auto;min-width:min(36rem,100%)}
+
+/* Language-stable layout (owner 2026-11-14): every control of the top panel, the toolbar and the screener head has a fixed width
+   sized for the longer of the EN and RU texts, and the chips sit in grids of equal cells, so switching the language never moves,
+   resizes or rewraps anything; a text that does not fit is cut with an ellipsis and stays in the tooltip.
+   Checked by .claude/tools/etfs/ui-std/stocks-layout-uitest.ts at 1440 and 390 px */
+#selected-tabs-bar>*{width:8rem;padding-left:.75rem;padding-right:.75rem;overflow:hidden;text-overflow:ellipsis;text-align:center}
+#ticker-count{width:8rem;text-align:center;overflow:hidden;text-overflow:ellipsis}
+#signals-btn,#guide-btn{width:5.75rem;text-align:center;overflow:hidden;text-overflow:ellipsis}
+#tabs-bar{width:10.5rem}
+#tabs-bar>div{width:100%;min-width:0}
+#tabs-bar>div>button{flex:1 1 0;min-width:0;overflow:hidden;text-overflow:ellipsis;text-align:left}
+#toolbar-panel .dd-trigger{flex:none}
+#toolbar-panel .dd-trigger .dd-value{flex:1 1 auto;max-width:none;text-align:left}
+#exchange-btn,#sector-btn{width:10.75rem}
+#columns-btn{width:12rem}
+#filters-btn{width:8rem}
+#rank-btn{width:8.25rem}
+#clear-filters-btn{width:8.5rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#stale-control{width:15.5rem;flex:none}
+#stale-control>*{flex:none}
+#stale-control>span:first-of-type{flex:1 1 0;min-width:0;overflow:hidden;text-overflow:ellipsis}
+#stale-control>span:last-of-type{width:1.5rem}
+#copy-btn{width:10.25rem}
+#export-csv-btn,#export-txt-btn{width:7.25rem}
+#reset-btn{width:6rem}
+#blacklist-btn{width:8.5rem}
+#copy-btn,#export-csv-btn,#export-txt-btn,#reset-btn,#blacklist-btn{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.scr-label{width:5.5rem;flex:none}
+.scr-seg{flex:none}
+.scr-seg button{width:4.5rem;text-align:center}
+.scr-seg-any button{width:5.75rem}
+#scr-status{flex:1 1 0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.scr-tools{flex:none}
+.scr-tools>[data-act="clear"]{width:7.5rem}
+.scr-tools>[data-act="peers"]{width:9rem}
+.scr-tools>.scr-import{width:5.5rem}
+.scr-tools>*{text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.scr-chips{display:grid;grid-template-columns:repeat(auto-fill,minmax(15rem,1fr));gap:.375rem;margin-top:.5rem}
+.scr-chips-sep{grid-template-columns:2.25rem repeat(auto-fill,minmax(15rem,1fr))}
+.scr-chips-sep>.scr-sep{align-self:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.scr-chip{min-width:0}
+.scr-chip-main{flex:1 1 auto;min-width:0}
+.scr-chip-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.scr-chip-main .scr-count{margin-left:auto}
+.scr-hint{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* phone: the count chip, language, Signals, Guide and theme do not fit one row of the top panel; they wrap to the right instead of poking out */
+@media (max-width:639.98px){#top-actions{flex-wrap:wrap;justify-content:flex-end;flex-shrink:1;min-width:0;max-width:100%;row-gap:.5rem}}
+/* ticker page head: the title and the close button on the first row, the section tabs in one scrolling row under them, so the head keeps one height in EN and RU and on a phone */
+.tp-card .guide-head{display:grid;grid-template-columns:minmax(0,1fr) auto;row-gap:.6rem}
+.tp-card .guide-head h2{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tp-card .guide-head .guide-close{grid-column:2;grid-row:1}
+.tp-card .tp-tabs{grid-column:1/-1;grid-row:2;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:thin;padding-bottom:.15rem}
