@@ -55,6 +55,8 @@ export function validateScoringConfig(config: ScoringConfig, registry: Registry 
   if (!isNum(config.whyLimit) || config.whyLimit < 1) errors.push('whyLimit must be a number >= 1');
   const req = config.buyRequiresScores;
   if (req !== undefined && (!req || typeof req !== 'object' || !isNum(req.minWeight) || req.minWeight <= 0 || req.minWeight > 1)) errors.push('buyRequiresScores.minWeight must be above 0 and at most 1');
+  const exempt = req && typeof req === 'object' ? req.exempt : undefined;
+  if (exempt !== undefined && (!Array.isArray(exempt) || !exempt.every((e) => e && SCORE_IDS.indexOf(e.score) >= 0 && Array.isArray(e.sector) && e.sector.length > 0 && e.sector.every((s) => typeof s === 'string' && !!s.trim())))) errors.push('buyRequiresScores.exempt needs entries of a known score and a non-empty list of sector names');
   const archetypes = config.archetypes && typeof config.archetypes === 'object' ? Object.keys(config.archetypes) : [];
   if (!archetypes.length) errors.push('no archetypes');
   if (archetypes.indexOf(config.defaultArchetype) < 0) errors.push(`defaultArchetype ${config.defaultArchetype} is not an archetype`);
