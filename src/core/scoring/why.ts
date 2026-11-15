@@ -8,7 +8,8 @@ import { REGISTRY, type Registry } from '../metrics';
 import type { MetricDef } from '../metrics/types';
 import { fieldValue, numeric } from '../screener/engine';
 import type { Condition, ScreenerRow } from '../screener/types';
-import type { Rule, RowScoring, ScoringConfig, Status } from './types';
+import { scoreSkipped } from './score';
+import { type Rule, type RowScoring, SCORE_IDS, type ScoreId, type ScoringConfig, type Status } from './types';
 
 const tr = (locale: Locale, key: string, params?: Params): string => format(DICTIONARIES[locale]?.[key] ?? DICTIONARIES.en[key] ?? key, params);
 
@@ -61,6 +62,40 @@ export const archetypeText = (config: ScoringConfig, archetype: string, locale: 
   return a ? pick(a.title, locale) : archetype;
 };
 
+/** "no data for the Cheap score": the score's noData text of the config, else the generic one with its title */
+export const noDataText = (config: ScoringConfig, id: ScoreId, locale: Locale): string => {
+  const def = config.scores[id];
+  return def && def.noData ? pick(def.noData, locale) : tr(locale, 'scoring.why.noData', { score: def ? pick(def.title, locale) : id });
+};
+
+const pctText = (share: number): string => `${trim((share * 100).toFixed(share * 100 >= 10 || Number.isInteger(share * 100) ? 0 : 1))}%`;
+
+/**
+ * Tooltip of the Total score cell: each score that counts times its archetype weight, heaviest first, and the total.
+ * "Growth: quality 66 × 35% + entry point 53 × 30% + cheap 86 × 20% + safety 62 × 15% = 65". An empty score is listed as
+ * "no data" (a non-payer's Dividend as "no dividend") and the scaling of the other weights is spelled out on a second line
+ */
+export function totalScoreText(config: ScoringConfig, scoring: RowScoring, row: ScreenerRow, locale: Locale): string {
+  const a = config.archetypes[scoring.archetype];
+  if (!a) return '';
+  const ids = SCORE_IDS.filter((id) => (a.scoreWeights[id] ?? 0) > 0 && config.scores[id].appliesTo.indexOf(row.type) >= 0)
+    .sort((x, y) => a.scoreWeights[y] - a.scoreWeights[x] || SCORE_IDS.indexOf(x) - SCORE_IDS.indexOf(y));
+  if (!ids.length) return '';
+  const total = ids.reduce((s, id) => s + a.scoreWeights[id], 0);
+  const name = (id: ScoreId) => pick(config.scores[id].title, locale).toLocaleLowerCase(locale);
+  const empty = ids.filter((id) => scoring.scores[id] === null);
+  const terms = ids.map((id) => {
+    const v = scoring.scores[id];
+    const value = v !== null ? String(v) : tr(locale, scoreSkipped(config, id, row) ? 'scoring.total.noDividend' : 'scoring.total.noData');
+    return `${name(id)} ${value} × ${pctText(a.scoreWeights[id] / total)}`;
+  });
+  const head = `${archetypeText(config, scoring.archetype, locale)}: ${terms.join(' + ')}`;
+  const share = ids.filter((id) => scoring.scores[id] !== null).reduce((s, id) => s + a.scoreWeights[id], 0) / total;
+  if (scoring.statusScore === null) return `${head}\n${tr(locale, 'scoring.total.none', { share: pctText(share), min: pctText(config.minWeightShare) })}`;
+  if (!empty.length) return `${head} = ${scoring.statusScore}`;
+  return `${head}\n= ${Math.round(scoring.statusScore * share)} / ${pctText(share)} = ${scoring.statusScore}\n${tr(locale, 'scoring.total.scaled', { missing: empty.map(name).join(', '), share: pctText(share) })}`;
+}
+
 /** The reasons of the Why column in order, at most config.whyLimit */
 export function whyParts(config: ScoringConfig, scoring: RowScoring, row: ScreenerRow, locale: Locale, registry: Registry = REGISTRY): string[] {
   const parts: string[] = [archetypeText(config, scoring.archetype, locale)];
@@ -71,9 +106,10 @@ export function whyParts(config: ScoringConfig, scoring: RowScoring, row: Screen
       if (rule) parts.push(tr(locale, 'scoring.why.stop', { reason: ruleText(rule, row, locale, registry) }));
     });
   } else if (scoring.statusScore === null || !a) parts.push(tr(locale, 'scoring.why.none'));
-  else if (scoring.caps && scoring.caps.length) {
+  else if ((scoring.caps && scoring.caps.length) || (scoring.missing && scoring.missing.length)) {
     parts.push(tr(locale, 'scoring.why.buy', { score: scoring.statusScore, buy: a.buy, reject: a.reject }));
-    scoring.caps.forEach((id) => {
+    (scoring.missing ?? []).forEach((id) => parts.push(tr(locale, 'scoring.why.cap', { reason: noDataText(config, id, locale) })));
+    (scoring.caps ?? []).forEach((id) => {
       const rule = (config.buyCaps ?? []).filter((r) => r.id === id)[0];
       if (rule) parts.push(tr(locale, 'scoring.why.cap', { reason: ruleText(rule, row, locale, registry) }));
     });

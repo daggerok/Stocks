@@ -1207,13 +1207,13 @@ const SCORES: MetricDef[] = SCORE_SPECS.map(([id, en, ru, appliesTo, formula, gu
 const SCORE_OUTPUTS: MetricDef[] = [
   ...SCORES,
   scoring({
-    id: 'statusScore', name: { en: 'Status score', ru: 'Итоговая оценка' }, formula: 'weighted mean of the five scores with the score weights of the archetype; compared with the buy and reject thresholds of the archetype',
+    id: 'statusScore', name: { en: 'Total score', ru: 'Итоговая оценка' }, formula: 'weighted mean of the five scores with the score weights of the archetype; compared with the buy and reject thresholds of the archetype',
     unit: 'count', basis: 'snapshot', source: 'computed', direction: 'higher-is-better', appliesTo: BOTH,
     nullWhen: { en: 'less than half of the weight of the scores that apply to the row has a value', ru: 'значения есть меньше чем у половины веса оценок, относящихся к строке' },
     short: { en: 'Weighted sum of the five scores behind the status', ru: 'Взвешенная сумма пяти оценок, по которой ставится статус' },
     guide: {
-      en: 'The five scores combined with the score weights of the row\'s archetype: a stable stock leans on Safety and Cheap, a growing one on Quality, a volatile one on Entry point. Empty scores are left out and the weights of the rest are scaled up, as long as at least half of the weight is present. The status compares this number with the thresholds of the archetype',
-      ru: 'Пять оценок, сложенные с весами архетипа строки: у стабильной бумаги главный вес у «Безопасно» и «Дёшево», у растущей - у «Качественно», у волатильной - у «Точки входа». Пустые оценки не участвуют, веса остальных растягиваются, пока есть хотя бы половина веса. Статус сравнивает это число с порогами архетипа',
+      en: 'The five scores combined with the score weights of the row\'s archetype: a stable stock leans on Safety and Cheap, a growing one on Quality, a volatile one on Entry point. Empty scores are left out and the weights of the rest are scaled up, as long as at least half of the weight is present. The status compares this number with the thresholds of the archetype. Hover the cell for the sum: each score times its weight, an empty score as no data and the scaling of the other weights',
+      ru: 'Пять оценок, сложенные с весами архетипа строки: у стабильной бумаги главный вес у «Безопасно» и «Дёшево», у растущей - у «Качественно», у волатильной - у «Точки входа». Пустые оценки не участвуют, веса остальных растягиваются, пока есть хотя бы половина веса. Статус сравнивает это число с порогами архетипа. Подсказка ячейки показывает сумму: каждая оценка на свой вес, пустая - как «нет данных», и растяжение остальных весов',
     },
   }),
   scoring({
@@ -1226,13 +1226,13 @@ const SCORE_OUTPUTS: MetricDef[] = [
     },
   }),
   scoring({
-    id: 'status', name: { en: 'Status', ru: 'Статус' }, formula: 'rejected when a stop factor of the archetype fires, else buy when statusScore >= buy threshold, rejected when below the reject threshold, otherwise watch; a buy becomes watch when a buy cap holds (market cap below $2B)',
+    id: 'status', name: { en: 'Status', ru: 'Статус' }, formula: 'rejected when a stop factor of the archetype fires, else buy when statusScore >= buy threshold, rejected when below the reject threshold, otherwise watch; a buy becomes watch when a buy cap holds (market cap below $2B) or a score of buyRequiresScores weight is empty',
     unit: 'category', basis: 'snapshot', source: 'computed', direction: 'neutral', appliesTo: BOTH,
     nullWhen: { en: 'statusScore is empty and no stop factor fired', ru: 'итоговая оценка пуста и стоп-фактор не сработал' },
     short: { en: 'Buy zone, Watch or Rejected', ru: 'Зона покупки, Наблюдать или Отклонено' },
     guide: {
-      en: 'Buy zone, Watch or Rejected (values buy, watch, rejected for presets). A stop factor of the archetype rejects the row whatever the scores say: Altman Z in the distress zone or negative free cash flow three years in a row for stable stocks, less than 12 months of cash for growing ones, Altman distress for volatile ones. Otherwise the status score decides against the thresholds of the archetype. A stock with a market cap below $2B is at most Watch, however high its score (buy cap small-cap in the config). The Why column says which rule decided',
-      ru: 'Зона покупки, Наблюдать или Отклонено (в пресетах - значения buy, watch, rejected). Стоп-фактор архетипа отклоняет строку при любых оценках: Altman Z в зоне дистресса или отрицательный свободный поток три года подряд у стабильных, кэша меньше чем на 12 месяцев у растущих, дистресс по Altman у волатильных. Иначе решает итоговая оценка против порогов архетипа. Бумага с капитализацией меньше $2 млрд получает не выше «Наблюдать», какой бы высокой ни была оценка (ограничение small-cap в конфиге). Колонка «Почему» говорит, какое правило сработало',
+      en: 'Buy zone, Watch or Rejected (values buy, watch, rejected for presets). A stop factor of the archetype rejects the row whatever the scores say: Altman Z in the distress zone or negative free cash flow three years in a row for stable stocks, less than 12 months of cash for growing ones, Altman distress for volatile ones. Otherwise the status score decides against the thresholds of the archetype. A stock with a market cap below $2B is at most Watch, however high its score (buy cap small-cap in the config), and so is a row whose score of 15% weight or more is empty (buyRequiresScores in the config: no data for the Cheap score). The Why column says which rule decided',
+      ru: 'Зона покупки, Наблюдать или Отклонено (в пресетах - значения buy, watch, rejected). Стоп-фактор архетипа отклоняет строку при любых оценках: Altman Z в зоне дистресса или отрицательный свободный поток три года подряд у стабильных, кэша меньше чем на 12 месяцев у растущих, дистресс по Altman у волатильных. Иначе решает итоговая оценка против порогов архетипа. Бумага с капитализацией меньше $2 млрд получает не выше «Наблюдать», какой бы высокой ни была оценка (ограничение small-cap в конфиге), как и строка, у которой пуста оценка с весом от 15% (buyRequiresScores в конфиге: нет данных для оценки дешевизны). Колонка «Почему» говорит, какое правило сработало',
     },
   }),
   scoring({
@@ -1283,6 +1283,16 @@ const SCORE_INPUTS: MetricDef[] = [
     guide: {
       en: 'True when the dividend per share of a calendar year fell more than 10% below its base year (the year before, or the one before a special dividend) and the next year did not return to the base, so a December payment moved into January is not a cut. A suspension is a cut. The last complete year has no next year yet and can show a shifted payment as a cut; check recentDividends then. Drops under 10% (rounding, currency of ADRs) are ignored',
       ru: 'Истина, если дивиденд на акцию календарного года упал больше чем на 10% ниже базового года (предыдущего или года перед спецдивидендом), а следующий год не вернулся к базе, поэтому платёж, сдвинутый с декабря на январь, - не сокращение. Приостановка - сокращение. У последнего полного года следующего ещё нет, и сдвинутый платёж может выглядеть сокращением; тогда смотрите recentDividends. Падения меньше 10% (округление, валюта ADR) не учитываются',
+    },
+  }),
+  def({
+    id: 'dividendIrregular', name: { en: 'Irregular dividend', ru: 'Нерегулярный дивиденд' }, formula: 'true when, among the current calendar year and the 5 complete years before it, a year without any payment lies between two years with payments (market.annualDps)',
+    unit: 'flag', basis: 'calendar-year', source: 'yahoo-chart', direction: 'neutral',
+    nullWhen: { en: 'no dividend in the current calendar year and the 5 before it', ru: 'нет дивидендов в текущем календарном году и 5 годах до него' },
+    short: { en: 'Special or one-off payments with a gap year between them', ru: 'Разовые или специальные выплаты с пустым годом между ними' },
+    guide: {
+      en: 'True when the payments are irregular: in the window of the current calendar year and the 5 complete years before it there is a year without any payment between two years with payments (FUTU paid $2.00 in December 2024, nothing in 2025 and $2.60 in April 2026). Such a dividend yield is not a promise of the next payment. A regular payer, also one paying once a year, is false; a dividend that stopped or just started is false too (a stop shows in dividendCut10y). The flag Irregular dividend of the scoring config reads it; the refinement "and Pays a dividend" keeps these stocks',
+      ru: 'Истина, если выплаты нерегулярные: в окне из текущего календарного года и 5 полных лет до него есть год без выплат между двумя годами с выплатами (FUTU заплатил $2,00 в декабре 2024, ничего в 2025 и $2,60 в апреле 2026). Такая дивидендная доходность не обещает следующей выплаты. Регулярный плательщик, в том числе раз в год, - ложь; прекращённый или только начатый дивиденд - тоже ложь (прекращение видно в dividendCut10y). Его читает флаг «Нерегулярный дивиденд» конфига оценок; уточнение «и Платят дивиденд» такие бумаги оставляет',
     },
   }),
   def({

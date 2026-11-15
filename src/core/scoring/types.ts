@@ -43,6 +43,8 @@ export type ScoreDef = {
   /** only rows with dividendYield > 0 get the score */
   payersOnly?: boolean;
   items: ScoreItem[];
+  /** Why text when the score is empty and keeps a row out of the buy zone (buyRequiresScores): "no data for the Cheap score" */
+  noData?: Text;
   /** the score is multiplied by `factor` when the condition passes (Entry point: EPS estimates cut) */
   adjust?: ScoreAdjust[];
 };
@@ -67,9 +69,9 @@ export type ArchetypeRule = Rule & { archetype: string };
 
 export type ArchetypeDef = {
   title: Text;
-  /** weights of the five scores in the status score */
+  /** weights of the five scores in the total score (statusScore) */
   scoreWeights: Record<ScoreId, number>;
-  /** statusScore >= buy -> buy zone; < reject -> rejected; else watch */
+  /** statusScore (the total score) >= buy -> buy zone; < reject -> rejected; else watch */
   buy: number;
   reject: number;
   /** ids of `stopFactors` that reject a row of this archetype */
@@ -96,6 +98,11 @@ export type ScoringConfig = {
   stopFactors: Rule[];
   /** a row that passes any of these rules is at most Watch: a buy zone score becomes Watch (owner answer N19: no buy zone below a $2B market cap) */
   buyCaps?: Rule[];
+  /**
+   * a buy zone needs every score whose archetype weight is at least `minWeight` (a share of the score weights): an empty one makes
+   * the row at most Watch and Why names it (owner 2026-11-15). A score that does not apply to the row (Dividend of a non-payer) is skipped
+   */
+  buyRequiresScores?: { minWeight: number };
   flags: Rule[];
   notes: Note[];
 };
@@ -110,6 +117,8 @@ export type RowScoring = {
   stops: string[];
   /** ids of the buy caps that turned a buy zone score into Watch */
   caps: string[];
+  /** empty scores of buyRequiresScores that turned a buy zone score into Watch */
+  missing: ScoreId[];
   /** ids of the flags that fire */
   flags: string[];
   /** indexes of config.notes whose condition passes */
