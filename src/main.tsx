@@ -7,7 +7,7 @@ import {
   OwnEntry, parsePresetText, PeerGroups, Preset, PRESET_SCHEMA_VERSION, presetFileName, presetFileText, presetKey, PresetResult, RELATIVE_SCOPES,
   isReitIndustry, samePreset, Scope, SCOPES, stockRow, uniqueId, Universe, validatePreset,
   changedGroups, cleanTickers, deleteGroup, groupName, groupsOf, importGroups, mergePeers, parsePeersText, PEERS_FILE_NAME, peersExported, peersFileText,
-  peersKey, PeersOverlay, setGroup,
+  peersKey, PeersOverlay, setGroup, withVariant,
 } from './core/screener';
 import { createSimilarContext, filterFromX, SIMILAR_CONFIG_URL, SimilarConfig, SimilarContext, SimilarResult, similarTo, validateSimilarConfig } from './core/similar';
 import {
@@ -64,6 +64,7 @@ const COLUMN_TYPES_KEY = 'stocks-column-types';
 const SHOW_FILTERS_KEY = 'stocks-show-filters';
 const STICKY_RANK_KEY = 'stocks-sticky-rank';
 const SCREENER_KEY = 'stocks-screener'; // chosen preset chips, edits, Stocks / ETFs (a setting: Clear resets it)
+const SCREENER_VARIANTS_KEY = 'stocks-screener-variants'; // chosen horizon per preset with variants, Stable growth 1Y-10Y (a setting: Clear resets it)
 const OWN_PRESETS_KEY = 'stocks-own-presets'; // own presets of this browser (data: Clear keeps them)
 const PEERS_KEY = 'stocks-peers'; // peer groups changed in this browser over user-data/peers.json (data: Clear keeps them)
 const SIMILAR_KEY = 'stocks-similar'; // the metric group and own set of Similar to X (a convenience: Clear keeps it)
@@ -3801,6 +3802,7 @@ const RESET_ITEMS: ResetItem[] = [
   { id: 'views', label: 'Scroll positions (remembered table views)', keys: [VIEW_KEY], reset: () => { savedViews = {}; settledViewTabs.clear(); restoringViewTabs.clear(); clearTimeout(saveViewTimer); } },
   { id: 'blacklist', label: 'Blacklist', keys: [BLACKLIST_KEY], reset: () => { state.blacklist.clear(); blacklistVersion += 1; } },
   { id: 'screener', label: 'Screener: chosen presets, edits and Stocks / ETFs (own presets are kept)', keys: [SCREENER_KEY], reset: () => resetScreener() },
+  { id: 'screener-variants', label: 'Screener horizons (Stable growth 1Y to 10Y)', keys: [SCREENER_VARIANTS_KEY], reset: () => { scr.variants = {}; scr.base = resolvedBase(); scr.version += 1; renderScreener(); } },
 ];
 
 /** The three items that live in one saved key: removing the key for one of them would also forget the others. */
@@ -4433,7 +4435,9 @@ type ScreenerState = {
   chips: Record<string, ChipMode>;
   drafts: Record<string, Preset>; // edited copies by preset id; Reset drops one
   expanded: string | null; // the preset whose conditions are open in the editor
-  base: Preset[];
+  base: Preset[]; // the base presets as the screener uses them: a preset with variants resolved to its chosen horizon
+  raw: Preset[]; // the base preset files as published, variants included (the chip picker reads them)
+  variants: Record<string, string>; // preset id -> chosen variant id
   repoOwn: Preset[]; // user-data/presets of the repo, the starting state
   browserOwn: Preset[]; // own presets saved in this browser (they win over the repo copies)
   lastExported: Record<string, string>; // id -> presetKey of the last export or import
@@ -4456,7 +4460,7 @@ const MISSING_MODES: Missing[] = ['fail', 'skip'];
 const GUIDE_SECTIONS = ['presets', 'scopes', 'missing', 'swings', 'scores', 'archetypes', 'flags', 'thresholds', 'own', 'peers', 'similar', 'dcf', 'tenk', 'method', 'owndata'];
 
 const scr: ScreenerState = {
-  type: 'stock', any: false, chips: {}, drafts: {}, expanded: null, base: [], repoOwn: [], browserOwn: [], lastExported: {}, peers: {},
+  type: 'stock', any: false, chips: {}, drafts: {}, expanded: null, base: [], raw: [], variants: {}, repoOwn: [], browserOwn: [], lastExported: {}, peers: {},
   peersRepo: {}, peersOverlay: {}, peersExported: '', peersOpen: false, peersMessage: '',
   status: 'loading', error: '', message: '', version: 0,
 };
@@ -4715,7 +4719,29 @@ function persistScreener(): void {
   lsSet(SCREENER_KEY, JSON.stringify({ type: scr.type, any: scr.any, chips: scr.chips, drafts: scr.drafts, expanded: scr.expanded }));
 }
 
+/** The base presets with each preset of variants resolved to its chosen horizon (the default when none is chosen) */
+function resolvedBase(): Preset[] {
+  return scr.raw.map(p => withVariant(p, scr.variants[p.id]));
+}
+
+function persistVariants(): void {
+  lsSet(SCREENER_VARIANTS_KEY, JSON.stringify(scr.variants));
+}
+
+/** A new horizon for a preset with variants: its edits belonged to the old horizon and are dropped */
+function setVariant(id: string, variant: string): void {
+  const raw = scr.raw.filter(p => p.id === id)[0];
+  if (!raw || !Array.isArray(raw.variants) || !raw.variants.some(v => v.id === variant)) return;
+  scr.variants[id] = variant;
+  delete scr.drafts[id];
+  scr.base = resolvedBase();
+  persistVariants();
+  screenerChanged();
+}
+
 function restoreScreener(): void {
+  const variants = lsGetJson(SCREENER_VARIANTS_KEY, null);
+  if (variants && typeof variants === 'object' && !Array.isArray(variants)) Object.keys(variants).forEach(id => { if (typeof variants[id] === 'string') scr.variants[id] = variants[id]; });
   const saved = lsGetJson(SCREENER_KEY, null);
   if (saved && typeof saved === 'object') {
     if (TYPE_FILTERS.indexOf(saved.type) >= 0) scr.type = saved.type;
@@ -4822,14 +4848,15 @@ async function loadSimilarConfig(): Promise<void> {
 async function loadScreenerData(): Promise<void> {
   await Promise.all([loadScoringConfig(), loadSimilarConfig()]);
   try {
-    scr.base = await fetchPresetFolder('./presets/');
+    scr.raw = await fetchPresetFolder('./presets/');
+    scr.base = resolvedBase();
     scr.status = 'ready';
   } catch (error) {
     scr.status = 'failed';
     scr.error = error instanceof Error ? error.message : String(error);
     console.warn(`Base presets unavailable: ${scr.error}`);
   }
-  try { scr.repoOwn = await fetchPresetFolder('./user-data/presets/'); } catch (error) { console.warn('user-data/presets unavailable:', error); }
+  try { scr.repoOwn = (await fetchPresetFolder('./user-data/presets/')).map(p => withVariant(p)); } catch (error) { console.warn('user-data/presets unavailable:', error); }
   try {
     const parsed = parsePeersText(JSON.stringify(await fetchJson('./user-data/peers.json')));
     if (parsed.errors.length) console.warn(`user-data/peers.json: ${parsed.errors.join('; ')}`);
@@ -5149,8 +5176,19 @@ function chipHtml(p: Preset, results: Record<string, PresetResult>, own: OwnEntr
   const open = scr.expanded === p.id;
   return `<span class="scr-chip${mode === 'in' ? ' is-in' : mode === 'out' ? ' is-out' : ''}${open ? ' is-open' : ''}${p.refine ? ' is-refine' : ''}" data-chip="${escapeHtml(p.id)}">`
     + `<button type="button" class="scr-chip-main" data-act="chip" data-id="${escapeHtml(p.id)}" aria-pressed="${mode === 'in'}" title="${escapeHtml(tip)}"><span class="scr-chip-title">${p.refine ? `<span class="scr-chip-and" title="${escapeHtml(t('screener.refine.tip'))}">${escapeHtml(t('screener.refine'))}</span> ` : ''}${mode === 'out' ? '¬ ' : ''}${escapeHtml(title)}</span>${scr.drafts[p.id] ? `<span class="scr-edited" title="${escapeHtml(t('screener.chip.changed'))}">*</span>` : ''}${count === null ? '' : `<span class="scr-count">${count.toLocaleString('en-US')}</span>`}${own && !own.exported ? `<span class="scr-dot" title="${escapeHtml(t('screener.notExported.tip'))}"></span>` : ''}</button>`
+    + variantPicker(p)
     + `<button type="button" class="scr-chip-btn" data-act="not" data-id="${escapeHtml(p.id)}" aria-pressed="${mode === 'out'}" title="${escapeHtml(t('screener.chip.exclude'))}" aria-label="${escapeHtml(`${t('screener.chip.exclude')}: ${title}`)}">¬</button>`
     + `<button type="button" class="scr-chip-btn" data-act="expand" data-id="${escapeHtml(p.id)}" aria-expanded="${open}" title="${escapeHtml(t('screener.chip.edit'))}" aria-label="${escapeHtml(`${t('screener.chip.edit')}: ${title}`)}">▾</button></span>`;
+}
+
+/** The horizon picker of a base preset with variants (Stable growth: 1Y, 3Y, 5Y, 10Y), empty for every other chip */
+function variantPicker(p: Preset): string {
+  const raw = scr.raw.filter(r => r.id === p.id)[0];
+  if (!raw || !Array.isArray(raw.variants) || !raw.variants.length) return '';
+  const chosen = p.variant || '';
+  const label = t('screener.variant.tip', { title: pick(p.title) });
+  return `<select class="scr-chip-variant" data-variant-of="${escapeHtml(p.id)}" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}">`
+    + raw.variants.map(v => `<option value="${escapeHtml(v.id)}"${v.id === chosen ? " selected" : ""}>${escapeHtml(pick(v.title))}</option>`).join('') + `</select>`;
 }
 
 function screenerStatusText(): string {
@@ -5241,6 +5279,7 @@ function onScreenerChange(event: any): void {
   if (!target || !target.dataset) return;
   if (target.id === 'scr-import-input') { void importFiles(target.files).finally(() => { target.value = ''; }); return; }
   if (target.id === 'scr-peers-import') { void importPeersFiles(target.files).finally(() => { target.value = ''; }); return; }
+  if (target.dataset.variantOf) { setVariant(String(target.dataset.variantOf), String(target.value || '')); return; }
   const id = scr.expanded;
   const field = target.dataset.field;
   if (!id || !field || field === 'list-add') return; // a list value is added by Enter or by leaving the input

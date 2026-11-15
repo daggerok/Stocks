@@ -393,6 +393,7 @@
 .scr-chip .scr-chip-btn:hover,.scr-chip .scr-chip-main:hover{background:#f1f5f9}
 .scr-chip .scr-chip-btn[aria-pressed="true"]{color:#be123c;font-weight:700}
 .scr-chip .scr-chip-btn[aria-expanded="true"]{color:#1d4ed8}
+.scr-chip .scr-chip-variant{border:0;border-left:1px solid #e2e8f0;background:transparent;color:#1d4ed8;font-size:.75rem;padding:0 .2rem;cursor:pointer}
 .scr-chip.is-in{border-color:#3b82f6;background:#eff6ff}
 .scr-chip.is-in .scr-chip-main{color:#1d4ed8;font-weight:600}
 .scr-chip.is-out{border-color:#fda4af;background:#fff1f2}
@@ -450,6 +451,7 @@
 .dark .scr-chip{background:#0f172a;border-color:#334155}
 .dark .scr-chip button{color:#e2e8f0}
 .dark .scr-chip .scr-chip-btn:hover,.dark .scr-chip .scr-chip-main:hover{background:#1e293b}
+.dark .scr-chip .scr-chip-variant{border-left-color:#334155;color:#93c5fd;background:#0f172a}
 .dark .scr-chip.is-in{border-color:#3b82f6;background:rgba(30,64,175,.3)}
 .dark .scr-chip.is-in .scr-chip-main{color:#93c5fd}
 .dark .scr-chip.is-out{border-color:#9f1239;background:rgba(159,18,57,.2)}
@@ -624,6 +626,7 @@
 .scr-chip-main{flex:1 1 auto;min-width:0}
 .scr-chip-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .scr-chip-main .scr-count{margin-left:auto}
+.scr-chip .scr-chip-variant{flex:none;width:4.5rem}
 .scr-hint{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* phone: the count chip, language, Signals, Guide and theme do not fit one row of the top panel; they wrap to the right instead of poking out */
 @media (max-width:639.98px){#top-actions{flex-wrap:wrap;justify-content:flex-end;flex-shrink:1;min-width:0;max-width:100%;row-gap:.5rem}}

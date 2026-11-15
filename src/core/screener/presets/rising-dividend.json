@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "id": "rising-dividend",
+  "title": {
+    "en": "Dividend growth",
+    "ru": "Рост дивиденда"
+  },
+  "description": {
+    "en": "Refinement: the dividend grew over 5 years (dividendGrowth5y above 0) and was not cut in the last 10 years. Always added with AND on top of the chosen presets. Stocks only: the ETF feeds publish no dividend growth, so with ETFs in the table this refinement leaves only stocks",
+    "ru": "Уточнение: дивиденд вырос за 5 лет (dividendGrowth5y выше 0) и не сокращался за последние 10 лет. Всегда добавляется через И поверх выбранных пресетов. Только для акций: в фидах ETF нет роста дивиденда, поэтому, если в таблице есть ETF, это уточнение оставит только акции"
+  },
+  "appliesTo": [
+    "stock"
+  ],
+  "match": "all",
+  "refine": true,
+  "conditions": [
+    {
+      "metric": "dividendGrowth5y",
+      "op": ">",
+      "value": 0,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "dividendCut10y",
+      "op": "=",
+      "value": false,
+      "scope": "absolute",
+      "missing": "fail"
+    }
+  ]
+}
