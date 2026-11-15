@@ -494,6 +494,13 @@
 .guide-close{font-size:1rem;padding:.2rem .5rem;border-radius:.375rem;color:#64748b;cursor:pointer}
 .guide-close:hover{background:#f1f5f9}
 .guide-body{overflow:auto;padding:1rem 1.25rem 2rem;font-size:.875rem;line-height:1.55}
+/* the Guide fits the site (owner 2026-11-15): as wide as the page cards, one side gutter (px-4 sm:px-8) around it, the same gap above and
+   below, and the panels' 1rem padding on every side of the head and the body; the body scrolls, the head (title, search, close) stays */
+#guide-panel{padding:1rem}
+#guide-panel .guide-card{width:100%}
+#guide-panel .guide-head{padding:1rem}
+#guide-panel .guide-body{padding:1rem}
+@media (min-width:640px){#guide-panel{padding:2rem}}
 .guide-body p{margin:.35rem 0}
 .guide-h2{font-size:1rem;font-weight:700;margin:1.25rem 0 .5rem;color:#1d4ed8}
 .guide-h2:first-child{margin-top:0}
