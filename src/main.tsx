@@ -78,9 +78,9 @@ const LOCAL_BASE = './api/stocks/';
 const REMOTE_BASE = 'https://daggerok.github.io/Stocks/api/stocks/';
 const INDEX_TIMEOUT_MS = 30000;
 const FETCH_TIMEOUT_MS = 30000; // meta.json and history pages (headers and body)
-const CATALOG_WINDOW = 160; // catalog rows in the DOM at most (see the window block above catalogSpacerHtml)
-const CATALOG_MARGIN = 40; // rows between the viewport and an end of the window at which the window moves
-const CATALOG_STEP = 40; // the window moves in whole steps of this many rows
+const CATALOG_WINDOW = 60; // catalog rows in the DOM at least (more on a tall viewport, see catalogWindowRows and the window block above catalogSpacerHtml)
+const CATALOG_MARGIN = 20; // rows between the viewport and an end of the window at which the window moves
+const CATALOG_STEP = 20; // the window moves in whole steps of this many rows
 const DEFAULT_STALE_DAYS = 10;
 const IDB_NAME = 'stocks';
 const IDB_STORE = 'indexes';
@@ -440,6 +440,7 @@ let catalogChunkSig = '';
 let catalogRenderedCount = 0; // end (exclusive) of the mounted window of catalogVisibleIds
 let catalogRenderedFrom = 0; // start of the mounted window: above it a spacer row stands for the rows that are not mounted
 let catalogRowHeight = 41; // px of one catalog row, measured after every render (the spacer is catalogRenderedFrom rows tall)
+let catalogViewRows = 14; // catalog rows the table viewport shows, read where the layout is read anyway (captureViewAnchor, scrolling)
 let catalogVisibleIds: number[] = [];
 let viewCache: { sig: string; ids: number[] } | null = null;
 let baselineCache: { sig: string; ids: number[]; rank: Int32Array } | null = null;
@@ -2596,7 +2597,7 @@ function render(keepRows = true): void {
   renderBlacklistPanel();
   animateTableUpdate();
   if (isDetailTab(state.activeTab)) renderDetailTable(detailTabKey(state.activeTab));
-  else renderCatalogTable();
+  else renderCatalogTable(keepRows && anchor.tab === state.activeTab ? anchor : null);
   renderFilterControls();
   fitTableHeight();
   syncHeadHeight();
@@ -2644,12 +2645,14 @@ function captureViewAnchor(): ViewAnchor {
   const boxRect = box.getBoundingClientRect();
   const headBottom = el.tableHead.getBoundingClientRect().bottom;
   const anchor: ViewAnchor = { tab: lastRenderedTab, top: box.scrollTop, left: box.scrollLeft, cols: 0, col: -1, colOffset: 0, rows: [] };
+  catalogViewRows = Math.max(1, Math.ceil(box.clientHeight / catalogRowHeight));
+  const shift = tbodyShift();
   for (const tr of Array.from(el.tableBody.rows) as any[]) {
     const rect = tr.getBoundingClientRect();
-    if (rect.bottom <= headBottom) continue;
+    if (rect.bottom <= headBottom + 1) continue; // a sliver under the head is not the row the reader sees (scrollTop is whole px, rows are not)
     if (rect.top >= boxRect.bottom || anchor.rows.length >= 40) break;
     const key = tr.dataset.key || tr.dataset.ticker;
-    if (key) anchor.rows.push({ key, offset: rect.top - tbodyShift() - headBottom });
+    if (key) anchor.rows.push({ key, offset: rect.top - shift - headBottom });
   }
   const cells = Array.from(el.tableHead.querySelectorAll('tr:first-child th')) as any[];
   const edge = stickyEdge();
@@ -2663,15 +2666,11 @@ function captureViewAnchor(): ViewAnchor {
 function restoreViewAnchor(anchor: ViewAnchor, keepRows: boolean): void {
   if (anchor.tab !== state.activeTab) return;
   const box = el.tableScroll;
-  if (keepRows && isCatalogTab(state.activeTab) && store) {
-    // the anchor row may sit outside the mounted window: mount a window around it (not every row above it)
-    const position = new Map<string, number>();
-    catalogVisibleIds.forEach((id, i) => position.set(store!.ticker[id], i));
-    const hit = anchor.rows.find(row => position.has(row.key));
-    if (hit) {
-      const at = position.get(hit.key) as number;
-      if (at >= catalogRenderedCount || at < catalogRenderedFrom) mountCatalogWindow(at);
-    }
+  if (keepRows && isCatalogTab(state.activeTab)) {
+    // the anchor row may sit outside the mounted window (a saved view): mount a window around it (not every row above it).
+    // render() already mounted its window around the anchor, so there this finds the row mounted and mounts nothing
+    const at = catalogAnchorIndex(anchor);
+    if (at >= 0 && (at >= catalogRenderedCount || at < catalogRenderedFrom)) mountCatalogWindow(at);
   }
   const headBottom = el.tableHead.getBoundingClientRect().bottom;
   if (keepRows && anchor.rows.length) {
@@ -2991,26 +2990,67 @@ function catalogWindowHtml(from: number, to: number, cols: Col[]): string {
   return html;
 }
 
+/**
+ * The median height of the mounted rows: a few rows wrap to two or three lines (long flags, names), and with a window of 60 rows
+ * the first row alone can be such a row; a spacer sized by it would put the rows far away from where the scroll offset looks for them.
+ */
 function measureCatalogRowHeight(): void {
-  const row = el.tableBody.querySelector('tr[data-key]') as HTMLElement | null;
-  const height = row ? row.getBoundingClientRect().height : 0;
-  if (height > 10) catalogRowHeight = height;
+  const heights = (Array.from(el.tableBody.querySelectorAll('tr[data-key]')) as HTMLElement[]).map(row => row.getBoundingClientRect().height).sort((a, b) => a - b);
+  const height = heights.length ? heights[Math.floor(heights.length / 2)] : 0;
+  if (height <= 10 || Math.abs(height - catalogRowHeight) < 0.5) return;
+  catalogRowHeight = height;
+  // the spacers were sized with the old height (another list, a language with longer texts): resize them, or the scroll offset
+  // would point at rows far from the mounted window and the next scroll would jump
+  const len = catalogVisibleIds.length;
+  const top = el.tableBody.querySelector('#catalog-top-spacer td') as HTMLElement | null;
+  const bottom = el.tableBody.querySelector('#catalog-bottom-spacer td') as HTMLElement | null;
+  if (top) top.style.height = `${Math.round(catalogRenderedFrom * height)}px`;
+  if (bottom) bottom.style.height = `${Math.round(Math.max(0, len - catalogRenderedCount) * height)}px`;
 }
 
 /** Replaces the mounted rows with [from, to) from scratch (a jump, a new sort or filter, a restored position). */
 function mountCatalogRows(from: number, to: number): void {
-  measureCatalogRowHeight();
   catalogRenderedFrom = from;
   catalogRenderedCount = to;
   el.tableBody.innerHTML = catalogWindowHtml(from, to, visibleCols());
+  measureCatalogRowHeight();
   rememberCatalogColumnWidths();
+}
+
+/**
+ * Rows in the window: CATALOG_WINDOW, more on a viewport so tall that the window would move on every step of scrolling
+ * (the viewport plus a margin on both sides must fit with room to spare).
+ */
+function catalogWindowRows(): number {
+  return Math.max(CATALOG_WINDOW, Math.ceil((catalogViewRows + 2 * CATALOG_MARGIN + 2) / CATALOG_STEP) * CATALOG_STEP);
+}
+
+/** Start of the window that puts row `at` at the top of a viewport in the middle of the window (what ensureCatalogWindow keeps while scrolling). */
+function catalogWindowFrom(at: number): number {
+  const size = catalogWindowRows();
+  const around = Math.max(0, Math.floor((size - catalogViewRows) / 2));
+  return Math.max(0, Math.min(catalogVisibleIds.length - size, at - around));
+}
+
+/** Position in catalogVisibleIds of the first remembered row of the anchor that is still listed, -1 when none is. */
+function catalogAnchorIndex(anchor: ViewAnchor): number {
+  if (!store || !anchor.rows.length) return -1;
+  const wanted = new Map<string, number>();
+  anchor.rows.forEach((row, i) => { if (!wanted.has(row.key)) wanted.set(row.key, i); });
+  let best = -1;
+  let bestRank = Infinity;
+  const ids = catalogVisibleIds;
+  for (let i = 0; i < ids.length; i++) {
+    const rank = wanted.get(store.ticker[ids[i]]);
+    if (rank !== undefined && rank < bestRank) { best = i; bestRank = rank; if (rank === 0) break; }
+  }
+  return best;
 }
 
 /** Mounts the window around one row of the catalog (a saved scroll position). */
 function mountCatalogWindow(center: number): void {
-  const len = catalogVisibleIds.length;
-  const from = Math.max(0, Math.min(len - CATALOG_WINDOW, center - Math.floor(CATALOG_WINDOW / 2)));
-  mountCatalogRows(from, Math.min(len, from + CATALOG_WINDOW));
+  const from = catalogWindowFrom(center);
+  mountCatalogRows(from, Math.min(catalogVisibleIds.length, from + catalogWindowRows()));
 }
 
 /**
@@ -3067,14 +3107,16 @@ function ensureCatalogWindow(): void {
   const box = el.tableScroll;
   const first = Math.max(0, Math.min(len - 1, Math.floor(box.scrollTop / catalogRowHeight)));
   const visible = Math.ceil(box.clientHeight / catalogRowHeight);
+  catalogViewRows = Math.max(1, visible);
+  const size = catalogWindowRows();
   const last = Math.min(len - 1, first + visible);
   const needAbove = catalogRenderedFrom > 0 && first - CATALOG_MARGIN < catalogRenderedFrom;
   const needBelow = catalogRenderedCount < len && last + CATALOG_MARGIN >= catalogRenderedCount;
   if (!needAbove && !needBelow) return;
-  const around = Math.floor((CATALOG_WINDOW - visible) / 2);
+  const around = Math.floor((size - visible) / 2);
   let newFrom = Math.max(0, Math.floor((first - around) / CATALOG_STEP) * CATALOG_STEP);
-  const newTo = Math.min(len, newFrom + CATALOG_WINDOW);
-  if (newTo - newFrom < CATALOG_WINDOW) newFrom = Math.max(0, newTo - CATALOG_WINDOW);
+  const newTo = Math.min(len, newFrom + size);
+  if (newTo - newFrom < size) newFrom = Math.max(0, newTo - size);
   slideCatalogWindow(newFrom, newTo);
 }
 
@@ -3108,6 +3150,8 @@ function applyCatalogColumnWidths(): void {
 }
 
 function rememberCatalogColumnWidths(): void {
+  // all reads first, then the writes: a style write between two reads makes every next read lay the whole table out again
+  const grown: Array<[HTMLElement, number]> = [];
   el.tableHead.querySelectorAll('tr:first-child th').forEach((cell: Element) => {
     const th = cell as HTMLElement;
     const key = catalogColumnKey(th);
@@ -3115,9 +3159,10 @@ function rememberCatalogColumnWidths(): void {
     const width = th.getBoundingClientRect().width;
     if (width > (catalogColumnWidths.get(key) || 0) + 0.5) {
       catalogColumnWidths.set(key, width);
-      th.style.minWidth = `${width}px`;
+      grown.push([th, width]);
     }
   });
+  for (const [th, width] of grown) th.style.minWidth = `${width}px`;
 }
 
 /** History pages: how far the bottom of the viewport is through the rows (0 = the top, 1 = the bottom). */
@@ -3128,15 +3173,25 @@ function scrolledShare(): number {
   return box.scrollHeight > 0 ? (box.scrollTop + box.clientHeight) / box.scrollHeight : 0;
 }
 
-function renderCatalogTable(): void {
+/** `anchor`: the view render() keeps; a new list mounts its window around the anchor row at once (one mount per render, not a second one in restoreViewAnchor). */
+function renderCatalogTable(anchor: ViewAnchor | null = null): void {
   const ids = catalogIds();
   catalogVisibleIds = ids;
   const cols = visibleCols();
   const sig = [state.activeTab, state.sortKey, state.sortDir, catalogQuery(), hiddenSectorsSig(), hiddenExchangesSig(), hiddenColsSig(), state.hideStale, state.staleDays, store ? store.version : 0, blacklistVersion, catalogFilterSig(), screenerSig(), scr.type].join('|');
-  if (sig !== catalogChunkSig) {
+  const fresh = sig !== catalogChunkSig;
+  if (fresh) {
     catalogChunkSig = sig;
     catalogRenderedFrom = 0;
-    catalogRenderedCount = CATALOG_WINDOW;
+    catalogRenderedCount = catalogWindowRows();
+  }
+  if (anchor) {
+    // a new list puts the window around the anchor row, so the scroll that brings the row back does not move the window again
+    const at = catalogAnchorIndex(anchor);
+    if (at >= 0 && (fresh || at < catalogRenderedFrom || at >= Math.min(ids.length, catalogRenderedCount))) {
+      catalogRenderedFrom = catalogWindowFrom(at);
+      catalogRenderedCount = catalogRenderedFrom + catalogWindowRows();
+    }
   }
   const mounted = Math.min(ids.length, catalogRenderedCount);
   const mountedFrom = Math.min(catalogRenderedFrom, mounted);
