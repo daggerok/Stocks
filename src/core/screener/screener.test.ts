@@ -197,9 +197,9 @@ describe('presets', () => {
     ]);
   });
 
-  test('rising dividend: grown over 5 years and never cut in 10; stocks only, so ETFs drop out', () => {
-    const u = createUniverse([row('KO', { dividendGrowth5y: 4, dividendCut10y: false }), row('CUT', { dividendGrowth5y: 4, dividendCut10y: true }), row('FLAT', { dividendGrowth5y: 0, dividendCut10y: false }), row('VIG', { dividendYield: 2 }, {}, 'etf')]);
-    expect(tickersOf(u, evaluatePreset(u, BY_ID['rising-dividend']).pass)).toEqual(['KO']);
+  test('rising dividend: grown over 5 years and never cut in 10, for stocks and ETFs alike', () => {
+    const u = createUniverse([row('KO', { dividendGrowth5y: 4, dividendCut10y: false }), row('CUT', { dividendGrowth5y: 4, dividendCut10y: true }), row('FLAT', { dividendGrowth5y: 0, dividendCut10y: false }), row('VIG', { dividendYield: 2, dividendGrowth5y: 9, dividendCut10y: false }, {}, 'etf'), row('TLT', { dividendYield: 4, dividendGrowth5y: 10, dividendCut10y: true }, {}, 'etf'), row('JEPI', { dividendYield: 8, dividendGrowth5y: null, dividendCut10y: false }, {}, 'etf')]);
+    expect(tickersOf(u, evaluatePreset(u, BY_ID['rising-dividend']).pass)).toEqual(['KO', 'VIG']);
   });
 
   test('gold: a miner by industry or an ETF by ticker; mine: the isMine flag', () => {

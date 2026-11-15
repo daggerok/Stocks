@@ -6,11 +6,12 @@
     "ru": "Рост дивиденда"
   },
   "description": {
-    "en": "Refinement: the dividend grew over 5 years (dividendGrowth5y above 0) and was not cut in the last 10 years. Always added with AND on top of the chosen presets. Stocks only: the ETF feeds publish no dividend growth, so with ETFs in the table this refinement leaves only stocks",
-    "ru": "Уточнение: дивиденд вырос за 5 лет (dividendGrowth5y выше 0) и не сокращался за последние 10 лет. Всегда добавляется через И поверх выбранных пресетов. Только для акций: в фидах ETF нет роста дивиденда, поэтому, если в таблице есть ETF, это уточнение оставит только акции"
+    "en": "Refinement: the dividend grew over 5 years (dividendGrowth5y above 0) and was not cut in the last 10 years. Always added with AND on top of the chosen presets. For ETFs the values come from the brand feeds (cut tolerance 20%); a fund whose feed has no dividend growth yet does not pass",
+    "ru": "Уточнение: дивиденд вырос за 5 лет (dividendGrowth5y выше 0) и не сокращался за последние 10 лет. Всегда добавляется через И поверх выбранных пресетов. Для ETF значения берутся из фидов брендов (порог сокращения 20%); фонд, в фиде которого ещё нет роста дивиденда, не проходит"
   },
   "appliesTo": [
-    "stock"
+    "stock",
+    "etf"
   ],
   "match": "all",
   "refine": true,
