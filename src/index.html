@@ -59,21 +59,9 @@
         </nav>
 
         <!-- Search, Tabs & Action Bar -->
-        <div id="toolbar-panel" class="max-lg:mb-6 relative z-50 flex flex-wrap items-center gap-x-2.5 gap-y-2.5 bg-white dark:bg-slate-800/80 px-3 py-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xs backdrop-blur-sm">
+        <div id="toolbar-panel" class="am-bar max-lg:mb-6 relative z-50 flex flex-wrap items-center gap-x-2.5 gap-y-2.5 bg-white dark:bg-slate-800/80 px-3 py-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xs backdrop-blur-sm">
 
-          <!-- Actions menu (☰, owner 2026-11-14): the action buttons keep their ids and handlers, setupActionsMenu() in main.tsx opens and closes it -->
-          <div class="am-row w-full lg:w-auto lg:flex-1 lg:min-w-[10.875rem] lg:max-w-[26.875rem]">
-            <div class="am-root">
-              <button type="button" id="actions-btn" class="am-trigger" aria-haspopup="menu" aria-expanded="false" aria-controls="actions-panel" aria-label="Actions" data-i18n-aria="Actions" title="Actions: copy tickers, export, clear, blacklist" data-i18n-title="Actions: copy tickers, export, clear, blacklist">☰</button>
-              <div id="actions-panel" class="am-panel" role="menu" aria-label="Actions" data-i18n-aria="Actions" hidden>
-                <button id="copy-btn" disabled class="am-item am-copy" data-i18n="Copy Tickers" role="menuitem" data-am-keep>Copy Tickers</button>
-                <button id="export-csv-btn" disabled class="am-item am-csv" data-i18n="Export .csv" role="menuitem">Export .csv</button>
-                <button id="export-txt-btn" disabled class="am-item am-txt" data-i18n="Export .txt" role="menuitem">Export .txt</button>
-                <div class="am-sep" role="separator"></div>
-                <button id="reset-btn" disabled title="Choose what to reset to the first-visit view: selection, searches, sorts, exchanges, sectors and columns, hide stale, column filters, Sticky #, scroll positions and the blacklist (the theme is kept)" data-i18n-title="Choose what to reset to the first-visit view: selection, searches, sorts, exchanges, sectors and columns, hide stale, column filters, Sticky #, scroll positions and the blacklist (the theme is kept)" data-i18n="Clear" class="am-item am-clear" role="menuitem">Clear</button>
-                <button id="blacklist-btn" class="am-item am-blacklist" title="Manage the blacklist of stocks hidden from All Stocks (kept in browser localStorage)" data-i18n-title="Manage the blacklist of stocks hidden from All Stocks (kept in browser localStorage)" data-i18n="Blacklist" aria-expanded="false" role="menuitem">Blacklist</button>
-              </div>
-            </div>
+          <div class="am-row w-full lg:w-auto lg:flex-1 lg:min-w-[8rem] lg:max-w-sm">
             <div class="relative flex items-center">
               <input
                 type="text"
@@ -118,6 +106,18 @@
             <span data-i18n="d">d</span>
           </label>
           <span id="load-progress" class="empty:hidden text-xs text-slate-500 dark:text-slate-400" aria-live="polite"></span>
+          <!-- Actions menu (☰ at the right end of the toolbar, owner 2026-11-15): the action buttons keep their ids and handlers, setupActionsMenu() in main.tsx opens and closes it -->
+          <div class="am-root">
+            <button type="button" id="actions-btn" class="am-trigger" aria-haspopup="menu" aria-expanded="false" aria-controls="actions-panel" aria-label="Actions" data-i18n-aria="Actions" title="Actions: copy tickers, export, clear, blacklist" data-i18n-title="Actions: copy tickers, export, clear, blacklist">☰</button>
+            <div id="actions-panel" class="am-panel" role="menu" aria-label="Actions" data-i18n-aria="Actions" hidden>
+              <button id="copy-btn" disabled class="am-item am-copy" data-i18n="Copy Tickers" role="menuitem" data-am-keep>Copy Tickers</button>
+              <button id="export-csv-btn" disabled class="am-item am-csv" data-i18n="Export .csv" role="menuitem">Export .csv</button>
+              <button id="export-txt-btn" disabled class="am-item am-txt" data-i18n="Export .txt" role="menuitem">Export .txt</button>
+              <div class="am-sep" role="separator"></div>
+              <button id="reset-btn" disabled title="Choose what to reset to the first-visit view: selection, searches, sorts, exchanges, sectors and columns, hide stale, column filters, Sticky #, scroll positions and the blacklist (the theme is kept)" data-i18n-title="Choose what to reset to the first-visit view: selection, searches, sorts, exchanges, sectors and columns, hide stale, column filters, Sticky #, scroll positions and the blacklist (the theme is kept)" data-i18n="Clear" class="am-item am-clear" role="menuitem">Clear</button>
+              <button id="blacklist-btn" class="am-item am-blacklist" title="Manage the blacklist of stocks hidden from All Stocks (kept in browser localStorage)" data-i18n-title="Manage the blacklist of stocks hidden from All Stocks (kept in browser localStorage)" data-i18n="Blacklist" aria-expanded="false" role="menuitem">Blacklist</button>
+            </div>
+          </div>
 
         </div>
       </div>
