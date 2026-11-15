@@ -5148,7 +5148,7 @@ function chipHtml(p: Preset, results: Record<string, PresetResult>, own: OwnEntr
   const tip = t('screener.chip.tip', { title, count: count === null ? DASH : count.toLocaleString('en-US') });
   const open = scr.expanded === p.id;
   return `<span class="scr-chip${mode === 'in' ? ' is-in' : mode === 'out' ? ' is-out' : ''}${open ? ' is-open' : ''}${p.refine ? ' is-refine' : ''}" data-chip="${escapeHtml(p.id)}">`
-    + `<button type="button" class="scr-chip-main" data-act="chip" data-id="${escapeHtml(p.id)}" aria-pressed="${mode === 'in'}" title="${escapeHtml(tip)}"><span class="scr-chip-title">${mode === 'out' ? '¬ ' : ''}${escapeHtml(title)}</span>${scr.drafts[p.id] ? `<span class="scr-edited" title="${escapeHtml(t('screener.chip.changed'))}">*</span>` : ''}${count === null ? '' : `<span class="scr-count">${count.toLocaleString('en-US')}</span>`}${own && !own.exported ? `<span class="scr-dot" title="${escapeHtml(t('screener.notExported.tip'))}"></span>` : ''}</button>`
+    + `<button type="button" class="scr-chip-main" data-act="chip" data-id="${escapeHtml(p.id)}" aria-pressed="${mode === 'in'}" title="${escapeHtml(tip)}"><span class="scr-chip-title">${p.refine ? `<span class="scr-chip-and" title="${escapeHtml(t('screener.refine.tip'))}">${escapeHtml(t('screener.refine'))}</span> ` : ''}${mode === 'out' ? '¬ ' : ''}${escapeHtml(title)}</span>${scr.drafts[p.id] ? `<span class="scr-edited" title="${escapeHtml(t('screener.chip.changed'))}">*</span>` : ''}${count === null ? '' : `<span class="scr-count">${count.toLocaleString('en-US')}</span>`}${own && !own.exported ? `<span class="scr-dot" title="${escapeHtml(t('screener.notExported.tip'))}"></span>` : ''}</button>`
     + `<button type="button" class="scr-chip-btn" data-act="not" data-id="${escapeHtml(p.id)}" aria-pressed="${mode === 'out'}" title="${escapeHtml(t('screener.chip.exclude'))}" aria-label="${escapeHtml(`${t('screener.chip.exclude')}: ${title}`)}">¬</button>`
     + `<button type="button" class="scr-chip-btn" data-act="expand" data-id="${escapeHtml(p.id)}" aria-expanded="${open}" title="${escapeHtml(t('screener.chip.edit'))}" aria-label="${escapeHtml(`${t('screener.chip.edit')}: ${title}`)}">▾</button></span>`;
 }
@@ -5202,7 +5202,7 @@ function renderScreener(): void {
       </span>
     </div>
     <div class="scr-chips">${loading}${main}</div>
-    ${refine ? `<div class="scr-chips scr-chips-sep"><span class="scr-sep" title="${escapeHtml(t('screener.refine.tip'))}">${escapeHtml(t('screener.refine'))}</span>${refine}</div>` : ''}
+    ${refine ? `<div class="scr-chips scr-chips-refine">${refine}</div>` : ''}
     ${own ? `<div class="scr-chips scr-chips-sep"><span class="scr-sep" title="${escapeHtml(t('screener.own'))}">${escapeHtml(t('screener.own'))}</span>${own}</div>` : ''}
     ${!chosen && !scr.expanded && scr.status === 'ready' ? `<p class="scr-hint" title="${escapeHtml(t('screener.none'))}">${escapeHtml(t('screener.none'))}</p>` : ''}
     ${scr.peersOpen ? peersPanelHtml() : ''}
