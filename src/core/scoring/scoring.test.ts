@@ -75,6 +75,18 @@ describe('scores and status on a hand example', () => {
     expect(['S1', 'S2', 'S3', 'S4', 'S5'].map((t) => by(t).scores.dividend)).toEqual([null, 0, 33, 67, 100]);
   });
 
+  test('a buy cap turns a buy zone score into Watch and says why; a row outside the cap and a watch row stay as they are', () => {
+    // owner answer N19: no buy zone below a $2B market cap. S2 (score 81, buy) is small, G1 (buy) is large, S1 (watch) is small
+    const capped: ScoringConfig = { ...HAND, buyCaps: [{ id: 'small-cap', title: T('Market cap below $2B', 'Капитализация меньше $2 млрд'), appliesTo: ['stock'], match: 'all', conditions: [c('marketCap', '<', 2e9)] }] };
+    expect(validateScoringConfig(capped)).toEqual([]);
+    const rows = HAND_ROWS.map((r) => (r.ticker === 'S2' || r.ticker === 'S1' ? { ...r, metrics: { ...r.metrics, marketCap: 1e9 } } : r.ticker === 'G1' ? { ...r, metrics: { ...r.metrics, marketCap: 5e9 } } : r));
+    const res = computeScoring(createUniverse(rows), capped);
+    const at = (t: string) => res.rows[rows.findIndex((r) => r.ticker === t)];
+    expect(['S2', 'G1', 'S1'].map((t) => [at(t).statusScore, at(t).status, at(t).caps])).toEqual([[81, 'watch', ['small-cap']], [by('G1').statusScore, 'buy', []], [50, 'watch', []]]);
+    const s2 = rows[rows.findIndex((r) => r.ticker === 'S2')];
+    expect(whyParts(capped, at('S2'), s2, 'en').slice(1, 3)).toEqual(['score 81 >= 60', 'at most Watch: Market cap below $2B: Market cap $1B < $2B']);
+  });
+
   test('growth: quality and entry, the EPS revision lowers the entry score, cash runway stops', () => {
     // range52w of the 10 growth and volatile rows, lower is better: V5 0, V4 11.1, G5 22.2, G4 33.3, V3 44.4, G3 55.6, G2 66.7, V2 77.8, G1 88.9, V1 100
     expect(['G1', 'G2', 'G3', 'G4', 'G5'].map((t) => [by(t).archetype, by(t).scores.quality, by(t).scores.entry, by(t).adjusted.join()])).toEqual([

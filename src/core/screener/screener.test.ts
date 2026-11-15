@@ -132,8 +132,8 @@ const BY_ID: Record<string, Preset> = {};
 PRESETS.forEach((p) => { BY_ID[p.id] = p; });
 
 describe('presets', () => {
-  test('the 13 base presets (two of them refinements) validate against the registry; a broken preset does not', () => {
-    expect(PRESETS.map((p) => p.id)).toEqual(['cashflow-machines', 'cheap-earnings', 'dividend-growth', 'gold', 'growth-no-profit', 'high-debt', 'mine', 'pays-dividend', 'positive-1y', 'quality-growth', 'stable-dividend', 'undervalued', 'volatile-swings']);
+  test('the 14 base presets (two of them refinements) validate against the registry; a broken preset does not', () => {
+    expect(PRESETS.map((p) => p.id)).toEqual(['cashflow-machines', 'cheap-earnings', 'dividend-growth', 'gold', 'growth-no-profit', 'high-debt', 'mine', 'pays-dividend', 'positive-1y', 'quality-growth', 'quality-on-sale', 'stable-dividend', 'undervalued', 'volatile-swings']);
     expect(PRESETS.filter((p) => p.refine).map((p) => p.id)).toEqual(['pays-dividend', 'positive-1y']);
     expect(validatePreset({ ...BY_ID['pays-dividend'], refine: 'yes' } as unknown as Preset)).toEqual(['pays-dividend: refine must be true or false']);
     expect(PRESETS.flatMap((p) => validatePreset(p))).toEqual([]);
@@ -150,6 +150,22 @@ describe('presets', () => {
       'p condition 5 (industry): > needs a numeric metric',
       'p condition 6 (isMine): a flag compares with true or false',
     ]);
+  });
+
+  test('quality on sale: strong scores after a 15% drop, large caps only, no rejected status (owner answer N19)', () => {
+    const ok = { scoreQuality: 66, scoreSafety: 62, pctFrom52wHigh: -34, marketCap: 3.9e12, status: 'buy' };
+    const u = createUniverse([
+      row('NVDA', ok),
+      row('META', { ...ok, pctFrom52wHigh: -19, status: 'watch' }),
+      row('FLAT', { ...ok, pctFrom52wHigh: -10 }),
+      row('WEAK', { ...ok, scoreQuality: 40 }),
+      row('RISKY', { ...ok, scoreSafety: 50 }),
+      row('SMALL', { ...ok, marketCap: 5e9 }),
+      row('STOP', { ...ok, status: 'rejected' }),
+      row('NONE', { ...ok, scoreQuality: null }),
+      row('QQQ', ok, {}, 'etf'),
+    ]);
+    expect(tickersOf(u, evaluatePreset(u, BY_ID['quality-on-sale']).pass)).toEqual(['NVDA', 'META']);
   });
 
   test('gold: a miner by industry or an ETF by ticker; mine: the isMine flag', () => {

@@ -1226,13 +1226,13 @@ const SCORE_OUTPUTS: MetricDef[] = [
     },
   }),
   scoring({
-    id: 'status', name: { en: 'Status', ru: 'Статус' }, formula: 'rejected when a stop factor of the archetype fires, else buy when statusScore >= buy threshold, rejected when below the reject threshold, otherwise watch',
+    id: 'status', name: { en: 'Status', ru: 'Статус' }, formula: 'rejected when a stop factor of the archetype fires, else buy when statusScore >= buy threshold, rejected when below the reject threshold, otherwise watch; a buy becomes watch when a buy cap holds (market cap below $2B)',
     unit: 'category', basis: 'snapshot', source: 'computed', direction: 'neutral', appliesTo: BOTH,
     nullWhen: { en: 'statusScore is empty and no stop factor fired', ru: 'итоговая оценка пуста и стоп-фактор не сработал' },
     short: { en: 'Buy zone, Watch or Rejected', ru: 'Зона покупки, Наблюдать или Отклонено' },
     guide: {
-      en: 'Buy zone, Watch or Rejected (values buy, watch, rejected for presets). A stop factor of the archetype rejects the row whatever the scores say: Altman Z in the distress zone or negative free cash flow three years in a row for stable stocks, less than 12 months of cash for growing ones, Altman distress for volatile ones. Otherwise the status score decides against the thresholds of the archetype. The Why column says which rule decided',
-      ru: 'Зона покупки, Наблюдать или Отклонено (в пресетах - значения buy, watch, rejected). Стоп-фактор архетипа отклоняет строку при любых оценках: Altman Z в зоне дистресса или отрицательный свободный поток три года подряд у стабильных, кэша меньше чем на 12 месяцев у растущих, дистресс по Altman у волатильных. Иначе решает итоговая оценка против порогов архетипа. Колонка «Почему» говорит, какое правило сработало',
+      en: 'Buy zone, Watch or Rejected (values buy, watch, rejected for presets). A stop factor of the archetype rejects the row whatever the scores say: Altman Z in the distress zone or negative free cash flow three years in a row for stable stocks, less than 12 months of cash for growing ones, Altman distress for volatile ones. Otherwise the status score decides against the thresholds of the archetype. A stock with a market cap below $2B is at most Watch, however high its score (buy cap small-cap in the config). The Why column says which rule decided',
+      ru: 'Зона покупки, Наблюдать или Отклонено (в пресетах - значения buy, watch, rejected). Стоп-фактор архетипа отклоняет строку при любых оценках: Altman Z в зоне дистресса или отрицательный свободный поток три года подряд у стабильных, кэша меньше чем на 12 месяцев у растущих, дистресс по Altman у волатильных. Иначе решает итоговая оценка против порогов архетипа. Бумага с капитализацией меньше $2 млрд получает не выше «Наблюдать», какой бы высокой ни была оценка (ограничение small-cap в конфиге). Колонка «Почему» говорит, какое правило сработало',
     },
   }),
   scoring({
