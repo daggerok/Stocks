@@ -73,3 +73,24 @@ export function dividendHistory(annual: AnnualDps[], lastDate: string): Dividend
   }
   return { dividendStreak: streak, dividendCut10y: paidInWindow ? cut : null };
 }
+
+/** Calendar years looked at by dividendIrregular: the current partial year and the 5 complete ones before it */
+export const IRREGULAR_WINDOW_YEARS = 6;
+export const DIVIDEND_REGULARITY_KEYS = ['dividendIrregular'];
+
+/**
+ * Irregular (special or one-off) dividends: true when, among the current calendar year and the 5 complete years before it, a
+ * year without any payment lies between two years with payments (FUTU: $2.00 in 2024, nothing in 2025, $2.60 in 2026).
+ * A regular payer, also a yearly one, pays every year and is false; a dividend that stopped or just started has no gap
+ * between payments and is false too (the stop is dividendCut10y). null without a payment in the window
+ */
+export function dividendIrregular(annual: AnnualDps[], lastDate: string): boolean | null {
+  const lastYear = Number(String(lastDate).slice(0, 4));
+  if (!Number.isFinite(lastYear)) return null;
+  const first = lastYear - IRREGULAR_WINDOW_YEARS + 1;
+  const paid = new Set<number>();
+  annual.forEach((a) => { if (Number.isFinite(a.year) && Number.isFinite(a.dps) && a.dps > 0 && a.year >= first && a.year <= lastYear) paid.add(a.year); });
+  if (!paid.size) return null;
+  const years = Array.from(paid).sort((x, y) => x - y);
+  return years.some((y, i) => i > 0 && y - years[i - 1] > 1);
+}

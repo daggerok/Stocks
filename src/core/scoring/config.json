@@ -95,6 +95,7 @@
   "scores": {
     "cheap": {
       "title": { "en": "Cheap", "ru": "Дёшево" },
+      "noData": { "en": "no data for the Cheap score", "ru": "нет данных для оценки дешевизны" },
       "appliesTo": ["stock"],
       "items": [
         { "metric": "peg", "weight": { "stable": 1, "growth": 1.5, "volatile": 1 } },
@@ -108,6 +109,7 @@
     },
     "quality": {
       "title": { "en": "Quality", "ru": "Качественно" },
+      "noData": { "en": "no data for the Quality score", "ru": "нет данных для оценки качества" },
       "appliesTo": ["stock"],
       "items": [
         { "metric": "roic", "weight": 1.5 },
@@ -119,6 +121,7 @@
     },
     "safety": {
       "title": { "en": "Safety", "ru": "Безопасно" },
+      "noData": { "en": "no data for the Safety score", "ru": "нет данных для оценки безопасности" },
       "appliesTo": ["stock"],
       "items": [
         { "metric": "debtToEquity", "weight": 1 },
@@ -132,6 +135,7 @@
     },
     "dividend": {
       "title": { "en": "Dividend", "ru": "Дивиденд" },
+      "noData": { "en": "no data for the Dividend score", "ru": "нет данных для оценки дивиденда" },
       "appliesTo": ["stock", "etf"],
       "payersOnly": true,
       "items": [
@@ -144,6 +148,7 @@
     },
     "entry": {
       "title": { "en": "Entry point", "ru": "Точка входа" },
+      "noData": { "en": "no data for the Entry point score", "ru": "нет данных для оценки точки входа" },
       "appliesTo": ["stock", "etf"],
       "items": [
         { "metric": "pctFrom52wHigh", "weight": 1, "direction": "lower-is-better" },
@@ -199,6 +204,7 @@
       "conditions": [{ "metric": "marketCap", "op": "<", "value": 2000000000, "scope": "absolute", "missing": "fail" }]
     }
   ],
+  "buyRequiresScores": { "minWeight": 0.15 },
   "flags": [
     {
       "id": "ni-up-cfo-not",
@@ -257,6 +263,13 @@
       "match": "all",
       "enabled": false,
       "conditions": [{ "metric": "revenueGrowthVsTam", "op": "<", "value": 0, "scope": "absolute", "missing": "fail" }]
+    },
+    {
+      "id": "irregular-dividend",
+      "title": { "en": "Irregular dividend", "ru": "Нерегулярный дивиденд" },
+      "appliesTo": ["stock"],
+      "match": "all",
+      "conditions": [{ "metric": "dividendIrregular", "op": "=", "value": true, "scope": "absolute", "missing": "fail" }]
     },
     {
       "id": "balance-jump",

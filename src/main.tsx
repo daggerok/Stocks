@@ -20,7 +20,7 @@ import {
 import { chartScale, ChartSeries, longRunSeries, peerRow, peerTickers, statementTable, STATEMENTS } from './core/ticker';
 import {
   archetypeText, computeScoring, flagTexts, RowScoring, SCORE_IDS, SCORE_METRICS, SCORING_CONFIG_URL, ScoringConfig, ScoringResult, statusText,
-  validateScoringConfig, whyText, withScoreMetrics,
+  totalScoreText, validateScoringConfig, whyText, withScoreMetrics,
 } from './core/scoring';
 import { filterSignals, parseSignals, signalDates, signalNames, SIGNAL_TYPES, SignalsDoc, signalText, signalTypeName, SIGNALS_FILE } from './core/signals';
 
@@ -114,8 +114,8 @@ const MARGIN_NAMES: Array<[string, string, string]> = [
 function buildColumns(): Col[] {
   const cols: Col[] = [];
   const add = (key: string, label: string, group: string, fmt: CellFormat, tip: string) => { cols.push({ key, label, group, fmt, tip }); };
-  // the five scores and the status score (src/core/scoring, plan stage 5): computed in the page, colored by the config thresholds
-  add('statusScore', 'Score', 'Scores', 'int', 'Status score - the five scores weighted by the archetype (0-100); the status compares it with the thresholds of the archetype.');
+  // the five scores and the total score (src/core/scoring, plan stage 5): computed in the page, colored by the config thresholds
+  add('statusScore', 'Total score', 'Scores', 'int', 'Total score - the five scores weighted by the archetype (0-100); the status compares it with the thresholds of the archetype.');
   add('scoreCheap', 'Cheap', 'Scores', 'int', 'Cheap score 0-100 - PEGs, forward against TTM P/E, own 5-year P/E and P/FCF percentiles, forward P/E in the sector and among peers.');
   add('scoreQuality', 'Quality', 'Scores', 'int', 'Quality score 0-100 - ROIC, margin trends, cash conversion.');
   add('scoreSafety', 'Safety', 'Scores', 'int', 'Safety score 0-100 - debt, interest coverage, Altman Z, Piotroski F, stable earnings.');
@@ -204,7 +204,7 @@ function buildColumns(): Col[] {
     ['capexToCfo', 'pct'], ['capexToRevenue', 'pct'], ['capexToRevenueDelta3y', 'pp'], ['epsNiGrowthGap3y', 'pp'], ['ffoApprox', 'money']].forEach(([key, fmt]) => reg(key, 'Quality', fmt as CellFormat));
   [['interestCoverage', 'x'], ['interestCoverageNote', 'text'], ['cashRunwayMonths', 'int'], ['altmanZ', 'x'], ['altmanVariant', 'text'], ['piotroskiF', 'int'], ['fcfNegativeYears', 'int'],
     ['balanceYoyMaxChange', 'pct'], ['balanceYoyMaxLine', 'text']].forEach(([key, fmt]) => reg(key, 'Safety', fmt as CellFormat));
-  [['dividendRate', 'price'], ['ffoPayoutApprox', 'pct'], ['yieldVsAvg5y', 'x'], ['dividendStreak', 'int'], ['dividendCut10y', 'text']].forEach(([key, fmt]) => reg(key, 'Dividends', fmt as CellFormat));
+  [['dividendRate', 'price'], ['ffoPayoutApprox', 'pct'], ['yieldVsAvg5y', 'x'], ['dividendStreak', 'int'], ['dividendCut10y', 'text'], ['dividendIrregular', 'text']].forEach(([key, fmt]) => reg(key, 'Dividends', fmt as CellFormat));
   [['niGrowth3y', 'pct'], ['niGrowth5y', 'pct'], ['cfoGrowth3y', 'pct'], ['ffoGrowth3y', 'pct']].forEach(([key, fmt]) => reg(key, 'Growth', fmt as CellFormat));
   reg('athDateTs', 'Swings', 'date', 'athDate');
   reg('athBasis', 'Swings', 'text');
@@ -393,7 +393,7 @@ const state: AppState = {
   activeTab: 'All',
   activeKey: null,
   queryByTab: {},
-  sortKey: 'marketCap',
+  sortKey: 'statusScore',
   sortDir: 'desc',
   sortByTab: {},
   loading: true,
@@ -1759,6 +1759,7 @@ function passesCatalogFilters(id: number, columnFilters: ActiveFilter[]): boolea
 function sortArrayFor(key: string): Float64Array | null {
   if (!store) return null;
   const s = store;
+  if (SCORE_COLUMN_KEYS.includes(key)) screenerUniverse(); // the score columns are filled by the scoring of the current store
   if (s.num[key]) return s.num[key];
   if (key === 'presets') return presetCountArray(); // number of presets passed, moves with every screener edit (never in rankCache)
   if (SCORING_TEXT_KEYS.includes(key)) return scoringSortArray(key);
@@ -1947,7 +1948,7 @@ function renderTabButtons(container: any, tabs: TabInfo[], alwaysShow: boolean):
 
 function applyDefaultSortForTab(tab: ActiveTab): void {
   if (isCatalogTab(tab)) {
-    state.sortKey = 'marketCap';
+    state.sortKey = 'statusScore'; // the total score, highest first, empty last (owner 2026-11-15; was market cap)
     state.sortDir = 'desc';
   } else if (tab === 'detail:overview') {
     state.sortKey = 'rank';
@@ -2931,6 +2932,7 @@ function cellHtml(col: Col, id: number): string {
     const m = s.raw[id].metrics || {};
     return range52wCellHtml({ range52w: m.range52w, week52Low: m.week52Low, week52High: m.week52High, range52wClose: m.price, range52wAsOf: m.performanceAsOf || s.raw[id].asOfDate, range52wBasis: 'High and Low' }, numCls);
   }
+  if (col.key === 'statusScore') { const tip = scoringTexts().tips.statusScore[id] || ''; return `<td class="${numCls}"${tip ? ` title="${escapeHtml(tip)}"` : ''}>${scoreBadgeHtml(s.num[col.key][id])}</td>`; }
   if (SCORE_COLUMN_KEYS.includes(col.key)) return `<td class="${numCls}">${scoreBadgeHtml(s.num[col.key][id])}</td>`;
   return `<td class="${numCls}">${formatByFmt(col.fmt, s.num[col.key][id])}</td>`;
 }
@@ -3791,7 +3793,7 @@ type ResetItem = { id: string; label: string; keys: string[]; reset(): void };
 const RESET_ITEMS: ResetItem[] = [
   { id: 'selection', label: 'Selected stocks (Watchlist)', keys: [SELECTED_KEY, ACTIVE_KEY], reset: () => { state.selected.clear(); state.activeKey = null; } },
   { id: 'searches', label: 'Searches', keys: [FILTERS_KEY], reset: () => { state.queryByTab = {}; } },
-  { id: 'sort', label: 'Sort order', keys: [SORTS_KEY], reset: () => { state.sortByTab = {}; } },
+  { id: 'sort', label: 'Sort order (back to Total score)', keys: [SORTS_KEY], reset: () => { state.sortByTab = {}; } },
   { id: 'tab', label: 'Open tab', keys: [SITE_STATE_KEY], reset: () => { state.activeTab = 'All'; } },
   { id: 'exchange-sector', label: 'Exchange and sector selection', keys: [VIEW_FILTERS_KEY], reset: () => { state.hiddenExchanges = new Set(); state.hiddenSectors = new Set(); } },
   { id: 'columns', label: 'Shown columns', keys: [VIEW_FILTERS_KEY], reset: () => { state.hiddenCols = new Set(); } },
@@ -4657,14 +4659,14 @@ function scoringTexts(): { texts: Record<string, string[]>; tips: Record<string,
   if (scoringTextCache && scoringTextCache.sig === sig) return scoringTextCache;
   const n = s ? s.n : 0;
   const texts: Record<string, string[]> = { archetype: [], status: [], why: [], flags: [] };
-  const tips: Record<string, string[]> = { why: [], flags: [] };
+  const tips: Record<string, string[]> = { why: [], flags: [], statusScore: [] };
   const sorts: Record<string, Float64Array> = {};
   SCORING_TEXT_KEYS.forEach(key => { sorts[key] = new Float64Array(n).fill(NaN); });
   const archetypes = config ? Object.keys(config.archetypes) : [];
   for (let i = 0; i < n; i++) {
     const r = result ? result.rows[i] : null;
     const row = scoringRows[i];
-    if (!config || !r || !row) { SCORING_TEXT_KEYS.forEach(key => { texts[key][i] = ''; }); tips.why[i] = ''; tips.flags[i] = ''; continue; }
+    if (!config || !r || !row) { SCORING_TEXT_KEYS.forEach(key => { texts[key][i] = ''; }); tips.why[i] = ''; tips.flags[i] = ''; tips.statusScore[i] = ''; continue; }
     texts.archetype[i] = archetypeText(config, r.archetype, locale);
     texts.status[i] = statusText(r.status, locale);
     texts.why[i] = whyText(config, r, row, locale);
@@ -4672,6 +4674,7 @@ function scoringTexts(): { texts: Record<string, string[]>; tips: Record<string,
     texts.flags[i] = flags.map(f => f.title).join(', ');
     tips.why[i] = texts.why[i].split('; ').join('\n');
     tips.flags[i] = flags.map(f => f.detail).join('\n');
+    tips.statusScore[i] = totalScoreText(config, r, row, locale); // the sum behind the Total score cell
     sorts.archetype[i] = archetypes.indexOf(r.archetype);
     sorts.status[i] = r.status === 'buy' ? 0 : r.status === 'watch' ? 1 : r.status === 'rejected' ? 2 : NaN;
     sorts.why[i] = r.statusScore === null ? NaN : r.statusScore;

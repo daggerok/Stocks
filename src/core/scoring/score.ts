@@ -9,7 +9,8 @@
  * - a score is the weighted mean of the items with a value, empty below minWeightShare of the weight of the items that apply to
  *   the row type; the weights may differ per archetype
  * - the status score combines the scores with the archetype's score weights in the same way; a stop factor of the archetype
- *   rejects the row, otherwise the archetype's buy and reject thresholds decide
+ *   rejects the row, otherwise the archetype's buy and reject thresholds decide; a buy zone needs the heavy scores
+ *   (buyRequiresScores) and no buy cap, else it is Watch
  */
 import type { AssetType, Direction } from '../metrics/types';
 import { evaluateCondition, evaluatePreset, fieldValue, numeric, PASS, percentiles, type Universe } from '../screener/engine';
@@ -94,6 +95,16 @@ export function groupPercentiles(universe: Universe, metric: string, direction: 
 }
 
 const passes = (states: Uint8Array, i: number) => states[i] === PASS;
+
+/** A score that does not count for the row: not for its type, or Dividend of a row that pays nothing (payersOnly) */
+export const scoreSkipped = (config: ScoringConfig, id: ScoreId, row: ScreenerRow): boolean =>
+  config.scores[id].appliesTo.indexOf(row.type) < 0 || (!!config.scores[id].payersOnly && !((numeric(row.metrics.dividendYield) ?? 0) > 0));
+
+/** Empty scores whose archetype weight is at least minWeight (buyRequiresScores), heaviest first */
+export function missingScores(config: ScoringConfig, weights: Record<ScoreId, number>, scores: Record<ScoreId, number | null>, row: ScreenerRow, minWeight: number): ScoreId[] {
+  return SCORE_IDS.filter((id) => (weights[id] ?? 0) > 0 && (weights[id] ?? 0) >= minWeight - 1e-9 && scores[id] === null && !scoreSkipped(config, id, row))
+    .sort((x, y) => (weights[y] ?? 0) - (weights[x] ?? 0));
+}
 
 /** Every row's scores, archetype, status, stop factors, flags and notes */
 export function computeScoring(universe: Universe, config: ScoringConfig): ScoringResult {
@@ -192,14 +203,15 @@ export function computeScoring(universe: Universe, config: ScoringConfig): Scori
     if (stops.length) status = 'rejected';
     else if (statusScore !== null) status = statusScore >= a.buy ? 'buy' : statusScore < a.reject ? 'rejected' : 'watch';
     const caps = status === 'buy' ? capPass.filter((c) => c.pass[i] === 1).map((c) => c.id) : [];
-    if (caps.length) status = 'watch';
+    const missing = status === 'buy' && config.buyRequiresScores ? missingScores(config, a.scoreWeights, rowScores, row, config.buyRequiresScores.minWeight) : [];
+    if (caps.length || missing.length) status = 'watch';
     const notes: number[] = [];
     config.notes.forEach((note, k) => {
       if (note.archetypes && note.archetypes.indexOf(archetype[i]) < 0) return;
       if (passes(noteStates[k], i)) notes.push(k);
     });
     out[i] = {
-      archetype: archetype[i], scores: rowScores, statusScore, status, stops, caps,
+      archetype: archetype[i], scores: rowScores, statusScore, status, stops, caps, missing,
       flags: flagPass.filter((f) => f.pass[i] === 1).map((f) => f.id), notes, adjusted: adjusted[i],
     };
   }

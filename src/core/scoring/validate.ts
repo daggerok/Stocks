@@ -53,6 +53,8 @@ export function validateScoringConfig(config: ScoringConfig, registry: Registry 
   if (!isNum(config.minWeightShare) || config.minWeightShare <= 0 || config.minWeightShare > 1) errors.push('minWeightShare must be above 0 and at most 1');
   if (!config.colors || !isNum(config.colors.good) || !isNum(config.colors.bad) || config.colors.bad > config.colors.good) errors.push('colors needs good >= bad');
   if (!isNum(config.whyLimit) || config.whyLimit < 1) errors.push('whyLimit must be a number >= 1');
+  const req = config.buyRequiresScores;
+  if (req !== undefined && (!req || typeof req !== 'object' || !isNum(req.minWeight) || req.minWeight <= 0 || req.minWeight > 1)) errors.push('buyRequiresScores.minWeight must be above 0 and at most 1');
   const archetypes = config.archetypes && typeof config.archetypes === 'object' ? Object.keys(config.archetypes) : [];
   if (!archetypes.length) errors.push('no archetypes');
   if (archetypes.indexOf(config.defaultArchetype) < 0) errors.push(`defaultArchetype ${config.defaultArchetype} is not an archetype`);
@@ -84,6 +86,7 @@ export function validateScoringConfig(config: ScoringConfig, registry: Registry 
     const where = `score ${id}`;
     if (!s) { errors.push(`${where}: missing`); return; }
     if (!hasText(s.title)) errors.push(`${where}: title needs en and ru`);
+    if (s.noData !== undefined && !hasText(s.noData)) errors.push(`${where}: noData needs en and ru`);
     if (!Array.isArray(s.appliesTo) || !s.appliesTo.length || s.appliesTo.some((t) => t !== 'stock' && t !== 'etf')) errors.push(`${where}: appliesTo must list stock and/or etf`);
     if (!Array.isArray(s.items) || !s.items.length) errors.push(`${where}: no items`);
     else s.items.forEach((item, k) => errors.push(...itemErrors(item, `${where} item ${k + 1} (${item && item.metric})`, archetypes, registry)));

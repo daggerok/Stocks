@@ -2,7 +2,7 @@
 import { describe, expect, test } from 'bun:test';
 import { createUniverse } from '../screener/engine';
 import type { Condition, ScreenerRow } from '../screener/types';
-import { computeScoring, type ScoringConfig, SCORE_IDS, validateScoringConfig, whyParts, withScoreMetrics, flagTexts } from '.';
+import { computeScoring, type ScoringConfig, SCORE_IDS, totalScoreText, validateScoringConfig, whyParts, withScoreMetrics, flagTexts } from '.';
 import { loadScoringConfig } from './load-config';
 
 type M = Record<string, unknown>;
@@ -85,6 +85,45 @@ describe('scores and status on a hand example', () => {
     expect(['S2', 'G1', 'S1'].map((t) => [at(t).statusScore, at(t).status, at(t).caps])).toEqual([[81, 'watch', ['small-cap']], [by('G1').statusScore, 'buy', []], [50, 'watch', []]]);
     const s2 = rows[rows.findIndex((r) => r.ticker === 'S2')];
     expect(whyParts(capped, at('S2'), s2, 'en').slice(1, 3)).toEqual(['score 81 >= 60', 'at most Watch: Market cap below $2B: Market cap $1B < $2B']);
+  });
+
+  test('a buy zone needs every heavy score: an empty one gives Watch and Why names it; a light or not applicable one does not (owner 2026-11-15)', () => {
+    // stable weights cheap 1, safety 1 (50% each). S2 (buy, 81) loses its P/E: cheap empty, total = safety 88 alone
+    const guarded: ScoringConfig = { ...HAND, buyRequiresScores: { minWeight: 0.15 }, scores: { ...HAND.scores, cheap: { ...HAND.scores.cheap, noData: T('no data for the Cheap score', 'нет данных для оценки дешевизны') } } };
+    expect(validateScoringConfig(guarded)).toEqual([]);
+    expect(validateScoringConfig({ ...guarded, buyRequiresScores: { minWeight: 0 } })).toContain('buyRequiresScores.minWeight must be above 0 and at most 1');
+    const rows = HAND_ROWS.map((r) => (r.ticker === 'S2' ? stock('S2', { volatility1y: 20, debtToEquity: 0.5, altmanZ: 4, dividendYield: 2 }) : r));
+    const i = rows.findIndex((r) => r.ticker === 'S2');
+    const res = computeScoring(createUniverse(rows), guarded);
+    expect([res.rows[i].scores.cheap, res.rows[i].statusScore, res.rows[i].status, res.rows[i].missing]).toEqual([null, 88, 'watch', ['cheap']]);
+    expect(computeScoring(createUniverse(rows), HAND).rows[i].status).toBe('buy'); // without the guard the same row is a buy
+    expect(whyParts(guarded, res.rows[i], rows[i], 'en').slice(1)).toEqual(['score 88 >= 60', 'at most Watch: no data for the Cheap score']);
+    expect(whyParts(guarded, res.rows[i], rows[i], 'ru').slice(1)).toEqual(['оценка 88 >= 60', 'не выше «Наблюдать»: нет данных для оценки дешевизны']);
+    // a score without noData in the config gets the generic text; G1 (growth, buy) keeps its buy: all its weighted scores have values
+    const growthGuard: ScoringConfig = { ...guarded, archetypes: { ...guarded.archetypes, growth: { ...guarded.archetypes.growth, scoreWeights: { cheap: 0, quality: 1, safety: 0, dividend: 0.1, entry: 1 } } } };
+    const g = computeScoring(createUniverse(HAND_ROWS), growthGuard).rows[HAND_ROWS.findIndex((r) => r.ticker === 'G1')];
+    expect([g.status, g.missing]).toEqual(['buy', []]); // dividend weighs 0.1 / 2.1 < 15% and G1 pays nothing anyway
+    const heavyDiv: ScoringConfig = { ...guarded, archetypes: { ...guarded.archetypes, stable: { ...guarded.archetypes.stable, buy: 10, reject: 5, scoreWeights: { cheap: 1, quality: 0, safety: 1, dividend: 1, entry: 0 } } } };
+    const payer = [stock('P1', { volatility1y: 20, pe: 10, debtToEquity: 0.1, altmanZ: 9, dividendYield: 1 }), stock('N1', { volatility1y: 20, pe: 10, debtToEquity: 0.1, altmanZ: 9, dividendYield: 0 })];
+    const p = computeScoring(createUniverse(payer), heavyDiv).rows;
+    expect(p.map((x) => [x.scores.dividend, x.status, x.missing])).toEqual([[50, 'buy', []], [null, 'buy', []]]); // a non-payer's empty Dividend is not missing data
+  });
+
+  test('the Total score tooltip lists each score times its weight, heaviest first, and spells out the scaling', () => {
+    const shipped: ScoringConfig = { ...HAND, archetypes: { ...HAND.archetypes, growth: { ...HAND.archetypes.growth, scoreWeights: { cheap: 0.2, quality: 0.35, safety: 0.15, dividend: 0, entry: 0.3 } } } };
+    const rows = [stock('G', { revenueGrowth3y: 20 })];
+    const r = computeScoring(createUniverse(rows), shipped).rows[0];
+    const full = { ...r, scores: { cheap: 86, quality: 66, safety: 62, dividend: null, entry: 53 }, statusScore: 65 };
+    expect(totalScoreText(shipped, full, rows[0], 'en')).toBe('Growth: quality 66 × 35% + entry 53 × 30% + cheap 86 × 20% + safety 62 × 15% = 65');
+    expect(totalScoreText(shipped, full, rows[0], 'ru')).toBe('Растущая: quality 66 × 35% + entry 53 × 30% + cheap 86 × 20% + safety 62 × 15% = 65');
+    const holed = { ...full, scores: { ...full.scores, cheap: null }, statusScore: 61 };
+    expect(totalScoreText(shipped, holed, rows[0], 'en').split('\n')).toEqual([
+      'Growth: quality 66 × 35% + entry 53 × 30% + cheap no data × 20% + safety 62 × 15%', '= 49 / 80% = 61', 'no data: cheap; the weights with data (80%) are scaled up to 100%',
+    ]);
+    expect(totalScoreText(shipped, { ...holed, statusScore: null }, rows[0], 'ru').split('\n')[1]).toBe('итога нет: данные есть у 80% веса, нужно от 50%');
+    const stable = computeScoring(createUniverse(HAND_ROWS), { ...HAND, archetypes: { ...HAND.archetypes, stable: { ...HAND.archetypes.stable, scoreWeights: { cheap: 1, quality: 0, safety: 1, dividend: 1, entry: 0 } } } });
+    expect(totalScoreText({ ...HAND, archetypes: { ...HAND.archetypes, stable: { ...HAND.archetypes.stable, scoreWeights: { cheap: 1, quality: 0, safety: 1, dividend: 1, entry: 0 } } } }, stable.rows[0], HAND_ROWS[0], 'en').split('\n')[0])
+      .toBe('Stable: cheap 100 × 33% + safety 0 × 33% + dividend no dividend × 33%'); // S1 pays nothing
   });
 
   test('growth: quality and entry, the EPS revision lowers the entry score, cash runway stops', () => {
@@ -250,5 +289,24 @@ describe('the shipped config', () => {
     expect(r.every((x) => x.scores.cheap === null && x.scores.quality === null && x.scores.safety === null && x.adjusted.length === 0)).toBe(true);
     expect(r.every((x) => x.status !== null && x.statusScore !== null)).toBe(true); // statuses from the scores that apply to ETFs
     expect(SCORE_IDS.length).toBe(5);
+  });
+
+  test('buyRequiresScores: a volatile stock without a Cheap score is at most Watch (FUTU on 2026-11-13: total 80, Buy zone before)', () => {
+    const min = (config.buyRequiresScores ?? { minWeight: 2 }).minWeight;
+    expect(config.archetypes.volatile.scoreWeights.cheap).toBeGreaterThanOrEqual(min);
+    SCORE_IDS.forEach((id) => expect(config.scores[id].noData).toBeDefined());
+    // 25 volatile stocks with falling entry metrics: the best ones are a buy; V0 has everything but the cheap metrics
+    const rows = Array.from({ length: 25 }, (_, k) => stock(`V${k}`, { volatility1y: 60, pctFrom52wHigh: -k, pctFromAth: -k, range52w: 100 - 4 * k, sigmaFromMean60d: 2 - k / 5, debtToEquity: 3 - k / 10, netDebtToEbitda: 3 - k / 10, interestCoverage: k, altmanZ: 3 + k, piotroskiF: k % 10, niVolatility5y: 50 - k, fcfVolatility5y: 50 - k, roic: k, grossMarginSlope3y: k, operatingMarginSlope3y: k, cfoToNi: k, fcfToNi: k, ...(k === 24 ? {} : { peg: 3 - k / 10, pegHist: 3 - k / 10, forwardToTtmPe: 1, pePct5y: 50, pFcfPct5y: 50, forwardPe: 30 - k }) }));
+    const r = computeScoring(createUniverse(rows), config).rows;
+    expect([r[24].scores.cheap, r[24].status, r[24].missing]).toEqual([null, 'watch', ['cheap']]);
+    expect(r[23].status).toBe('buy');
+    expect(whyParts(config, r[24], rows[24], 'en')).toContain('at most Watch: no data for the Cheap score');
+  });
+
+  test('the irregular dividend flag reads dividendIrregular; the refinement Pays a dividend keeps such stocks', () => {
+    const rows = [stock('FUTU', { dividendIrregular: true, dividendYield: 2.76 }), stock('KO', { dividendIrregular: false, dividendYield: 3 }), stock('NONE', {})];
+    const r = computeScoring(createUniverse(rows), config).rows;
+    expect(r.map((x) => x.flags.indexOf('irregular-dividend') >= 0)).toEqual([true, false, false]);
+    expect(flagTexts(config, r[0], rows[0], 'ru')[0].title).toBe('Нерегулярный дивиденд');
   });
 });

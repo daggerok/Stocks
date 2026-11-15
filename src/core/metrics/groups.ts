@@ -24,7 +24,7 @@ put('safety', ['currentRatio', 'quickRatio', 'debtToEquity', 'netDebtToEbitda', 
 put('dividends', ['dividendYield', 'dividendRate', 'payoutRatio', 'fcfPayout', 'ffoPayoutApprox', 'yieldVsAvg5y']);
 put('quality', ['epsNiGrowthGap3y']);
 put('safety', ['fcfNegativeYears', 'balanceYoyMaxChange', 'balanceYoyMaxLine']);
-put('dividends', ['dividendStreak', 'dividendCut10y']);
+put('dividends', ['dividendStreak', 'dividendCut10y', 'dividendIrregular']);
 put('growth', ['revenueGrowthVsTam']);
 put('scores', ['scoreCheap', 'scoreQuality', 'scoreSafety', 'scoreDividend', 'scoreEntry', 'statusScore', 'archetype', 'status', 'why', 'flags', 'flagCount']);
 put('fields', ['ticker', 'type', 'sector', 'industry', 'isMine', 'size', 'isAdr', 'country', 'ttmIsAnnual', 'isReit']);
