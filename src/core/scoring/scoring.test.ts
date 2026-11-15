@@ -281,11 +281,14 @@ describe('the shipped config', () => {
     expect(computeScoring(createUniverse(rows), config).rows.map((x) => x.archetype)).toEqual(['stable', 'growth', 'stable', 'volatile', 'growth']);
   });
 
-  test('ETFs get only Entry point (no EPS adjustment) and Dividend; the other scores stay empty', () => {
+  test('ETFs get only Entry point (no EPS adjustment) and Dividend (from the brand dividend keys); the other scores stay empty', () => {
     const rows = [1, 2, 3, 4, 5].map((k) => etf(`E${k}`, { pctFrom52wHigh: -5 * k, pctFromAth: -10 * k, range52w: 100 - 20 * k, sigmaFromMean60d: 3 - k, dividendYield: k, epsRevision30d: -10, pe: 10 * k, roic: 10, debtToEquity: 1 }));
     const r = computeScoring(createUniverse(rows), config).rows;
     expect(r.map((x) => x.scores.entry)).toEqual([0, 25, 50, 75, 100]); // deeper drop and lower in the range = better entry, never lowered
-    expect(r.map((x) => x.scores.dividend)).toEqual([0, 25, 50, 75, 100]); // the yield only
+    expect(r.map((x) => x.scores.dividend)).toEqual([null, null, null, null, null]); // the yield alone is under half of the weight
+    // the brand feeds publish streak, cut and 5-year growth (etf-dividend-growth-plan 1.2): the Dividend score moves; the yield-only fund stays empty
+    const paid = [1, 2, 3, 4, 5].map((k) => etf(`D${k}`, { dividendYield: k, dividendStreak: k, dividendCut10y: k === 1, dividendGrowth5y: k })).concat([etf('Y', { dividendYield: 9 })]);
+    expect(computeScoring(createUniverse(paid), config).rows.map((x) => x.scores.dividend)).toEqual([0, 47, 64, 80, 97, null]);
     expect(r.every((x) => x.scores.cheap === null && x.scores.quality === null && x.scores.safety === null && x.adjusted.length === 0)).toBe(true);
     expect(r.every((x) => x.status !== null && x.statusScore !== null)).toBe(true); // statuses from the scores that apply to ETFs
     expect(SCORE_IDS.length).toBe(5);

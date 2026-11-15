@@ -198,6 +198,17 @@ const VALUATION: MetricDef[] = [
 // ---------------------------------------------------------------------------
 // dividends
 
+/** ETF note of the six dividend history keys (etf-dividend-growth-plan 1.2): the brand feeds publish them from the shared dividends block */
+const ETF_DIVIDENDS: Text = {
+  en: 'ETFs: the same calculation from the Yahoo dividend events of the brand updaters (shared dividends block); the listing year of a fund is never a base year and a cut needs a drop of more than 20%; an ETF row is empty until its brand feed publishes the keys',
+  ru: 'ETF: тот же расчёт по дивидендным событиям Yahoo в брендовых апдейтерах (общий блок dividends); год начала торгов фонда никогда не бывает базовым, а сокращением считается падение больше чем на 20%; у строки ETF значение пустое, пока фид бренда не публикует эти ключи',
+};
+/** A dividend history key for both types: formula and guide end with the ETF note, so each article stands on its own */
+const dividendBoth = (spec: Omit<Spec, 'appliesTo'>): MetricDef => def({
+  ...spec, appliesTo: BOTH, formula: `${spec.formula}; ${ETF_DIVIDENDS.en}`,
+  guide: { en: `${spec.guide.en}\n\n${ETF_DIVIDENDS.en}`, ru: `${spec.guide.ru}\n\n${ETF_DIVIDENDS.ru}` },
+});
+
 const DIVIDENDS: MetricDef[] = [
   def({
     id: 'dividendYield', name: { en: 'Dividend yield', ru: 'Дивидендная доходность' }, formula: 'stocks: dividends with ex-dates in the last 12 months / last close × 100; ETFs: the issuer\'s headline yield (definition in dividendYieldBasis)',
@@ -209,7 +220,7 @@ const DIVIDENDS: MetricDef[] = [
       ru: 'У акции: дивиденды с экс-датой за последние 12 месяцев, делённые на последнее закрытие, по графику Yahoo; 0 - выплат за год не было. У ETF: основная доходность эмитента, её определение (за 12 месяцев, ставка распределения, расчётная) записано в dividendYieldBasis. Для стабильных плательщиков типично 2-4%; доходность намного выше сектора часто значит, что рынок ждёт сокращения выплат',
     },
   }),
-  def({
+  dividendBoth({
     id: 'dividendRate', name: { en: 'Dividend per share (12M)', ru: 'Дивиденд на акцию (12 мес.)' }, formula: 'sum of dividends per share with ex-dates in the last 12 months (Yahoo chart)',
     unit: 'usd', basis: 'ttm', source: 'yahoo-chart', direction: 'neutral', nullWhen: { en: 'no payment in the last 12 months', ru: 'выплат за последние 12 месяцев не было' },
     short: { en: 'Dollars paid per share over the last year', ru: 'Сколько долларов выплачено на акцию за год' },
@@ -218,10 +229,10 @@ const DIVIDENDS: MetricDef[] = [
       ru: 'Сумма дивидендов на акцию с экс-датой за последние 12 месяцев с поправкой на сплиты, в валюте цены. Это числитель дивидендной доходности. Специальный дивиденд раздувает её на один год, поэтому перед выводами о скачке смотрят вкладку Dividends',
     },
   }),
-  ...([[1, '', '1 year', '1 год', 'the last complete calendar year over the year before'], [3, '3y', '3 years', '3 года', 'CAGR of the last complete calendar year over 3 years earlier'], [5, '5y', '5 years', '5 лет', 'CAGR of the last complete calendar year over 5 years earlier']] as Array<[number, string, string, string, string]>).map(([n, suffix, en, ru, formula]) => def({
+  ...([[1, '', '1 year', '1 год', 'the last complete calendar year over the year before'], [3, '3y', '3 years', '3 года', 'CAGR of the last complete calendar year over 3 years earlier'], [5, '5y', '5 years', '5 лет', 'CAGR of the last complete calendar year over 5 years earlier']] as Array<[number, string, string, string, string]>).map(([n, suffix, en, ru, formula]) => dividendBoth({
     id: `dividendGrowth${suffix}`, name: { en: `Dividend growth ${en}`, ru: `Рост дивиденда за ${ru}` }, formula: `${formula}, sums of split-adjusted dividends per share by calendar year (Yahoo chart)`,
     unit: 'percent', basis: 'calendar-year', source: 'yahoo-chart', direction: 'higher-is-better', thresholds: n === 5 ? { good: 5 } : undefined,
-    nullWhen: { en: 'the base year has no dividend or the history is too short', ru: 'в базовом году не было дивиденда или история слишком короткая' },
+    nullWhen: { en: 'the base year has no dividend or the history is too short, or the base year is the fund\'s listing year', ru: 'в базовом году не было дивиденда или история слишком короткая, либо базовый год - год начала торгов фонда' },
     short: { en: n === 1 ? 'Change of the yearly dividend versus the previous year' : `Average yearly dividend growth over ${en}`, ru: n === 1 ? 'Изменение годового дивиденда к прошлому году' : `Средний годовой рост дивиденда за ${ru}` },
     guide: {
       en: `Dividend per share summed by calendar year from the Yahoo chart, split adjusted; the current year is partial, so the last complete year is compared ${n === 1 ? 'with the year before' : `with ${n} years earlier as a compound annual rate`}. Dividend growers raise payouts 5-10% a year; growth above earnings growth cannot last. A special dividend or a payment moved between years can fake a jump or a cut, so confirm in the Dividends tab`,
@@ -1185,8 +1196,8 @@ const SCORE_SPECS: Array<[string, string, string, AssetType[], string, string, s
     'Насколько надёжны баланс и прибыль: долг к капиталу, чистый долг к EBITDA, покрытие процентов, Altman Z, Piotroski F и стабильность чистой прибыли и свободного потока',
     'Debt, coverage, distress scores, stable earnings'],
   ['scoreDividend', 'Dividend', 'Дивиденд', ['stock', 'etf'], 'dividendStreak, dividendCut10y, dividendGrowth5y, dividendYield, fcfPayout (REIT: ffoPayoutApprox)',
-    'how reliable the dividend is, for payers only (dividend yield above 0): the streak of yearly increases, no cut in 10 years, 5-year growth, the yield and the share of free cash flow paid out (approximate FFO for REITs). ETFs: the yield only, their feeds publish no dividend growth yet',
-    'Насколько надёжен дивиденд, только для плательщиков (доходность больше 0): стрик лет с повышением, отсутствие сокращений за 10 лет, рост за 5 лет, доходность и доля свободного потока на выплаты (у REIT - приблизительного FFO). У ETF - только доходность: роста дивиденда в их фидах пока нет',
+    'how reliable the dividend is, for payers only (dividend yield above 0): the streak of yearly increases, no cut in 10 years, 5-year growth, the yield and the share of free cash flow paid out (approximate FFO for REITs). ETFs: streak, cut, 5-year growth and yield from their brand feeds (no payout ratio)',
+    'Насколько надёжен дивиденд, только для плательщиков (доходность больше 0): стрик лет с повышением, отсутствие сокращений за 10 лет, рост за 5 лет, доходность и доля свободного потока на выплаты (у REIT - приблизительного FFO). У ETF - стрик, сокращения, рост за 5 лет и доходность из фидов брендов (без доли выплат)',
     'Streak, no cuts, growth and payout of payers'],
   ['scoreEntry', 'Entry point', 'Точка входа', ['stock', 'etf'], 'pctFrom52wHigh, pctFromAth, range52w, sigmaFromMean60d (lower is better here); × 0.75 when epsRevision30d < 0',
     'how good the moment to buy is: the drop from the 52-week high and from the all-time high, the position in the 52-week range and the distance from the 60-day mean in sigma, all read as lower is better. A stock whose current-year EPS estimate fell in 30 days gets the score multiplied by the factor of the config. ETFs: the same without the EPS adjustment',
@@ -1265,7 +1276,7 @@ const SCORE_OUTPUTS: MetricDef[] = [
 ];
 
 const SCORE_INPUTS: MetricDef[] = [
-  def({
+  dividendBoth({
     id: 'dividendStreak', name: { en: 'Dividend increase streak', ru: 'Стрик повышений дивиденда' }, formula: 'complete calendar years in a row whose dividend per share is above the base year (the year before, or the one before a special dividend), counted back from the last complete year (market.annualDps, up to 30 complete years)',
     unit: 'count', basis: 'calendar-year', source: 'yahoo-chart', direction: 'higher-is-better', thresholds: { good: 10 },
     nullWhen: { en: 'no dividend in the last complete calendar year', ru: 'нет дивиденда в последнем полном календарном году' },
@@ -1275,7 +1286,7 @@ const SCORE_INPUTS: MetricDef[] = [
       ru: 'Сколько полных календарных лет подряд дивиденд на акцию (с поправкой на сплиты, сумма экс-дат года) повышался. Год без изменений обрывает стрик. Спецдивиденд не считается: год, который больше обоих соседей в 1,2 раза, пропускается как база. Фид хранит 30 полных календарных лет, поэтому стрик не больше 29 даже у компании, повышающей выплату 60 лет. От 10 лет - устойчивый растущий плательщик',
     },
   }),
-  def({
+  dividendBoth({
     id: 'dividendCut10y', name: { en: 'Dividend cut in 10 years', ru: 'Сокращение дивиденда за 10 лет' }, formula: 'true when a complete calendar year of the last 10 paid more than 10% less than its base year and the next year did not come back; a stopped dividend is a cut',
     unit: 'flag', basis: 'calendar-year', source: 'yahoo-chart', direction: 'neutral',
     nullWhen: { en: 'no dividend in the last 11 complete calendar years', ru: 'нет дивидендов за последние 11 полных календарных лет' },

@@ -10,6 +10,7 @@ const ETF_METRIC_KEYS = [
   'range52w', 'range52wClose', 'range52wAsOf', 'range52wSince', 'range52wBasis', 'returnsBasis', 'performanceAsOf', 'dividendYieldSource',
   'indicatedDividendYield', 'secYieldUnsubsidized', 'tr1yText', 'tr3yText', 'tr5yText', 'tr10yText', 'cagr3yText', 'cagr5yText', 'cagr10yText',
   'siAnnText', 'indicatedDividendYieldText', 'secYieldUnsubsidizedText', 'ytdText', 'dividendYieldBasisText', 'dividendYieldComputed', 'secYieldKind',
+  'dividendRate', 'dividendGrowth', 'dividendGrowth3y', 'dividendGrowth5y', 'dividendStreak', 'dividendCut10y',
 ];
 /** Row fields and the metrics the base presets reference before the updater publishes them */
 const SCREENER_KEYS = ['ticker', 'type', 'sector', 'industry', 'isMine', 'size', 'peg', 'pePct5y', 'pFcfPct5y', 'yieldVsAvg5y', 'operatingMarginSlope3y', 'niVolatility5y', 'fcfVolatility5y', 'cfoToNi', 'forwardToTtmPe', 'volatility1y', 'pctFromAth', 'capexToRevenueDelta3y', 'sigmaFromMean60d', 'isReit'];
