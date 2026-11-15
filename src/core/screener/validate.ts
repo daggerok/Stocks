@@ -50,7 +50,27 @@ export function validatePreset(preset: Preset, registry: Registry = REGISTRY): s
   if (!Array.isArray(preset.appliesTo) || !preset.appliesTo.length || preset.appliesTo.some((t) => t !== 'stock' && t !== 'etf')) errors.push(`${id}: appliesTo must list stock and/or etf`);
   if (preset.refine !== undefined && typeof preset.refine !== 'boolean') errors.push(`${id}: refine must be true or false`);
   const conditions = Array.isArray(preset.conditions) ? preset.conditions : [];
-  if (!conditions.length) errors.push(`${id}: no conditions`);
+  const variants = preset.variants;
+  if (variants !== undefined) {
+    if (!Array.isArray(variants) || !variants.length) errors.push(`${id}: variants must be a non-empty list`);
+    else {
+      const ids: string[] = [];
+      variants.forEach((v, k) => {
+        const at = `${id} variant ${k + 1} (${v && v.id})`;
+        if (!v || typeof v.id !== 'string' || !/^[a-z0-9][a-z0-9-]*$/.test(v.id)) errors.push(`${at}: id must be lowercase letters, digits and hyphens`);
+        else if (ids.indexOf(v.id) >= 0) errors.push(`${at}: duplicate variant id`);
+        else ids.push(v.id);
+        if (!v || !hasText(v.title)) errors.push(`${at}: title needs en and ru`);
+        const list = v && Array.isArray(v.conditions) ? v.conditions : [];
+        if (!list.length) errors.push(`${at}: no conditions`);
+        list.forEach((c, i) => { errors.push(...conditionErrors(c, `${at} condition ${i + 1} (${c && c.metric})`, registry)); });
+      });
+      if (preset.defaultVariant !== undefined && ids.indexOf(preset.defaultVariant) < 0) errors.push(`${id}: defaultVariant ${preset.defaultVariant} is not a variant`);
+    }
+    if (preset.match !== 'all') errors.push(`${id}: a preset with variants needs match "all"`);
+  } else if (preset.defaultVariant !== undefined) errors.push(`${id}: defaultVariant without variants`);
+  if (preset.variant !== undefined && typeof preset.variant !== 'string') errors.push(`${id}: variant must be a variant id`);
+  if (!conditions.length && !(Array.isArray(variants) && variants.length)) errors.push(`${id}: no conditions`);
   if (preset.match !== 'all' && !(typeof preset.match === 'number' && Math.floor(preset.match) === preset.match && preset.match >= 1 && preset.match <= conditions.length)) errors.push(`${id}: match must be "all" or a whole number from 1 to the number of conditions`);
   conditions.forEach((c, i) => { errors.push(...conditionErrors(c, `${id} condition ${i + 1} (${c && c.metric})`, registry)); });
   return errors;

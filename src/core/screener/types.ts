@@ -54,7 +54,18 @@ export type Preset = {
   /** true: a refinement (pays a dividend, up over a year) the screener always combines with AND on top of the chosen presets */
   refine?: boolean;
   conditions: Condition[];
+  /**
+   * Switchable horizons of one preset (Stable growth: 1Y, 3Y, 5Y, 10Y): the screener shows a picker, the chosen variant adds its
+   * conditions after the shared `conditions`. withVariant() turns such a preset into a plain one (no `variants`, `variant` set)
+   */
+  variants?: PresetVariant[];
+  /** the variant used when nothing is chosen; the first one when absent */
+  defaultVariant?: string;
+  /** the variant a resolved preset was built from (a plain preset made by withVariant) */
+  variant?: string;
 };
+
+export type PresetVariant = { id: string; title: Text; conditions: Condition[] };
 
 /** A preset id, or and/or/not over expressions: { "and": ["cashflow-machines", { "not": "high-debt" }] } */
 export type Expression = string | { and: Expression[] } | { or: Expression[] } | { not: Expression };

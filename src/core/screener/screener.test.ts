@@ -4,7 +4,8 @@ import {
   Condition, createUniverse, etfRow, evaluateCondition, evaluateExpression, evaluatePreset, evaluatePresets, FAIL, intersections, PASS, percentiles,
   Preset, ScreenerRow, SKIP, stockRow, tickersOf, universeRows, validatePreset,
 } from '.';
-import { loadPresets } from './load-presets';
+import { loadPresets, loadRawPresets } from './load-presets';
+import { pickVariant, withVariant } from './variants';
 
 type Extra = { sector?: string; industry?: string; isMine?: boolean; size?: number };
 const row = (ticker: string, metrics: Record<string, unknown>, extra: Extra = {}, type: 'stock' | 'etf' = 'stock'): ScreenerRow =>
@@ -132,9 +133,9 @@ const BY_ID: Record<string, Preset> = {};
 PRESETS.forEach((p) => { BY_ID[p.id] = p; });
 
 describe('presets', () => {
-  test('the 14 base presets (two of them refinements) validate against the registry; a broken preset does not', () => {
-    expect(PRESETS.map((p) => p.id)).toEqual(['cashflow-machines', 'cheap-earnings', 'dividend-growth', 'gold', 'growth-no-profit', 'high-debt', 'mine', 'pays-dividend', 'positive-1y', 'quality-growth', 'quality-on-sale', 'stable-dividend', 'undervalued', 'volatile-swings']);
-    expect(PRESETS.filter((p) => p.refine).map((p) => p.id)).toEqual(['pays-dividend', 'positive-1y']);
+  test('the 16 base presets (three of them refinements) validate against the registry; a broken preset does not', () => {
+    expect(PRESETS.map((p) => p.id)).toEqual(['cashflow-machines', 'cheap-earnings', 'dividend-growth', 'gold', 'growth-no-profit', 'high-debt', 'mine', 'pays-dividend', 'positive-1y', 'quality-growth', 'quality-on-sale', 'rising-dividend', 'stable-dividend', 'stable-growth', 'undervalued', 'volatile-swings']);
+    expect(PRESETS.filter((p) => p.refine).map((p) => p.id)).toEqual(['pays-dividend', 'positive-1y', 'rising-dividend']);
     expect(validatePreset({ ...BY_ID['pays-dividend'], refine: 'yes' } as unknown as Preset)).toEqual(['pays-dividend: refine must be true or false']);
     expect(PRESETS.flatMap((p) => validatePreset(p))).toEqual([]);
     const broken = preset([
@@ -166,6 +167,39 @@ describe('presets', () => {
       row('QQQ', ok, {}, 'etf'),
     ]);
     expect(tickersOf(u, evaluatePreset(u, BY_ID['quality-on-sale']).pass)).toEqual(['NVDA', 'META']);
+  });
+
+  test('stable growth: a horizon variant adds its conditions; growing on every horizon up to it, 5% a year, calm price (owner 2026-11-14)', () => {
+    const raw = loadRawPresets().filter((p) => p.id === 'stable-growth')[0];
+    expect(validatePreset(raw)).toEqual([]);
+    expect(raw.variants!.map((v) => v.id)).toEqual(['1y', '3y', '5y', '10y']);
+    expect(BY_ID['stable-growth'].variant).toBe('5y'); // loadPresets resolves the default
+    expect(BY_ID['stable-growth'].variants).toBeUndefined();
+    expect(pickVariant(raw, 'nope')!.id).toBe('5y');
+    const good = { volatility1y: 20, tr1y: 8, tr3y: 30, tr5y: 50, tr10y: 120, cagr3y: 9, cagr5y: 8.4, cagr10y: 8.2 };
+    const u = createUniverse([
+      row('KO', good),
+      row('YOUNG', { ...good, tr10y: null, cagr10y: null }, {}, 'etf'),
+      row('DIP3', { ...good, tr3y: -2 }),
+      row('SLOW', { ...good, cagr5y: 3, cagr3y: 3 }),
+      row('WILD', { ...good, volatility1y: 60 }),
+      row('HOT1', { volatility1y: 30, tr1y: 12 }),
+    ]);
+    const pass = (h: string) => tickersOf(u, evaluatePreset(u, withVariant(raw, h)).pass);
+    expect([pass('1y'), pass('3y'), pass('5y'), pass('10y')]).toEqual([
+      ['KO', 'YOUNG', 'DIP3', 'SLOW', 'HOT1'], ['KO', 'YOUNG'], ['KO', 'YOUNG'], ['KO', 'SLOW'],
+    ]); // the pace reads the CAGR of the chosen horizon only: SLOW grew 3% a year over 3 and 5 years but 8.2% over 10
+    expect(withVariant(raw, '10y').conditions.map((c) => c.metric)).toEqual(['volatility1y', 'tr1y', 'tr3y', 'tr5y', 'tr10y', 'cagr10y']);
+    const broken = { ...raw, defaultVariant: '20y', match: 1, variants: [raw.variants![0], { ...raw.variants![0], conditions: [] }] } as Preset;
+    expect(validatePreset(broken)).toEqual([
+      'stable-growth variant 2 (1y): duplicate variant id', 'stable-growth variant 2 (1y): no conditions',
+      'stable-growth: defaultVariant 20y is not a variant', 'stable-growth: a preset with variants needs match "all"',
+    ]);
+  });
+
+  test('rising dividend: grown over 5 years and never cut in 10; stocks only, so ETFs drop out', () => {
+    const u = createUniverse([row('KO', { dividendGrowth5y: 4, dividendCut10y: false }), row('CUT', { dividendGrowth5y: 4, dividendCut10y: true }), row('FLAT', { dividendGrowth5y: 0, dividendCut10y: false }), row('VIG', { dividendYield: 2 }, {}, 'etf')]);
+    expect(tickersOf(u, evaluatePreset(u, BY_ID['rising-dividend']).pass)).toEqual(['KO']);
   });
 
   test('gold: a miner by industry or an ETF by ticker; mine: the isMine flag', () => {
