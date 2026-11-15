@@ -608,12 +608,24 @@
 /* the search: at least 12.125rem so the placeholder stays readable (the ☰ menu moved to the right end of the toolbar, 2026-11-15; the search keeps its width); the toolbar is one row from about 1700 px, below it Sticky # and Hide stale wrap to a second row */
 @media (min-width:1024px){#toolbar-panel .am-row{flex:1 1 12.125rem;min-width:12.125rem;max-width:24.125rem}}
 #actions-panel .am-item{overflow:hidden;text-overflow:ellipsis}
-.scr-label{width:5.5rem;flex:none}
+.scr-label{width:5.5rem;flex:none;text-align:center}
 .scr-seg{flex:none}
 .scr-seg button{width:4.5rem;text-align:center}
 .scr-seg-any button{width:5.75rem}
 #scr-status{flex:1 1 0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* screener head row (owner 2026-11-15): [Stocks ETFs All][All of Any of] SCREENER <status> [tools]. The title sits in the middle of the row:
+   the two sides are equally wide (fixed), the center has an empty pad and the status of the same flexible width around the title, so the
+   title never moves and a long status ends in an ellipsis (full text in its tooltip). Below 1280 px the title line wraps under the buttons */
+.scr-side{display:inline-flex;flex-wrap:wrap;align-items:center;gap:.5rem .6rem;flex:none;max-width:100%}
+.scr-center{display:flex;align-items:center;gap:.6rem;min-width:0;flex:1 1 100%;order:3;height:1.75rem}
+.scr-center-pad{flex:1 1 0;min-width:0}
 .scr-tools{flex:none}
+@media (min-width:1280px){
+  .scr-bar{flex-wrap:nowrap}
+  .scr-side{width:26.5rem;flex-wrap:nowrap}
+  .scr-center{flex:1 1 0;order:0}
+  .scr-tools{justify-content:flex-end;margin-left:0}
+}
 .scr-tools>[data-act="clear"]{width:7.5rem}
 .scr-tools>[data-act="peers"]{width:9rem}
 .scr-tools>.scr-import{width:5.5rem}

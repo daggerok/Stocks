@@ -5196,6 +5196,7 @@ function variantPicker(p: Preset): string {
 
 function screenerStatusText(): string {
   const parts: string[] = [];
+  if (scr.status === 'loading') parts.push(t('screener.loading')); // on the title line, not in the chips (owner 2026-11-15)
   if (etfState === 'loading') parts.push(t('screener.loadingEtfs', { done: etfDone, total: etfBrands.length }));
   else if (etfState === 'done') parts.push(t('screener.etfsLoaded', { count: etfRows.length.toLocaleString('en-US'), brands: etfBrands.length - etfFailed.length }));
   if (etfListError) parts.push(t('screener.etfListFailed', { error: etfListError }));
@@ -5229,14 +5230,15 @@ function renderScreener(): void {
   const main = scr.base.filter(p => !p.refine).map(p => chipHtml(scr.drafts[p.id] || p, results, null)).join('');
   const refine = scr.base.filter(p => p.refine).map(p => chipHtml(scr.drafts[p.id] || p, results, null)).join('');
   const own = owns.map(entry => chipHtml(scr.drafts[entry.preset.id] || entry.preset, results, entry)).join('');
-  const loading = scr.status === 'loading' ? `<span class="scr-muted">${escapeHtml(t('screener.loading'))}</span>` : scr.status === 'failed' ? `<span class="scr-error">${escapeHtml(t('screener.unavailablePresets', { error: scr.error }))}</span>` : '';
+  const loading = scr.status === 'failed' ? `<span class="scr-error">${escapeHtml(t('screener.unavailablePresets', { error: scr.error }))}</span>` : '';
   const chosen = Object.keys(scr.chips).length;
-  // language-stable layout (owner 2026-11-14): a head row of fixed-width controls, then the chips in grids of equal cells, so EN and RU wrap the same
+  // language-stable layout (owner 2026-11-14): a head row of fixed-width controls, then the chips in grids of equal cells, so EN and RU wrap the same.
+  // Head row (owner 2026-11-15): the buttons left, the title in the middle of the row with the status right after it, the tools right;
+  // both sides are equally wide so the title stays in the center whatever the status says (below 1280 px the title line wraps under the buttons)
   panel.innerHTML = `<div class="scr-bar">
-      <span class="scr-label">${escapeHtml(t('screener.title'))}</span>
-      ${typeSeg}${combineSeg}
-      <span id="scr-status" class="scr-muted" aria-live="polite" title="${escapeHtml(screenerStatusText())}">${escapeHtml(screenerStatusText())}</span>
-      <span class="scr-tools">
+      <span class="scr-side scr-side-left">${typeSeg}${combineSeg}</span>
+      <span class="scr-center"><span class="scr-center-pad"></span><span class="scr-label">${escapeHtml(t('screener.title'))}</span><span id="scr-status" class="scr-muted" aria-live="polite" title="${escapeHtml(screenerStatusText())}">${escapeHtml(screenerStatusText())}</span></span>
+      <span class="scr-side scr-tools">
         ${chosen ? `<button type="button" class="dd-act" data-act="clear" title="${escapeHtml(t('screener.clear.tip'))}">${escapeHtml(t('screener.clear'))}</button>` : ''}
         <button type="button" class="dd-act" data-act="peers" aria-expanded="${scr.peersOpen}" title="${escapeHtml(t('peers.button.tip'))}">${escapeHtml(t('peers.button'))} (${Object.keys(scr.peers).length})${peersAreExported() ? '' : '<span class="scr-dot"></span>'}</button>
         <label class="dd-act scr-import" title="${escapeHtml(t('screener.import.tip'))}">${escapeHtml(t('screener.import'))}<input type="file" id="scr-import-input" accept=".json,application/json" multiple hidden /></label>
