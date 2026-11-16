@@ -88,17 +88,19 @@ describe('scores and status on a hand example', () => {
   });
 
   test('a buy zone needs every heavy score: an empty one gives Watch and Why names it; a light or not applicable one does not (owner 2026-11-15)', () => {
-    // stable weights cheap 1, safety 1 (50% each). S2 (buy, 81) loses its P/E: cheap empty, total = safety 88 alone
-    const guarded: ScoringConfig = { ...HAND, buyRequiresScores: { minWeight: 0.15 }, scores: { ...HAND.scores, cheap: { ...HAND.scores.cheap, noData: T('no data for the Cheap score', 'нет данных для оценки дешевизны') } } };
+    // stable weights cheap 1, safety 1 (50% each). S2 (buy, 81) loses its P/E: cheap empty counts as 0, total = 88 × 50% = 44,
+    // still a buy at the lowered threshold 40 of this test, so the guard makes it Watch
+    const guarded: ScoringConfig = { ...HAND, buyRequiresScores: { minWeight: 0.15 }, archetypes: { ...HAND.archetypes, stable: { ...HAND.archetypes.stable, buy: 40, reject: 20 } }, scores: { ...HAND.scores, cheap: { ...HAND.scores.cheap, noData: T('no data for the Cheap score', 'нет данных для оценки дешевизны') } } };
     expect(validateScoringConfig(guarded)).toEqual([]);
     expect(validateScoringConfig({ ...guarded, buyRequiresScores: { minWeight: 0 } })).toContain('buyRequiresScores.minWeight must be above 0 and at most 1');
     const rows = HAND_ROWS.map((r) => (r.ticker === 'S2' ? stock('S2', { volatility1y: 20, debtToEquity: 0.5, altmanZ: 4, dividendYield: 2 }) : r));
     const i = rows.findIndex((r) => r.ticker === 'S2');
     const res = computeScoring(createUniverse(rows), guarded);
-    expect([res.rows[i].scores.cheap, res.rows[i].statusScore, res.rows[i].status, res.rows[i].missing]).toEqual([null, 88, 'watch', ['cheap']]);
-    expect(computeScoring(createUniverse(rows), HAND).rows[i].status).toBe('buy'); // without the guard the same row is a buy
-    expect(whyParts(guarded, res.rows[i], rows[i], 'en').slice(1)).toEqual(['score 88 >= 60', 'at most Watch: no data for the Cheap score']);
-    expect(whyParts(guarded, res.rows[i], rows[i], 'ru').slice(1)).toEqual(['оценка 88 >= 60', 'не выше «Наблюдать»: нет данных для оценки дешевизны']);
+    expect([res.rows[i].scores.cheap, res.rows[i].statusScore, res.rows[i].status, res.rows[i].missing]).toEqual([null, 44, 'watch', ['cheap']]);
+    const plain = computeScoring(createUniverse(rows), HAND).rows[i]; // without buyRequiresScores the empty score is left out and safety scaled up
+    expect([plain.statusScore, plain.status]).toEqual([88, 'buy']);
+    expect(whyParts(guarded, res.rows[i], rows[i], 'en').slice(1)).toEqual(['score 44 >= 40', 'at most Watch: no data for the Cheap score']);
+    expect(whyParts(guarded, res.rows[i], rows[i], 'ru').slice(1)).toEqual(['оценка 44 >= 40', 'не выше «Наблюдать»: нет данных для оценки дешевизны']);
     // a score without noData in the config gets the generic text; G1 (growth, buy) keeps its buy: all its weighted scores have values
     const growthGuard: ScoringConfig = { ...guarded, archetypes: { ...guarded.archetypes, growth: { ...guarded.archetypes.growth, scoreWeights: { cheap: 0, quality: 1, safety: 0, dividend: 0.1, entry: 1 } } } };
     const g = computeScoring(createUniverse(HAND_ROWS), growthGuard).rows[HAND_ROWS.findIndex((r) => r.ticker === 'G1')];
@@ -337,8 +339,9 @@ describe('buyRequiresScores.exempt: financials skip the Safety score (owner N46,
   test('a Financial Services stock with an empty Safety score can be Buy zone; a non-financial one cannot', () => {
     const fin = last(build('Financial Services', 'safety'));
     expect([fin.scores.safety, fin.status, fin.missing]).toEqual([null, 'buy', []]);
-    const tech = last(build('Technology', 'safety'));
-    expect([tech.scores.safety, tech.status, tech.missing]).toEqual([null, 'watch', ['safety']]);
+    const tech = last(build('Technology', 'safety')); // the empty Safety counts as 0: 25% of the weight gone, below the buy zone
+    expect([tech.scores.safety, tech.status, tech.missing]).toEqual([null, 'watch', []]);
+    expect(tech.statusScore).toBe(Math.round((fin.statusScore ?? 0) * 0.75));
     expect(last(build('Financial Services', 'none')).status).toBe('buy');
   });
 
@@ -349,6 +352,59 @@ describe('buyRequiresScores.exempt: financials skip the Safety score (owner N46,
 
   test('without the exempt list a Financial Services stock with empty Safety is Watch again', () => {
     const r = last(build('Financial Services', 'safety'), { ...config, buyRequiresScores: { minWeight: 0.15 } });
-    expect([r.status, r.missing]).toEqual(['watch', ['safety']]);
+    expect([r.status, r.missing, r.statusScore]).toEqual(['watch', [], last(build('Technology', 'safety')).statusScore]);
+  });
+});
+
+describe('FUTU 2026-11-15: an empty heavy score counts as 0, P/E in the Cheap score (owner options A and D)', () => {
+  const config = loadScoringConfig();
+  const futu = stock('FUTU', { volatility1y: 60, dividendYield: 2.76 }, 'Financial Services');
+  const base = { archetype: 'volatile', stops: [], caps: [], missing: [], flags: [], notes: [], adjusted: [] };
+
+  test('the Total tooltip shows the heavy empty score as no data × weight = 0 and says it counts as 0, EN and RU', () => {
+    const r = { ...base, scores: { cheap: null, quality: 87, safety: 72, dividend: null, entry: 83 }, statusScore: 68, status: 'watch' as const };
+    // 83 × 50% + 72 × 25% + 87 × 10% + 0 × 15% = 68.2: the Total of FUTU on the feed of 2026-11-13 was 80 with the 15% dropped
+    expect(totalScoreText(config, r, futu, 'en').split('\n')).toEqual([
+      'Volatile: entry point 83 × 50% + safety 72 × 25% + cheap (no data × 15% = 0) + quality 87 × 10% = 68', 'no data: cheap counts as 0 (a score with 15% of the weight or more)',
+    ]);
+    expect(totalScoreText(config, r, futu, 'ru').split('\n')).toEqual([
+      'Волатильная: точка входа 83 × 50% + безопасно 72 × 25% + дёшево (нет данных × 15% = 0) + качественно 87 × 10% = 68', 'нет данных: дёшево считается как 0 (оценка с весом от 15%)',
+    ]);
+    // a light empty score (Quality, 10%) is still left out and the rest scaled: (41.5 + 18 + 0) / 90% = 66
+    const both = { ...r, scores: { ...r.scores, quality: null }, statusScore: 66 };
+    expect(totalScoreText(config, both, futu, 'en').split('\n')).toEqual([
+      'Volatile: entry point 83 × 50% + safety 72 × 25% + cheap (no data × 15% = 0) + quality no data × 10%', '= 59 / 90% = 66',
+      'no data: quality; the weights with data (90%) are scaled up to 100%', 'no data: cheap counts as 0 (a score with 15% of the weight or more)',
+    ]);
+  });
+
+  test('computeScoring: the heavy empty score adds its weight with 0, a light one or an exempt one is scaled out', () => {
+    // 25 volatile stocks; V24 has no cheap metrics at all
+    const rows = Array.from({ length: 25 }, (_, k) => stock(`V${k}`, { volatility1y: 60, pctFrom52wHigh: -k, pctFromAth: -k, range52w: 100 - 4 * k, sigmaFromMean60d: 2 - k / 5, debtToEquity: 3 - k / 10, netDebtToEbitda: 3 - k / 10, interestCoverage: k, altmanZ: 3 + k, piotroskiF: k % 10, niVolatility5y: 50 - k, fcfVolatility5y: 50 - k, roic: k, grossMarginSlope3y: k, operatingMarginSlope3y: k, cfoToNi: k, fcfToNi: k, ...(k === 24 ? {} : { peg: 3 - k / 10, pegHist: 3 - k / 10, pe: 30 - k, forwardPe: 30 - k }) }));
+    const r = computeScoring(createUniverse(rows), config).rows[24];
+    const s = r.scores;
+    expect(s.cheap).toBeNull();
+    const zeroed = 0.5 * (s.entry ?? 0) + 0.25 * (s.safety ?? 0) + 0.1 * (s.quality ?? 0);
+    expect(Math.abs((r.statusScore ?? 0) - zeroed)).toBeLessThanOrEqual(1);
+    const plain = computeScoring(createUniverse(rows), { ...config, buyRequiresScores: undefined }).rows[24]; // the old rule: dropped and scaled
+    expect(Math.abs((plain.statusScore ?? 0) - zeroed / 0.85)).toBeLessThanOrEqual(1);
+    // the same row in Financial Services without Safety metrics: Safety is exempt there (N46 b), so it is scaled out, not 0
+    const fin = rows.map((x, k) => (k === 24 ? stock('V24', { ...x.metrics, pe: 5, pegHist: 0.1, debtToEquity: null, netDebtToEbitda: null, interestCoverage: null, altmanZ: null, piotroskiF: null, niVolatility5y: null, fcfVolatility5y: null }, 'Financial Services') : x));
+    const f = computeScoring(createUniverse(fin), config).rows[24];
+    expect(f.scores.safety).toBeNull();
+    const fs = f.scores;
+    expect(Math.abs((f.statusScore ?? 0) - (0.5 * (fs.entry ?? 0) + 0.15 * (fs.cheap ?? 0) + 0.1 * (fs.quality ?? 0)) / 0.75)).toBeLessThanOrEqual(1);
+  });
+
+  test('Cheap has a TTM P/E item in the sector and its own minWeightShare 0.25: P/E with one more valuation metric is a score', () => {
+    expect(config.scores.cheap.items).toContainEqual({ metric: 'pe', weight: 1, scope: 'sector' });
+    expect(config.scores.cheap.minWeightShare).toBe(0.25);
+    expect(validateScoringConfig({ ...config, scores: { ...config.scores, cheap: { ...config.scores.cheap, minWeightShare: 1.5 } } })).toContain('score cheap: minWeightShare must be above 0 and at most 1');
+    // a foreign filer like FUTU: only pegHist and the TTM P/E (no forward P/E, no own 5-year percentiles): 2 of 7.5 weight
+    const rows = Array.from({ length: 21 }, (_, k) => stock(`F${k}`, k === 20 ? { pe: 9 } : { pe: 10 + k, pegHist: 0.5 + k / 10 }, 'Financial Services'));
+    const r = computeScoring(createUniverse(rows), config).rows;
+    expect(r[0].scores.cheap).toBe(98); // the lowest pegHist (100) and the second lowest P/E of 21 (95, F20 has 9)
+    expect(r[19].scores.cheap).toBe(0); // the highest P/E and pegHist of the sector
+    expect(r[20].scores.cheap).toBeNull(); // P/E alone is 1 of 7.5: still no data
   });
 });

@@ -43,6 +43,8 @@ export type ScoreDef = {
   /** only rows with dividendYield > 0 get the score */
   payersOnly?: boolean;
   items: ScoreItem[];
+  /** overrides the config's minWeightShare for this score (Cheap: 0.25, so P/E with one more valuation metric is enough for a foreign filer) */
+  minWeightShare?: number;
   /** Why text when the score is empty and keeps a row out of the buy zone (buyRequiresScores): "no data for the Cheap score" */
   noData?: Text;
   /** the score is multiplied by `factor` when the condition passes (Entry point: EPS estimates cut) */
@@ -85,7 +87,7 @@ export type ScoringConfig = {
   schemaVersion: number;
   /** a sector with fewer values of a metric compares with the whole market of its type */
   minGroupSize: number;
-  /** a score or status score is empty below this share of its weight */
+  /** a score (unless it sets its own) or the status score is empty below this share of its weight */
   minWeightShare: number;
   /** score colors: >= good green, < bad red, amber between */
   colors: { good: number; bad: number };

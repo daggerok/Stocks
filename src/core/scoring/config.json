@@ -97,6 +97,7 @@
       "title": { "en": "Cheap", "ru": "Дёшево" },
       "noData": { "en": "no data for the Cheap score", "ru": "нет данных для оценки дешевизны" },
       "appliesTo": ["stock"],
+      "minWeightShare": 0.25,
       "items": [
         { "metric": "peg", "weight": { "stable": 1, "growth": 1.5, "volatile": 1 } },
         { "metric": "pegHist", "weight": 1 },
@@ -104,7 +105,8 @@
         { "metric": "pePct5y", "weight": { "stable": 1, "growth": 0.5, "volatile": 1 } },
         { "metric": "pFcfPct5y", "weight": 1 },
         { "metric": "forwardPe", "weight": 1, "scope": "sector" },
-        { "metric": "forwardPe", "weight": 0.5, "scope": "peers" }
+        { "metric": "forwardPe", "weight": 0.5, "scope": "peers" },
+        { "metric": "pe", "weight": 1, "scope": "sector" }
       ]
     },
     "quality": {

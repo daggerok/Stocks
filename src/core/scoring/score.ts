@@ -8,9 +8,10 @@
  *   when the category has fewer than minGroupSize values); ties share the mean rank
  * - a score is the weighted mean of the items with a value, empty below minWeightShare of the weight of the items that apply to
  *   the row type; the weights may differ per archetype
- * - the status score combines the scores with the archetype's score weights in the same way; a stop factor of the archetype
- *   rejects the row, otherwise the archetype's buy and reject thresholds decide; a buy zone needs the heavy scores
- *   (buyRequiresScores) and no buy cap, else it is Watch
+ * - the status score combines the scores with the archetype's score weights: an empty heavy score (buyRequiresScores weight,
+ *   not exempt, owner 2026-11-15) counts as 0, a lighter empty one is left out and the other weights are scaled up; it is empty
+ *   when less than minWeightShare of the weight has data. A stop factor of the archetype rejects the row, otherwise the
+ *   archetype's buy and reject thresholds decide; a buy zone needs the heavy scores (buyRequiresScores) and no buy cap, else Watch
  */
 import type { AssetType, Direction } from '../metrics/types';
 import { evaluateCondition, evaluatePreset, fieldValue, numeric, PASS, percentiles, type Universe } from '../screener/engine';
@@ -18,6 +19,13 @@ import { type Preset, PRESET_SCHEMA_VERSION, type ScreenerRow } from '../screene
 import { type Rule, type RowScoring, SCORE_IDS, SCORE_METRICS, type ScoreDef, type ScoreId, type ScoreItem, type ScoringConfig, type Status, type Weight } from './types';
 
 export type ScoringResult = { config: ScoringConfig; rows: RowScoring[] };
+
+/**
+ * Version of the formulas in this file: the precomputed scores.json (snapshot.ts) puts it into its key, so a formula change in code
+ * (no config change) never reuses an old snapshot. Bump it with every change that moves a score, a total or a status.
+ * 2: an empty heavy score counts as 0 in the Total, a score may set its own minWeightShare (owner 2026-11-15, FUTU)
+ */
+export const SCORING_FORMULA_VERSION = 2;
 
 export const ruleAsPreset = (rule: Rule): Preset => ({ schemaVersion: PRESET_SCHEMA_VERSION, id: rule.id, title: rule.title, appliesTo: rule.appliesTo, match: rule.match, conditions: rule.conditions });
 
@@ -110,6 +118,10 @@ export function missingScores(config: ScoringConfig, weights: Record<ScoreId, nu
     .sort((x, y) => (weights[y] ?? 0) - (weights[x] ?? 0));
 }
 
+/** Empty scores that count as 0 in the Total: the ones missingScores names at the buyRequiresScores weight; none without that block */
+export const zeroScores = (config: ScoringConfig, weights: Record<ScoreId, number>, scores: Record<ScoreId, number | null>, row: ScreenerRow): ScoreId[] =>
+  config.buyRequiresScores ? missingScores(config, weights, scores, row, config.buyRequiresScores.minWeight) : [];
+
 /** Every row's scores, archetype, status, stop factors, flags and notes */
 export function computeScoring(universe: Universe, config: ScoringConfig): ScoringResult {
   const rows = universe.rows;
@@ -170,7 +182,7 @@ export function computeScoring(universe: Universe, config: ScoringConfig): Scori
         avail += w;
         sum += w * pct;
       });
-      if (!(total > 0) || avail < config.minWeightShare * total) continue;
+      if (!(total > 0) || avail < (def.minWeightShare ?? config.minWeightShare) * total) continue;
       out[i] = sum / avail;
     }
     (def.adjust ?? []).forEach((a) => {
@@ -201,7 +213,9 @@ export function computeScoring(universe: Universe, config: ScoringConfig): Scori
       total += w;
       if (v === v) { avail += w; sum += w * v; }
     });
-    const statusScore = total > 0 && avail >= config.minWeightShare * total ? Math.round(sum / avail) : null;
+    // a heavy empty score adds its weight with 0 (owner 2026-11-15: FUTU had no Cheap score and a Total of 80 from the rest)
+    const zeroWeight = zeroScores(config, a.scoreWeights, rowScores, row).reduce((s, id) => s + (a.scoreWeights[id] ?? 0), 0);
+    const statusScore = total > 0 && avail >= config.minWeightShare * total ? Math.round(sum / (avail + zeroWeight)) : null;
     const stops = a.stopFactors.filter((id) => stopPass[id] && stopPass[id][i] === 1);
     let status: Status | null = null;
     if (stops.length) status = 'rejected';

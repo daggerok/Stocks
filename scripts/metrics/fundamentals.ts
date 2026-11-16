@@ -21,6 +21,8 @@ export const FUNDAMENTAL_METRIC_KEYS = [
   'capexToRevenueDelta3y', 'niGrowth3y', 'niGrowth5y', 'ffoApprox', 'ffoPayoutApprox', 'ffoGrowth3y',
   // inputs of the stage 5 stop factors and flags (src/core/scoring)
   'fcfNegativeYears', 'cfoGrowth3y', 'epsNiGrowthGap3y', 'balanceYoyMaxChange', 'balanceYoyMaxLine',
+  // why the revenue-based ratios are empty (withRevenueSanity)
+  'marginNote',
 ] as const;
 
 /** Yahoo industries (plan 1.7): REIT - prefix REIT, banks - Banks, insurers - Insurance */
@@ -387,5 +389,41 @@ export function withSectorExceptions(metrics: Record<string, unknown>, industry:
   if (!isFinancial(industry)) return metrics;
   const out: Record<string, unknown> = {};
   Object.keys(metrics).forEach((k) => { out[k] = FINANCIALS_NULL_KEYS.indexOf(k) >= 0 ? null : metrics[k]; });
+  return out;
+}
+
+/** Ratios with revenue in the denominator: the annual margins and their changes, the TTM operating margin, the margin slopes, capex intensity */
+export const REVENUE_RATIO_KEYS = [
+  'netMargin', 'grossMargin', 'ebitdaMargin', 'fcfMargin', 'netMarginDelta', 'netMarginDelta3y', 'grossMarginDelta', 'grossMarginDelta3y',
+  'ebitdaMarginDelta', 'ebitdaMarginDelta3y', 'fcfMarginDelta', 'fcfMarginDelta3y', 'operatingMargin', 'grossMarginSlope3y', 'operatingMarginSlope3y',
+  'capexToRevenue', 'capexToRevenueDelta3y',
+];
+/** The free cash flow margin with its changes and the cash conversion of Quality */
+export const CASH_FLOW_RATIO_KEYS = ['fcfMargin', 'fcfMarginDelta', 'fcfMarginDelta3y', 'cfoToNi', 'fcfToNi'];
+export const MARGIN_NOTE_REVENUE = 'revenue below profit';
+export const MARGIN_NOTE_FCF = 'FCF above revenue';
+
+/**
+ * Data sanity of the revenue-based ratios (owner 2026-11-15, FUTU: the tagged revenue of 1.36B is a part of the real one, below
+ * net income of 1.45B, so the operating margin read 133% and Quality ranked it near the top). A margin above 100% is impossible:
+ * - a profit line above revenue (net, gross, EBITDA or operating margin above 100%, or TTM net income above TTM revenue): the
+ *   revenue does not cover the business, every ratio of REVENUE_RATIO_KEYS becomes null, marginNote "revenue below profit"
+ * - free cash flow above revenue (FCF margin above 100%, or TTM FCF above TTM revenue): the operating cash flow carries money that
+ *   is not earned (client funds of a broker, sales of investments of a closed-end fund or a BDC), so the FCF margin and the cash
+ *   conversion ratios cfoToNi and fcfToNi become null (CASH_FLOW_RATIO_KEYS), marginNote "FCF above revenue"
+ * Both can hold (notes joined with "; "). A real high margin (90%) is kept; amounts (revenueTtm), growth rates and multiples are
+ * not touched. Key order kept
+ */
+export function withRevenueSanity(metrics: Record<string, unknown>): Record<string, unknown> {
+  const above = (k: string) => fin(metrics[k]) && (metrics[k] as number) > 100;
+  const rev = metrics.revenueTtm;
+  const overRevenue = (k: string) => pos(rev as Num) && fin(metrics[k]) && (metrics[k] as number) > (rev as number);
+  const profit = ['netMargin', 'grossMargin', 'ebitdaMargin', 'operatingMargin'].some(above) || overRevenue('netIncomeTtm');
+  const cash = above('fcfMargin') || overRevenue('fcfTtm');
+  if (!profit && !cash) return metrics;
+  const keys = (profit ? REVENUE_RATIO_KEYS : []).concat(cash ? CASH_FLOW_RATIO_KEYS : []);
+  const out: Record<string, unknown> = {};
+  Object.keys(metrics).forEach((k) => { out[k] = keys.indexOf(k) >= 0 ? null : metrics[k]; });
+  out.marginNote = [profit ? MARGIN_NOTE_REVENUE : '', cash ? MARGIN_NOTE_FCF : ''].filter(Boolean).join('; ');
   return out;
 }

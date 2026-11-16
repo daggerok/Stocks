@@ -1,7 +1,7 @@
 /// <reference types="bun" />
 import { describe, expect, test } from 'bun:test';
 import type { SecFundamentals } from '../sec/companyfacts';
-import { altman, capMultiples, FUNDAMENTAL_METRIC_KEYS, fundamentalMetrics, ownEbitdaMetrics, piotroski, slope, staleAnnualTtm, stdev, ttmAmounts, withSectorExceptions } from './fundamentals';
+import { altman, capMultiples, FUNDAMENTAL_METRIC_KEYS, fundamentalMetrics, ownEbitdaMetrics, piotroski, slope, staleAnnualTtm, stdev, ttmAmounts, withRevenueSanity, withSectorExceptions, REVENUE_RATIO_KEYS } from './fundamentals';
 
 type Row = Record<string, number | null>;
 /** Fiscal years newest first, one per calendar year ending 2025-12-31, plus TTM values */
@@ -138,5 +138,33 @@ describe('sec layer defaults', () => {
     expect([staleAnnualTtm(annual, '2026-03-31'), staleAnnualTtm(annual, '2026-04-02'), staleAnnualTtm(annual, null)]).toEqual([false, true, false]);
     expect(staleAnnualTtm({ ...annual, ttmIsAnnual: false }, '2027-01-01')).toBe(false);
     expect(staleAnnualTtm(null, '2027-01-01')).toBe(false);
+  });
+});
+
+describe('revenue sanity (owner 2026-11-15, FUTU)', () => {
+  const nulls = (keys: string[]) => Object.fromEntries(keys.map((k) => [k, null]));
+  const all = Object.fromEntries(REVENUE_RATIO_KEYS.map((k, i) => [k, i + 1]));
+
+  test('a profit line above revenue: every ratio over revenue is null, marginNote says why, key order and other metrics kept', () => {
+    // FUTU on 2026-11-13: revenue 1.36B below net income 1.45B, operating margin 133%, FCF margin 385%
+    const futu = { pe: 9.09, ...all, operatingMargin: 133.18, fcfMargin: 385.27, cfoToNi: 3.6, fcfToNi: 3.59, roic: 63.43, revenueTtm: 1356208014, netIncomeTtm: 1454334663, fcfTtm: 5225035701, marginNote: null };
+    const out = withRevenueSanity(futu);
+    expect(Object.keys(out)).toEqual(Object.keys(futu));
+    expect(out).toEqual({ ...futu, ...nulls(REVENUE_RATIO_KEYS), cfoToNi: null, fcfToNi: null, marginNote: 'revenue below profit; FCF above revenue' });
+    // each impossible margin alone triggers it; TTM net income above TTM revenue too
+    for (const k of ['netMargin', 'grossMargin', 'ebitdaMargin', 'operatingMargin']) expect(withRevenueSanity({ [k]: 100.5, operatingMarginSlope3y: 2, cfoToNi: 1.1 })).toEqual({ [k]: null, operatingMarginSlope3y: null, cfoToNi: 1.1, marginNote: 'revenue below profit' });
+    expect(withRevenueSanity({ revenueTtm: 100, netIncomeTtm: 101, grossMargin: 60 }).grossMargin).toBeNull();
+  });
+
+  test('FCF above revenue (a BDC or closed-end fund): only the FCF margin and the cash conversion ratios are null', () => {
+    const fund = { netMargin: 95.2, fcfMargin: 257.6, fcfMarginDelta: 10, fcfMarginDelta3y: 5, cfoToNi: 2.7, fcfToNi: 2.7, grossMargin: 98, marginNote: null };
+    expect(withRevenueSanity(fund)).toEqual({ netMargin: 95.2, fcfMargin: null, fcfMarginDelta: null, fcfMarginDelta3y: null, cfoToNi: null, fcfToNi: null, grossMargin: 98, marginNote: 'FCF above revenue' });
+    expect(withRevenueSanity({ revenueTtm: 100, fcfTtm: 150, fcfMargin: null, cfoToNi: 2 }).cfoToNi).toBeNull();
+  });
+
+  test('real margins stay: 100% exactly, 90%, a loss far below -100% and empty values give the same object back', () => {
+    for (const m of [{ netMargin: 100, grossMargin: 100, fcfMargin: 100 }, { netMargin: 90, operatingMargin: 92, fcfMargin: 99 }, { netMargin: -19343, fcfMargin: -500 }, { netMargin: null, revenueTtm: 0, netIncomeTtm: 5 }]) {
+      expect(withRevenueSanity(m)).toBe(m);
+    }
   });
 });

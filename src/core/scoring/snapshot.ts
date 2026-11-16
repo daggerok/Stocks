@@ -4,8 +4,8 @@
  * presets it passes, the page reads it next to index.json and skips computeScoring and the base presets when the key matches.
  * No DOM, no fs: the updater and the page call the same functions, so the file always holds what computeScoring gives.
  *
- * - stocks: the scoring of the stock universe alone (what the page computes on load); key = config, effective peer groups,
- *   index.json generatedAt and company count
+ * - stocks: the scoring of the stock universe alone (what the page computes on load); key = SCORING_FORMULA_VERSION of
+ *   score.ts, config, effective peer groups, index.json generatedAt and company count
  * - etfs: written by --publish (ETF scores rank inside a fund category across all brands, no single brand can compute them):
  *   the ETF rows of the stock + ETF universe and the few stock rows whose result changes when ETFs join (a market-scope condition);
  *   key = the stocks key and each loaded brand's generatedAt in hub order
@@ -15,7 +15,7 @@
  */
 import { createUniverse, evaluatePreset, evaluatePresets, type PresetResult, type Universe } from '../screener/engine';
 import type { PeerGroups, Preset, ScreenerRow } from '../screener/types';
-import { computeScoring, type ScoringResult, withScoreMetrics } from './score';
+import { computeScoring, SCORING_FORMULA_VERSION, type ScoringResult, withScoreMetrics } from './score';
 import { type RowScoring, SCORE_IDS, type ScoreId, type ScoringConfig, type Status } from './types';
 
 export const SCORES_SCHEMA_VERSION = 1;
@@ -61,9 +61,9 @@ export function fnv1a(text: string): string {
 
 export const presetHash = (preset: Preset): string => fnv1a(canonicalJson(preset));
 
-/** The key of the stock part: what the scoring of the stock universe depends on besides the code */
+/** The key of the stock part: what the scoring of the stock universe depends on (the formula version stands for the code) */
 export function stocksScoresKey(config: ScoringConfig, peers: PeerGroups, feed: { generatedAt: string; companies: number }): string {
-  return fnv1a(canonicalJson({ v: SCORES_SCHEMA_VERSION, config, peers, generatedAt: feed.generatedAt, companies: feed.companies }));
+  return fnv1a(canonicalJson({ v: SCORES_SCHEMA_VERSION, f: SCORING_FORMULA_VERSION, config, peers, generatedAt: feed.generatedAt, companies: feed.companies }));
 }
 
 /** The key of the ETF part: the stock key and every loaded brand with its feed's generatedAt, in hub order */

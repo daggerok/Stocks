@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { epsCagr3y, ESTIMATE_METRIC_KEYS, estimateMetrics, parseEstimates, type Estimates } from './metrics/estimates';
-import { capMultiples, FUNDAMENTAL_METRIC_KEYS, fundamentalMetrics, isFinancial, ownEbitdaMetrics, STALE_TTM_MULTIPLE_KEYS, staleAnnualTtm, TTM_AMOUNT_KEYS, ttmAmounts, withSectorExceptions } from './metrics/fundamentals';
+import { capMultiples, FUNDAMENTAL_METRIC_KEYS, fundamentalMetrics, isFinancial, ownEbitdaMetrics, STALE_TTM_MULTIPLE_KEYS, staleAnnualTtm, TTM_AMOUNT_KEYS, ttmAmounts, withRevenueSanity, withSectorExceptions } from './metrics/fundamentals';
 import { HISTORY_METRIC_KEYS, historyMetrics } from './metrics/history';
 import { ANNUAL_DPS_YEARS, DIVIDEND_HISTORY_KEYS, DIVIDEND_REGULARITY_KEYS, dividendHistory, dividendIrregular } from './metrics/dividends';
 import { pctFrom52wHigh, swingMetrics } from './metrics/swing';
@@ -1252,7 +1252,8 @@ export async function processCompany(listing: Listing, config: UpdaterConfig, pr
   const parts: JsonRecord = { ...fundamentals, ...(market.valuation ?? {}), ...(market.returns ?? {}), ...(market.dividends ?? {}), ...(market.swing ?? {}), ...derived, ...multiples, ...ownEbitdaMetrics(foreignLayer ? marketLayer : secLayer, marketCap), ...ttmAmounts(marketLayer), ...estimates, ...history5y, ...issuer, price: market.price, week52High: market.week52High, week52Low: market.week52Low, range52w: range52wPosition(market.price, market.week52Low, market.week52High), pctFrom52wHigh: pctFrom52wHigh(market.price, market.week52High) };
   if (staleTtm) STALE_TTM_MULTIPLE_KEYS.forEach((k) => { parts[k] = null; });
   if (parts.marketCap === undefined || parts.marketCap === null) parts.marketCap = null;
-  const metrics = withSectorExceptions(completeMetrics(parts, market.asOfDate ?? null), industry) as JsonRecord;
+  // banks and insurers first, then the revenue sanity (owner 2026-11-15: no margin above 100% is published)
+  const metrics = withRevenueSanity(withSectorExceptions(completeMetrics(parts, market.asOfDate ?? null), industry)) as JsonRecord;
   if (metrics.marketCap === null) return { skipped: 'no market cap (unit, warrant, preferred share or note)' };
   if (secMissing && !rows.length) return { skipped: 'no SEC company facts and no statements (fund, trust or non-filer)' };
 
