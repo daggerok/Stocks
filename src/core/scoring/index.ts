@@ -4,3 +4,4 @@ export * from './types';
 export * from './score';
 export * from './validate';
 export * from './why';
+export * from './snapshot';

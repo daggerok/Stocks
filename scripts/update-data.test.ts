@@ -14,6 +14,9 @@ import {
   restateAnnualEps,
 } from './update-data.ts';
 import { parseCompanyFacts } from './sec/companyfacts';
+import { applyScoresSnapshot, computeScoring, parseScoresSnapshot, stocksScoresKey } from '../src/core/scoring';
+import { loadScoringConfig } from '../src/core/scoring/load-config';
+import { createUniverse, feedMineSet, mergePeers, parsePeersText, storeRows } from '../src/core/screener';
 
 // ---------------------------------------------------------------------------
 // tiny inline samples (no network, no fixtures)
@@ -546,6 +549,23 @@ describe('pipeline', () => {
     await run(controls());
     expect((await readIndex()).generatedAt).toBe('2000-01-01T00:00:00Z');
     expect(await readText('companies/AAA/meta.json')).toBe(meta);
+  });
+
+  test('scores.json: every run writes the scoring the page would compute for the stock rows; a rerun writes nothing', async () => {
+    await run(controls());
+    const index = await readIndex();
+    const text = await readText('scores.json');
+    const snapshot = parseScoresSnapshot(JSON.parse(text));
+    expect(snapshot).not.toBeNull();
+    const config = loadScoringConfig();
+    const peers = mergePeers(parsePeersText(readFileSync(join(__dirname, '..', 'user-data', 'peers.json'), 'utf8')).groups, {});
+    const rows = storeRows(index.companies, feedMineSet(index.companies, index.mineTickers ?? null));
+    const key = stocksScoresKey(config, peers, { generatedAt: index.generatedAt, companies: index.companies.length });
+    const applied = snapshot ? applyScoresSnapshot(snapshot, rows, config, { stocks: key, etfs: null }) : null;
+    expect(applied?.result.rows).toEqual(computeScoring(createUniverse(rows, { peers }), config).rows);
+    expect(snapshot?.etfs).toBeNull(); // the ETF part comes from --publish only
+    await run(controls());
+    expect(await readText('scores.json')).toBe(text);
   });
 
   test('--signals: compares with the index before the run, a rerun writes the same file, a stock with a failed source is quiet', async () => {

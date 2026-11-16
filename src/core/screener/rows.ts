@@ -53,3 +53,36 @@ export function universeRows(stocks: Feed | null, etfIndexes: Feed[], mineList?:
   etfIndexes.forEach((doc) => list(doc, 'funds').forEach((f) => push(etfRow(f, set))));
   return out;
 }
+
+/**
+ * The owner's tickers as the page reads them from index.json: mineTickers once the updater publishes them; before that, when no
+ * row has an isMine flag, the stock feed itself is the owner's list. The page and the scores snapshot use the same set
+ */
+export function feedMineSet(companies: readonly Feed[], mineTickers: readonly string[] | null): Set<string> {
+  const flagged = companies.some((row) => typeof row.isMine === 'boolean');
+  return new Set((mineTickers ? mineTickers : flagged ? [] : companies.map((row) => String(row.ticker))).map(normalizeTicker));
+}
+
+/**
+ * The engine rows of the page's store, in feed order: every stock row with a ticker (first one of a ticker wins), then the ETF
+ * funds of each brand in hub order whose ticker the stocks or an earlier brand do not have (main.tsx buildStore and ensureEtfs)
+ */
+export function storeRows(companies: readonly unknown[], mine: ReadonlySet<string>, brandFunds: ReadonlyArray<readonly unknown[]> = []): ScreenerRow[] {
+  const seen = new Set<string>();
+  const out: ScreenerRow[] = [];
+  companies.forEach((c) => {
+    const row = c as Feed;
+    if (!row || typeof row.ticker !== 'string' || !row.ticker || seen.has(row.ticker)) return;
+    seen.add(row.ticker);
+    out.push(stockRow(row, mine));
+  });
+  brandFunds.forEach((funds) => funds.forEach((f) => {
+    const fund = f as Feed;
+    if (!fund || typeof fund.ticker !== 'string' || !fund.ticker.trim()) return;
+    const ticker = normalizeTicker(fund.ticker);
+    if (seen.has(ticker)) return;
+    seen.add(ticker);
+    out.push(etfRow(fund, mine));
+  }));
+  return out;
+}

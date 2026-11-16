@@ -5,7 +5,7 @@ import {
   canonicalPreset, changedConditions, Condition as ScreenerCondition, createUniverse, decodePresetHash, encodePresetHash, ETF_BRANDS_URL, EtfBrand, etfFeedUrl, etfMetrics, etfRow,
   evaluateExpression, evaluatePreset, evaluatePresets, Expression, parseEtfBrands, FunnelStep, HISTORY_METRICS, mergeOwnPresets, Missing, normalizeTicker, Op, ownCopy,
   OwnEntry, parsePresetText, PeerGroups, Preset, PRESET_SCHEMA_VERSION, presetFileName, presetFileText, presetKey, PresetResult, RELATIVE_SCOPES,
-  isReitIndustry, samePreset, Scope, SCOPES, stockRow, uniqueId, Universe, validatePreset,
+  isReitIndustry, samePreset, Scope, SCOPES, stockRow, uniqueId, Universe, validatePreset, feedMineSet,
   changedGroups, cleanTickers, deleteGroup, groupName, groupsOf, importGroups, mergePeers, parsePeersText, PEERS_FILE_NAME, peersExported, peersFileText,
   peersKey, PeersOverlay, setGroup, withVariant,
 } from './core/screener';
@@ -21,6 +21,7 @@ import { chartScale, ChartSeries, longRunSeries, peerRow, peerTickers, statement
 import {
   archetypeText, computeScoring, flagTexts, RowScoring, SCORE_IDS, SCORE_METRICS, SCORING_CONFIG_URL, ScoringConfig, ScoringResult, statusText,
   totalScoreText, validateScoringConfig, whyText, withScoreMetrics,
+  AppliedScores, applyScoresSnapshot, etfScoresKey, parseScoresSnapshot, presetHash, SCORES_FILE, ScoresSnapshot, snapshotPresetResult, stocksScoresKey,
 } from './core/scoring';
 import { filterSignals, parseSignals, signalDates, signalNames, SIGNAL_TYPES, SignalsDoc, signalText, signalTypeName, SIGNALS_FILE } from './core/signals';
 
@@ -4534,6 +4535,10 @@ let screenUniverse: { version: number; universe: Universe } | null = null;
 let scoringConfig: ScoringConfig | null = null; // src/core/scoring/config.json as dist/scoring.json, null until loaded or when invalid
 let similarConfig: SimilarConfig | null = null; // src/core/similar/config.json as dist/similar.json (owner answer N33), null until loaded or when invalid
 let scoringResult: ScoringResult | null = null; // one entry per store row, rebuilt with the universe
+let scoresSnapshot: ScoresSnapshot | null = null; // api/stocks/scores.json (perf plan stage 2), null when missing or unreadable
+let scoresApplied: { version: number; applied: AppliedScores } | null = null; // the snapshot used for this store version: base preset bits
+let scoresKeyCache: { config: ScoringConfig | null; peers: string; feed: string; key: string } | null = null;
+let etfStamps: string[] = []; // generatedAt of each brand feed, in hub order (the key of the ETF part of scores.json)
 let scoringRows: any[] = []; // the engine rows the result was computed on (the Why and Flags texts read their metrics)
 let scoringTextCache: { sig: string; texts: Record<string, string[]>; tips: Record<string, string[]>; sorts: Record<string, Float64Array> } | null = null;
 let resultsCache: { sig: string; results: Record<string, PresetResult> } | null = null;
@@ -4567,16 +4572,20 @@ function screenerUniverse(): Universe | null {
   if (!s) return null;
   if (screenUniverse && screenUniverse.version === s.version) return screenUniverse.universe;
   // Mine: the feed's isMine flags and mineTickers once the updater publishes them; before that the stock feed IS the owner's list
-  const flagged = stockCompanies.some(row => typeof row.isMine === 'boolean');
-  const mine = new Set((mineTickers ? mineTickers : flagged ? [] : stockCompanies.map(row => String(row.ticker))).map(normalizeTicker));
+  const mine = feedMineSet(stockCompanies, mineTickers);
   const rows = s.raw.map((raw: any) => (raw.assetType === 'etf' ? etfRow(raw, mine) : stockRow(raw, mine)));
-  let universe = createUniverse(rows, { peers: scr.peers });
+  let universe: Universe | null = null;
   scoringResult = null;
+  scoresApplied = null;
   scoringRows = rows;
-  if (scoringConfig) {
+  const config = scoringConfig;
+  if (config) {
     try {
-      // scores, archetype, status and flags of every row, then a universe whose rows carry them as metrics (presets can filter on them)
-      const result = computeScoring(universe, scoringConfig);
+      // scores, archetype, status and flags of every row (from scores.json when its key matches, else computed here), then a
+      // universe whose rows carry them as metrics (presets can filter on them)
+      const applied = scoresFromSnapshot(rows, config);
+      const result = applied ? applied.result : computeScoring(createUniverse(rows, { peers: scr.peers }), config);
+      if (applied) scoresApplied = { version: s.version, applied };
       universe = createUniverse(withScoreMetrics(rows, result), { peers: scr.peers });
       scoringResult = result;
       SCORE_IDS.forEach(id => { const column = s.num[SCORE_METRICS[id]]; result.rows.forEach((r, i) => { const v = r.scores[id]; column[i] = v === null ? NaN : v; }); });
@@ -4585,9 +4594,44 @@ function screenerUniverse(): Universe | null {
       console.warn('Scoring failed:', error instanceof Error ? error.message : error);
     }
   }
+  if (!universe) universe = createUniverse(rows, { peers: scr.peers });
   scoringTextCache = null;
   screenUniverse = { version: s.version, universe };
   return screenUniverse.universe;
+}
+
+/** The key of the stock part of scores.json for what the page loaded: config, effective peer groups, index generatedAt and size */
+function stocksKeyNow(config: ScoringConfig): string {
+  const peers = peersKey(scr.peers);
+  const feed = `${generatedAt}|${stockCompanies.length}`;
+  const c = scoresKeyCache;
+  if (c && c.config === config && c.peers === peers && c.feed === feed) return c.key;
+  const key = stocksScoresKey(config, scr.peers, { generatedAt, companies: stockCompanies.length });
+  scoresKeyCache = { config, peers, feed, key };
+  return key;
+}
+
+/** The scoring of the store rows from scores.json, or null when the file is missing or its key differs (then the page computes it) */
+function scoresFromSnapshot(rows: any[], config: ScoringConfig): AppliedScores | null {
+  const snapshot = scoresSnapshot;
+  if (!snapshot) return null;
+  const stocksKey = stocksKeyNow(config);
+  // the ETF part only fits when every brand of the hub list was read
+  const complete = etfState === 'done' && !etfFailed.length && !etfListError && etfBrands.length > 0;
+  const etfsKey = complete ? etfScoresKey(stocksKey, etfBrands.map((b, i): [string, string] => [b.repo, etfStamps[i] || ''])) : null;
+  return applyScoresSnapshot(snapshot, rows, config, { stocks: stocksKey, etfs: etfsKey });
+}
+
+/** Every preset's result; a base preset unchanged since the snapshot takes its pass bits from scores.json */
+function evaluateAllPresets(universe: Universe, presets: Preset[]): Record<string, PresetResult> {
+  const s = store;
+  const used = scoresApplied && s && scoresApplied.version === s.version ? scoresApplied.applied : null;
+  const out: Record<string, PresetResult> = {};
+  presets.forEach(p => {
+    const pass = used ? used.pass[p.id] : undefined;
+    out[p.id] = pass && used && used.hashes[p.id] === presetHash(p) ? snapshotPresetResult(universe, p, pass) : evaluatePresets(universe, [p])[p.id];
+  });
+  return out;
 }
 
 function ownEntries(): OwnEntry[] {
@@ -4624,7 +4668,7 @@ function presetResults(): Record<string, PresetResult> {
   if (!universe) return {};
   const sig = screenerSig();
   if (resultsCache && resultsCache.sig === sig) return resultsCache.results;
-  resultsCache = { sig, results: evaluatePresets(universe, allPresets()) };
+  resultsCache = { sig, results: evaluateAllPresets(universe, allPresets()) };
   return resultsCache.results;
 }
 
@@ -4876,10 +4920,31 @@ async function fetchPresetFolder(base: string): Promise<Preset[]> {
   return out;
 }
 
-/** The scoring config next to the page; an invalid or missing one leaves the scoring columns empty with a warning */
-async function loadScoringConfig(): Promise<void> {
+/** scores.json next to index.json (perf plan stage 2); missing, unreadable or stale it is simply not used */
+async function loadScoresSnapshot(): Promise<void> {
+  const read = async (base: string) => parseScoresSnapshot(await fetchJson(`${base}${SCORES_FILE}`, INDEX_TIMEOUT_MS));
   try {
-    const config = await fetchJson(SCORING_CONFIG_URL);
+    scoresSnapshot = await read(API_MODE === 'remote' ? REMOTE_BASE : LOCAL_BASE);
+  } catch {
+    if (API_MODE !== 'auto') return;
+    try { scoresSnapshot = await read(REMOTE_BASE); } catch { /* the page computes the scores */ }
+  }
+}
+
+/** user-data/peers.json as committed, merged with this browser's overlay */
+async function loadRepoPeers(): Promise<void> {
+  try {
+    const parsed = parsePeersText(JSON.stringify(await fetchJson('./user-data/peers.json')));
+    if (parsed.errors.length) console.warn(`user-data/peers.json: ${parsed.errors.join('; ')}`);
+    scr.peersRepo = parsed.groups;
+  } catch (error) { console.warn('user-data/peers.json unavailable:', error); }
+  scr.peers = mergePeers(scr.peersRepo, scr.peersOverlay);
+}
+
+/** The scoring config next to the page; an invalid or missing one leaves the scoring columns empty with a warning. `before` (scores.json, peers) is awaited first */
+async function loadScoringConfig(before: Promise<unknown> = Promise.resolve()): Promise<void> {
+  try {
+    const [config] = await Promise.all([fetchJson(SCORING_CONFIG_URL), before]);
     const problems = validateScoringConfig(config);
     if (problems.length) throw new Error(problems.slice(0, 5).join('; '));
     scoringConfig = config;
@@ -4904,7 +4969,7 @@ async function loadSimilarConfig(): Promise<void> {
 }
 
 async function loadScreenerData(): Promise<void> {
-  await Promise.all([loadScoringConfig(), loadSimilarConfig()]);
+  await Promise.all([loadScoringConfig(Promise.all([loadScoresSnapshot(), loadRepoPeers()])), loadSimilarConfig()]);
   try {
     scr.raw = await fetchPresetFolder('./presets/');
     scr.base = resolvedBase();
@@ -4915,12 +4980,6 @@ async function loadScreenerData(): Promise<void> {
     console.warn(`Base presets unavailable: ${scr.error}`);
   }
   try { scr.repoOwn = (await fetchPresetFolder('./user-data/presets/')).map(p => withVariant(p)); } catch (error) { console.warn('user-data/presets unavailable:', error); }
-  try {
-    const parsed = parsePeersText(JSON.stringify(await fetchJson('./user-data/peers.json')));
-    if (parsed.errors.length) console.warn(`user-data/peers.json: ${parsed.errors.join('; ')}`);
-    scr.peersRepo = parsed.groups;
-  } catch (error) { console.warn('user-data/peers.json unavailable:', error); }
-  scr.peers = mergePeers(scr.peersRepo, scr.peersOverlay);
   screenUniverse = null;
   const message = applyHashPreset();
   if (scr.type !== 'stock') void ensureEtfs();
@@ -4948,6 +5007,7 @@ async function ensureEtfs(): Promise<void> {
   }
   const brands = etfBrands;
   const perBrand: any[][] = brands.map(() => []);
+  etfStamps = brands.map(() => '');
   const queue = brands.map((_, i) => i);
   const worker = async (): Promise<void> => {
     for (;;) {
@@ -4957,6 +5017,7 @@ async function ensureEtfs(): Promise<void> {
       try {
         const data = await fetchJson(etfFeedUrl(brand), INDEX_TIMEOUT_MS);
         if (!data || !Array.isArray(data.funds)) throw new Error('malformed index.json');
+        etfStamps[i] = String(data.generatedAt ?? '');
         data.funds.forEach((fund: any) => { if (fund && typeof fund.ticker === 'string' && fund.ticker.trim()) perBrand[i].push(etfStoreRow(fund, brand)); });
       } catch (error) {
         etfFailed.push(brand.repo);
@@ -6819,3 +6880,4 @@ Object.assign(window, { scoringText, scoringSortArray, sortIds });
 Object.assign(window, { signalsView, setSignalsOpen, renderSignals });
 Object.defineProperty(window, 'scoringConfig', { get: () => scoringConfig });
 Object.defineProperty(window, 'scoringResult', { get: () => scoringResult });
+Object.defineProperty(window, 'scoresApplied', { get: () => scoresApplied }); // scores.json used for this store version (perf plan stage 2)
