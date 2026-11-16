@@ -98,6 +98,10 @@ describe('scores snapshot', () => {
     expect(applyScoresSnapshot(snapshot, STOCKS, CONFIG, { ...keys, stocks: stocksScoresKey(CONFIG, PEERS, { ...FEED, generatedAt: '2026-11-16T10:00:00Z' }) })).toBeNull();
     expect(applyScoresSnapshot(snapshot, STOCKS, CONFIG, { ...keys, stocks: stocksScoresKey(CONFIG, { Software: ['AAA'] }, FEED) })).toBeNull();
     expect(applyScoresSnapshot(snapshot, STOCKS, CONFIG, { ...keys, stocks: stocksScoresKey({ ...CONFIG, minGroupSize: 4 }, PEERS, FEED) })).toBeNull();
+    // a file from before a buy zone rule (owner N47: Quality always required) is stale for the page that has the rule
+    const ruled: ScoringConfig = { ...CONFIG, buyRequiresScores: { minWeight: 0.15, always: ['quality'] } };
+    expect(stocksScoresKey(ruled, PEERS, FEED)).not.toBe(stocksScoresKey({ ...ruled, buyRequiresScores: { minWeight: 0.15 } }, PEERS, FEED));
+    expect(applyScoresSnapshot(snapshot, STOCKS, ruled, { ...keys, stocks: stocksScoresKey(ruled, PEERS, FEED) })).toBeNull();
     expect(applyScoresSnapshot(snapshot, STOCKS.concat(ETFS), CONFIG, { ...keys, etfs: null })).toBeNull();
     expect(applyScoresSnapshot(snapshot, STOCKS.concat(ETFS), CONFIG, { ...keys, etfs: etfScoresKey(stocksKey, BRANDS.slice(0, 1)) })).toBeNull();
     expect(applyScoresSnapshot(snapshot, STOCKS.slice(1), CONFIG, keys)).toBeNull();
