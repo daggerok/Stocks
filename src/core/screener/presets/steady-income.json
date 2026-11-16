@@ -1,0 +1,228 @@
+{
+  "schemaVersion": 1,
+  "id": "steady-income",
+  "title": {
+    "en": "Steady income",
+    "ru": "Стабильный доход"
+  },
+  "description": {
+    "en": "Dividend funds that keep up with the benchmark and fall less: total return no more than 2% a year behind it over the horizon, dividend yield at least 1 point above it, no dividend cut in 10 years, 5-year dividend growth above 0 where known, beta of 0.85 or less, a smaller maximum drawdown than the benchmark over the horizon, less than 90% of its falling months, and a positive total return on every horizon up to the chosen one",
+    "ru": "Дивидендные фонды, которые не отстают от бенчмарка и падают меньше: полная доходность отстаёт не больше чем на 2% в год, дивидендная доходность минимум на 1 пункт выше, дивиденд не сокращался 10 лет и рос за 5 лет (если известно), бета не выше 0,85, максимальная просадка за горизонт меньше, чем у бенчмарка, участие в его падающих месяцах меньше 90%, полная доходность выше 0 на каждом горизонте до выбранного"
+  },
+  "appliesTo": [
+    "etf"
+  ],
+  "match": "all",
+  "conditions": [
+    {
+      "metric": "size",
+      "op": ">=",
+      "value": 100000000,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "isGeared",
+      "op": "=",
+      "value": false,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "vs{B}{h}",
+      "op": ">=",
+      "value": -2,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "dividendYield",
+      "op": ">=",
+      "value": 1,
+      "scope": "benchmark",
+      "benchmark": "{T}",
+      "missing": "fail"
+    },
+    {
+      "metric": "dividendCut10y",
+      "op": "=",
+      "value": false,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "dividendGrowth5y",
+      "op": ">",
+      "value": 0,
+      "scope": "absolute",
+      "missing": "skip"
+    },
+    {
+      "metric": "beta1y{B}",
+      "op": "<=",
+      "value": 0.85,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "maxDrawdown{h}",
+      "op": ">",
+      "value": 0,
+      "scope": "benchmark",
+      "benchmark": "{T}",
+      "missing": "fail"
+    },
+    {
+      "metric": "downCapture3y{B}",
+      "op": "<=",
+      "value": 90,
+      "scope": "absolute",
+      "missing": "skip"
+    }
+  ],
+  "pickers": [
+    {
+      "id": "benchmark",
+      "title": {
+        "en": "Benchmark",
+        "ru": "Бенчмарк"
+      },
+      "default": "spy",
+      "options": [
+        {
+          "id": "spy",
+          "title": {
+            "en": "SPY",
+            "ru": "SPY"
+          },
+          "vars": {
+            "B": "Spy",
+            "T": "SPY",
+            "T2": "SPYM"
+          }
+        },
+        {
+          "id": "qqq",
+          "title": {
+            "en": "QQQ",
+            "ru": "QQQ"
+          },
+          "vars": {
+            "B": "Qqq",
+            "T": "QQQ",
+            "T2": "QQQM"
+          }
+        }
+      ]
+    },
+    {
+      "id": "horizon",
+      "title": {
+        "en": "Horizon",
+        "ru": "Горизонт"
+      },
+      "default": "5y",
+      "options": [
+        {
+          "id": "3y",
+          "title": {
+            "en": "3Y",
+            "ru": "3 года"
+          },
+          "vars": {
+            "h": "3y"
+          },
+          "conditions": [
+            {
+              "metric": "tr1y",
+              "op": ">",
+              "value": 0,
+              "scope": "absolute",
+              "missing": "fail"
+            },
+            {
+              "metric": "tr3y",
+              "op": ">",
+              "value": 0,
+              "scope": "absolute",
+              "missing": "fail"
+            }
+          ]
+        },
+        {
+          "id": "5y",
+          "title": {
+            "en": "5Y",
+            "ru": "5 лет"
+          },
+          "vars": {
+            "h": "5y"
+          },
+          "conditions": [
+            {
+              "metric": "tr1y",
+              "op": ">",
+              "value": 0,
+              "scope": "absolute",
+              "missing": "fail"
+            },
+            {
+              "metric": "tr3y",
+              "op": ">",
+              "value": 0,
+              "scope": "absolute",
+              "missing": "fail"
+            },
+            {
+              "metric": "tr5y",
+              "op": ">",
+              "value": 0,
+              "scope": "absolute",
+              "missing": "fail"
+            }
+          ]
+        },
+        {
+          "id": "10y",
+          "title": {
+            "en": "10Y",
+            "ru": "10 лет"
+          },
+          "vars": {
+            "h": "10y"
+          },
+          "conditions": [
+            {
+              "metric": "tr1y",
+              "op": ">",
+              "value": 0,
+              "scope": "absolute",
+              "missing": "fail"
+            },
+            {
+              "metric": "tr3y",
+              "op": ">",
+              "value": 0,
+              "scope": "absolute",
+              "missing": "fail"
+            },
+            {
+              "metric": "tr5y",
+              "op": ">",
+              "value": 0,
+              "scope": "absolute",
+              "missing": "fail"
+            },
+            {
+              "metric": "tr10y",
+              "op": ">",
+              "value": 0,
+              "scope": "absolute",
+              "missing": "fail"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

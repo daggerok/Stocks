@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "id": "aum-floor",
+  "title": {
+    "en": "AUM from",
+    "ru": "AUM от"
+  },
+  "description": {
+    "en": "Refinement: assets under management at or above the chosen level, which leaves out small funds that risk closing and trade with wide spreads",
+    "ru": "Уточнение: активы под управлением не ниже выбранного уровня - это убирает маленькие фонды, которые рискуют закрыться и торгуются с широким спредом"
+  },
+  "appliesTo": [
+    "etf"
+  ],
+  "match": "all",
+  "refine": true,
+  "conditions": [
+    {
+      "metric": "size",
+      "op": ">=",
+      "value": "{A}",
+      "scope": "absolute",
+      "missing": "fail"
+    }
+  ],
+  "pickers": [
+    {
+      "id": "level",
+      "title": {
+        "en": "From",
+        "ru": "От"
+      },
+      "default": "1b",
+      "options": [
+        {
+          "id": "100m",
+          "title": {
+            "en": "$100M",
+            "ru": "$100 млн"
+          },
+          "vars": {
+            "A": 100000000
+          }
+        },
+        {
+          "id": "1b",
+          "title": {
+            "en": "$1B",
+            "ru": "$1 млрд"
+          },
+          "vars": {
+            "A": 1000000000
+          }
+        },
+        {
+          "id": "10b",
+          "title": {
+            "en": "$10B",
+            "ru": "$10 млрд"
+          },
+          "vars": {
+            "A": 10000000000
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -422,12 +422,12 @@ const PERF_WINDOWS: Array<[string, string, string, string, string]> = [
 const PERFORMANCE: MetricDef[] = PERF_WINDOWS.map(([id, en, ru, anchorEn, anchorRu]) => def({
   id, name: { en: id === 'perf1y' ? 'Price return 1Y' : `Performance ${en}`, ru: id === 'perf1y' ? 'Ценовая доходность за год' : `Изменение цены за ${ru}`.replace('за с начала', 'с начала') },
   formula: `last close / ${anchorEn} - 1, × 100, unadjusted closes${id === 'perf1y' ? '; price only: the 1-year return of the presets and scores is the total return tr1y' : ''}`, unit: 'percent', basis: 'price', source: 'yahoo-chart', direction: 'higher-is-better',
-  appliesTo: STOCK,
+  appliesTo: ['perf1y', 'perf3y', 'perf5y', 'perf10y'].indexOf(id) >= 0 ? BOTH : STOCK, // ETFs publish 1Y to 10Y from the benchmark block (benchmark plan 4.4)
   nullWhen: { en: 'the price history does not reach back to the anchor date', ru: 'история цен не доходит до опорной даты' },
   short: { en: `Price change ${({ WTD: 'week to date', MTD: 'month to date', QTD: 'quarter to date', YTD: 'year to date' } as Record<string, string>)[en] ?? `over ${en}`}, without dividends`, ru: `Изменение цены за ${ru} без дивидендов`.replace('за с начала', 'с начала') },
   guide: {
-    en: `Cumulative price change from ${anchorEn} to the last close, on unadjusted closes up to performanceAsOf, so dividends are not included (total return is in the tr columns). ${['perf1d', 'perf3d', 'perf1w', 'perf2w', 'perf20d', 'perf40d', 'perf60d'].indexOf(id) >= 0 ? 'Short windows count daily candles and depend on the date of the last candle: a stock whose performanceAsOf lags measures a different window' : 'Calendar windows anchor on dates, so stocks with the same performanceAsOf are compared on the same period'}. ${id === 'perf1y' ? 'This is the plan\'s "return for the year" metric of the stable and gold selections. ETF feeds publish only the total return for now, so an ETF row reads tr1y here (dividends included) and the column tooltip of an ETF says so. ' : ''}Momentum readers look for strength over 6-12 months, buy-low investors for pullbacks`,
-    ru: `Накопленное изменение цены между ${anchorRu} и последним закрытием, по закрытиям без поправок до даты performanceAsOf, поэтому дивиденды не учтены (полная доходность - в колонках tr). ${['perf1d', 'perf3d', 'perf1w', 'perf2w', 'perf20d', 'perf40d', 'perf60d'].indexOf(id) >= 0 ? 'Короткие окна считают дневные свечи и зависят от даты последней свечи: бумага с отстающим performanceAsOf меряет другое окно' : 'Календарные окна привязаны к датам, поэтому бумаги с одинаковым performanceAsOf сравниваются на одном периоде'}. ${id === 'perf1y' ? 'Это метрика «Доходность за год» из плана, её используют выборки по растущим бумагам и золоту. Фиды ETF пока публикуют только полную доходность, поэтому у ETF здесь читается tr1y (с дивидендами), и подсказка ячейки ETF об этом говорит. ' : ''}Кто следует за импульсом, ищет силу за 6-12 месяцев, кто добирает ниже - откаты`,
+    en: `Cumulative price change from ${anchorEn} to the last close, on unadjusted closes up to performanceAsOf, so dividends are not included (total return is in the tr columns). ${['perf1d', 'perf3d', 'perf1w', 'perf2w', 'perf20d', 'perf40d', 'perf60d'].indexOf(id) >= 0 ? 'Short windows count daily candles and depend on the date of the last candle: a stock whose performanceAsOf lags measures a different window' : 'Calendar windows anchor on dates, so stocks with the same performanceAsOf are compared on the same period'}. ${['perf1y', 'perf3y', 'perf5y', 'perf10y'].indexOf(id) >= 0 ? 'ETFs publish the same price return from the shared benchmark block of the brand updaters (split-adjusted Yahoo closes from the same calendar date, empty until the brand feed carries the key); the 1-year return of the presets stays the total return tr1y. ' : ''}Momentum readers look for strength over 6-12 months, buy-low investors for pullbacks`,
+    ru: `Накопленное изменение цены между ${anchorRu} и последним закрытием, по закрытиям без поправок до даты performanceAsOf, поэтому дивиденды не учтены (полная доходность - в колонках tr). ${['perf1d', 'perf3d', 'perf1w', 'perf2w', 'perf20d', 'perf40d', 'perf60d'].indexOf(id) >= 0 ? 'Короткие окна считают дневные свечи и зависят от даты последней свечи: бумага с отстающим performanceAsOf меряет другое окно' : 'Календарные окна привязаны к датам, поэтому бумаги с одинаковым performanceAsOf сравниваются на одном периоде'}. ${['perf1y', 'perf3y', 'perf5y', 'perf10y'].indexOf(id) >= 0 ? 'ETF публикуют ту же ценовую доходность из общего блока benchmark брендовых апдейтеров (закрытия Yahoo с поправкой на сплиты от той же календарной даты, пусто, пока фид бренда не содержит ключ); доходность за год в пресетах остаётся полной доходностью tr1y. ' : ''}Кто следует за импульсом, ищет силу за 6-12 месяцев, кто добирает ниже - откаты`,
   },
 }));
 
@@ -1377,7 +1377,230 @@ const SCORE_INPUTS: MetricDef[] = [
   }),
 ];
 
-const BASE: MetricDef[] = [...MARKET, ...VALUATION, ...DIVIDENDS, ...BALANCE, ...GROWTH, ...MARGINS, ...PERFORMANCE, ...TOTAL_RETURN, ...META, ...SWINGS, ...SEC_DERIVED, ...FOREIGN, ...PLANNED, ...SCORE_INPUTS, ...FIELDS, ...SCORE_OUTPUTS];
+// ---------------------------------------------------------------------------
+// benchmark metrics of the ETF brand feeds (benchmark plan 3.1, shared block benchmark.block.ts of the 29 updaters), the two
+// payment-frequency keys of the dividends block (plan 3.2, stocks and ETFs) and the ETF row adapter fields (plan 5, 6)
+
+const BENCH_BASIS: Text = {
+  en: 'Daily closes of the Yahoo chart: close (split adjusted) for price metrics, adjclose (dividend and split adjusted) for total-return metrics; computed by the shared benchmark block of the brand updaters over the dates the fund and the benchmark share; empty until the brand feed publishes the keys',
+  ru: 'Дневные закрытия графика Yahoo: close (с поправкой на сплиты) для ценовых метрик, adjclose (с поправкой на дивиденды и сплиты) для метрик полной доходности; считает общий блок benchmark брендовых апдейтеров по датам, общим у фонда и бенчмарка; пусто, пока фид бренда не публикует ключи',
+};
+const BENCH_NULL: Text = {
+  en: 'the fund is younger than the horizon, its chart has a gap of more than 7 days at the horizon start, or the brand feed does not publish the key yet',
+  ru: 'фонд моложе горизонта, в его графике разрыв больше 7 дней в начале горизонта или фид бренда ещё не публикует ключ',
+};
+/** An ETF feed metric of the benchmark block: the guide ends with the price basis, so each article stands on its own */
+const bench = (spec: Omit<Spec, 'basis' | 'source' | 'appliesTo'>): MetricDef => def({
+  ...spec, basis: 'price', source: 'yahoo-chart', appliesTo: ETF, nullWhen: spec.nullWhen ?? BENCH_NULL,
+  guide: { en: `${spec.guide.en}\n\nPrices: ${BENCH_BASIS.en}`, ru: `${spec.guide.ru}\n\nЦены: ${BENCH_BASIS.ru}` },
+});
+const HORIZONS: Array<[string, string, string, number]> = [['1y', '1Y', 'за 1 год', 1], ['3y', '3Y', 'за 3 года', 3], ['5y', '5Y', 'за 5 лет', 5], ['10y', '10Y', 'за 10 лет', 10]];
+const BENCHES: Array<[string, string, string]> = [['Spy', 'SPY', 'S&P 500'], ['Qqq', 'QQQ', 'Nasdaq-100']];
+
+const BENCHMARK_METRICS: MetricDef[] = [
+  bench({
+    id: 'perfSi', name: { en: 'Price return since listing', ru: 'Изменение цены с начала торгов' }, formula: '(close[last] / close[first bar] - 1) × 100, split-adjusted closes, dividends not included',
+    unit: 'percent', direction: 'higher-is-better', nullWhen: { en: 'fewer than 253 bars (under a year of trading) or no benchmark block in the feed yet', ru: 'меньше 253 баров (меньше года торгов) или блока benchmark в фиде ещё нет' },
+    short: { en: 'Price change over the whole life of the fund, without dividends', ru: 'Изменение цены за всю жизнь фонда без дивидендов' },
+    guide: {
+      en: 'How much the price changed from the first trading day of the fund to the last close, without the dividends. For an income fund it is the erosion test: a fund that paid out more than it earned shows a falling price even when the total return looks fine. The High income chip reads it on its Since listing horizon',
+      ru: 'Насколько изменилась цена с первого дня торгов фонда до последнего закрытия, без дивидендов. Для доходного фонда это проверка на проедание: фонд, который выплачивает больше, чем зарабатывает, показывает падающую цену, даже если полная доходность выглядит хорошо. Чип «Высокий доход без проедания» читает её на горизонте «С начала торгов»',
+    },
+  }),
+  ...HORIZONS.map(([h, en, ru]) => bench({
+    id: `maxDrawdown${h}`, name: { en: `Max drawdown ${en}`, ru: `Макс. просадка ${ru}` }, formula: `lowest adj[i] / max(adj[start..i]) - 1 over the last ${en}, × 100 (0 or negative)`,
+    unit: 'percent', direction: 'higher-is-better',
+    short: { en: `Deepest fall from a running peak over ${en}, dividends included`, ru: `Самое глубокое падение от текущего пика ${ru} с учётом дивидендов` },
+    guide: {
+      en: `The deepest fall from a running peak inside the last ${en}, on dividend-adjusted closes, so a distribution is not counted as a fall. 0 means the fund never fell below a previous high; -35 means it lost 35% at the worst point. Closer to 0 is better; compare it with SPY and QQQ through the benchmark scope`,
+      ru: `Самое глубокое падение от текущего пика ${ru}, по закрытиям с поправкой на дивиденды, поэтому выплата не считается падением. 0 - фонд ни разу не опускался ниже прошлого максимума; -35 - в худший момент он терял 35%. Чем ближе к 0, тем лучше; сравнивать с SPY и QQQ удобно через scope benchmark`,
+    },
+  })),
+  ...BENCHES.flatMap(([b, t, index]) => [
+    ...HORIZONS.map(([h, en, ru, years]) => bench({
+      id: `vs${b}${h}`, name: { en: `vs ${t} ${en}, % a year`, ru: `К ${t} ${ru}, % в год` }, formula: years === 1 ? `1-year total return of the fund minus that of ${t}, same dates, adjusted closes` : `(adj[end] / adj[start])^(1/${years}) - 1 of the fund minus the same of ${t}, × 100, on the dates both have`,
+      unit: 'pp', direction: 'higher-is-better',
+      short: { en: `Total return ahead of ${t} over ${en}, percentage points a year`, ru: `Насколько полная доходность выше ${t} ${ru}, пункты в год` },
+      guide: {
+        en: `The fund's total-return CAGR minus ${t}'s (${index}) over the same ${en} window, from the same daily adjusted closes, so the issuer's month-end dates do not mix in. Above 0 the fund beat ${t} with dividends reinvested; an exact index tracker sits near minus its fee difference. The Beats the benchmark chip needs more than 0.25 a year`,
+        ru: `Среднегодовая полная доходность фонда минус такая же у ${t} (${index}) за то же окно ${ru}, по одним и тем же дневным скорректированным закрытиям, поэтому даты отчётов эмитентов не смешиваются. Выше 0 - фонд обогнал ${t} с реинвестированием дивидендов; точный индексный фонд стоит около минус разницы комиссий. Чип «Обгоняет бенчмарк» требует больше 0,25 в год`,
+      },
+    })),
+    bench({
+      id: `beta1y${b}`, name: { en: `Beta to ${t} 1Y`, ru: `Бета к ${t} за 1 год` }, formula: `cov(fund, ${t}) / var(${t}) of daily log returns of adjclose, last 252 common returns`,
+      unit: 'ratio', direction: 'neutral',
+      short: { en: `How strongly the fund moves with ${t}`, ru: `Насколько сильно фонд ходит вместе с ${t}` },
+      guide: {
+        en: `The slope of the fund's daily returns on ${t}'s over the last year: 1 moves like ${t}, 0.5 half as much, 2 twice as much, below 0 against it. A low beta with a decent return is what a steady-income investor wants; leveraged funds show 2 or 3`,
+        ru: `Наклон дневных доходностей фонда к доходностям ${t} за последний год: 1 - ходит как ${t}, 0,5 - вдвое слабее, 2 - вдвое сильнее, ниже 0 - против него. Низкая бета при приличной доходности - то, что ищет инвестор за стабильным доходом; у фондов с плечом 2 или 3`,
+      },
+    }),
+    bench({
+      id: `corr1y${b}`, name: { en: `Correlation to ${t} 1Y`, ru: `Корреляция с ${t} за 1 год` }, formula: `Pearson correlation of daily log returns of adjclose with ${t}, last 252 common returns`,
+      unit: 'ratio', direction: 'neutral',
+      short: { en: `How closely the daily moves follow ${t}, -1 to 1`, ru: `Насколько дневные движения повторяют ${t}, от -1 до 1` },
+      guide: {
+        en: `The correlation of the fund's daily returns with ${t}'s over the last year: 1 moves in lockstep, 0 independently. A fund at 0.9 or more behaves like the index whatever its name says (Moves like ${t}); the Rotation chip looks for 0.6 or less, money that moves on its own`,
+        ru: `Корреляция дневных доходностей фонда с ${t} за последний год: 1 - движутся синхронно, 0 - независимо. Фонд от 0,9 ведёт себя как индекс, что бы ни было в названии («Ходит как ${t}»); чип «Ротация» ищет 0,6 и ниже - деньги, которые ходят сами по себе`,
+      },
+    }),
+    bench({
+      id: `upCapture3y${b}`, name: { en: `Upside capture vs ${t} 3Y`, ru: `Участие в росте ${t}, 3 года` }, formula: `geometric mean fund return / geometric mean ${t} return over the up months of ${t} in the last 36 complete months, × 100`,
+      unit: 'percent', direction: 'higher-is-better',
+      short: { en: `Share of ${t}'s rising months the fund caught`, ru: `Какую долю растущих месяцев ${t} фонд взял` },
+      guide: {
+        en: `Monthly total returns over the last 36 complete months; on the months ${t} rose the fund caught this percent of the gain: 100 matches it, 80 caught four fifths, 120 more than all. Read it with the downside capture: a good fund takes more of the rises than of the falls`,
+        ru: `Месячные полные доходности за последние 36 полных месяцев; в месяцы роста ${t} фонд взял этот процент роста: 100 - столько же, 80 - четыре пятых, 120 - больше. Читается вместе с участием в падениях: хороший фонд берёт больше роста, чем падения`,
+      },
+    }),
+    bench({
+      id: `downCapture3y${b}`, name: { en: `Downside capture vs ${t} 3Y`, ru: `Участие в падениях ${t}, 3 года` }, formula: `geometric mean fund return / geometric mean ${t} return over the down months of ${t} in the last 36 complete months, × 100`,
+      unit: 'percent', direction: 'lower-is-better',
+      short: { en: `Share of ${t}'s falling months the fund took`, ru: `Какую долю падающих месяцев ${t} фонд взял` },
+      guide: {
+        en: `Monthly total returns over the last 36 complete months; on the months ${t} fell the fund lost this percent of the fall: 100 falls as much, 50 half as much, below 0 rose while ${t} fell. Lower is better; Steady income needs 90 or less, Rotation 60 or less`,
+        ru: `Месячные полные доходности за последние 36 полных месяцев; в месяцы падения ${t} фонд потерял этот процент падения: 100 - столько же, 50 - вдвое меньше, ниже 0 - рос, пока ${t} падал. Чем ниже, тем лучше; «Стабильный доход» требует не больше 90, «Ротация» - не больше 60`,
+      },
+    }),
+    bench({
+      id: `relStrength3m${b}`, name: { en: `3M vs ${t}`, ru: `3 месяца к ${t}` }, formula: `(close[end] / close[end - 63] - 1) × 100 of the fund minus the same of ${t}, common dates`,
+      unit: 'pp', direction: 'neutral',
+      short: { en: `Price change over 3 months ahead of ${t}, percentage points`, ru: `Изменение цены за 3 месяца относительно ${t}, пункты` },
+      guide: {
+        en: `The fund's price change over the last 63 trading days minus ${t}'s: -8 means it is 8 points behind ${t} over three months. The Rotation chip looks for funds lagging by 5 or more while ${t} is near its high, the place money rotates into`,
+        ru: `Изменение цены фонда за последние 63 торговых дня минус такое же у ${t}: -8 - отстаёт от ${t} на 8 пунктов за три месяца. Чип «Ротация» ищет фонды, отстающие на 5 и больше, пока ${t} у максимума, - туда обычно перетекают деньги`,
+      },
+    }),
+    bench({
+      id: `stressReturn${b}`, name: { en: `Return in ${t}'s last drawdown`, ru: `Доходность в последней просадке ${t}` }, formula: `adj[trough] / adj[peak] - 1, × 100, of the fund over ${t}'s latest fall of 10% or more in 5 years (dates in stressBasis${b})`,
+      unit: 'percent', direction: 'higher-is-better', nullWhen: { en: `no fall of 10% or more of ${t} in 5 years, or the fund is younger than the episode`, ru: `у ${t} не было падения на 10% и больше за 5 лет или фонд моложе эпизода` },
+      short: { en: `How the fund did while ${t} fell the last time`, ru: `Как фонд прошёл последнее падение ${t}` },
+      guide: {
+        en: `The fund's total return from ${t}'s peak to its trough in the latest fall of 10% or more of the last five years (stressBasis${b} names the dates). Compare it with ${t}'s own fall through the benchmark scope: 5 points or more better means the fund held up in a real sell-off`,
+        ru: `Полная доходность фонда от пика ${t} до его дна в последнем падении на 10% и больше за пять лет (даты в stressBasis${b}). Сравнивайте с падением самого ${t} через scope benchmark: на 5 пунктов и больше лучше - фонд устоял в настоящей распродаже`,
+      },
+    }),
+    bench({
+      id: `stressBasis${b}`, name: { en: `${t} drawdown used`, ru: `Использованная просадка ${t}` }, formula: `text: ticker, ${t}'s own fall rounded to a whole percent, peak date, trough date`,
+      unit: 'text', direction: 'neutral', nullWhen: { en: `stressReturn${b} is empty`, ru: `stressReturn${b} пусто` },
+      short: { en: `Which ${t} fall stressReturn${b} measures`, ru: `Какое падение ${t} измеряет stressReturn${b}` },
+      guide: {
+        en: `The episode behind stressReturn${b}, for example SPY -19% 2025-02-19 to 2025-04-08: the benchmark's own fall and its peak and trough dates. Every fund of a run uses the same episode, so the values are comparable`,
+        ru: `Эпизод, по которому посчитан stressReturn${b}, например SPY -19% 2025-02-19 to 2025-04-08: падение самого бенчмарка и даты пика и дна. Все фонды прогона используют один эпизод, поэтому значения сравнимы`,
+      },
+    }),
+  ]),
+  bench({
+    id: 'benchmarkAsOf', name: { en: 'Benchmark metrics as of', ru: 'Метрики к бенчмарку на дату' }, formula: 'last date the fund and SPY share, else the one with QQQ, else the fund\'s last bar',
+    unit: 'date', direction: 'neutral', nullWhen: { en: 'the brand feed does not publish the benchmark keys yet', ru: 'фид бренда ещё не публикует ключи бенчмарка' },
+    short: { en: 'Date the benchmark comparison ends', ru: 'Дата, на которой заканчивается сравнение с бенчмарком' },
+    guide: {
+      en: 'The last trading day the price, drawdown and benchmark metrics of the row use. All brands are refreshed in one local run, so this is normally the same day for every fund; an older date means the fund\'s chart was stale or its brand was refreshed earlier',
+      ru: 'Последний торговый день, по который посчитаны ценовые метрики, просадки и сравнение с бенчмарком. Все бренды обновляются одним локальным прогоном, поэтому обычно дата у всех фондов одна; более ранняя дата - график фонда устарел или бренд обновлялся раньше',
+    },
+  }),
+  def({
+    id: 'paymentsPerYear', name: { en: 'Payments in 12 months', ru: 'Выплат за 12 месяцев' }, formula: 'number of dividend events with dates after the dividendRate cutoff (last close minus 365.25 days), Yahoo chart',
+    unit: 'count', basis: 'ttm', source: 'yahoo-chart', direction: 'neutral', appliesTo: ETF, // stocks follow with the Stocks updater (benchmark plan 3.2)
+    nullWhen: { en: 'no payment in the last 12 months', ru: 'выплат за последние 12 месяцев не было' },
+    short: { en: 'How many dividends were paid in the last year', ru: 'Сколько дивидендов выплачено за последний год' },
+    guide: {
+      en: 'The number of dividend events in the same 12-month window as dividendRate: 4 for a quarterly payer, 12 for a monthly one, 52 or so for a weekly option-income fund. A supplemental or special payment adds one, which is why payFrequency counts months instead. ETFs from the shared dividends block of the brand updaters',
+      ru: 'Число дивидендных событий в том же 12-месячном окне, что и у dividendRate: 4 у квартального плательщика, 12 у ежемесячного, около 52 у еженедельного опционного фонда. Дополнительная или специальная выплата прибавляет одну, поэтому payFrequency считает месяцы. ETF - из общего блока dividends брендовых апдейтеров',
+    },
+  }),
+  def({
+    id: 'payFrequency', name: { en: 'Payment frequency', ru: 'Частота выплат' }, formula: 'weekly (40+ events), monthly (11+ months or the last 4 payments in 4 consecutive months), quarterly (3-5 months, 6 events or fewer), semiannual (2), annual (1), else irregular; by calendar months of the 12-month window',
+    unit: 'category', basis: 'ttm', source: 'yahoo-chart', direction: 'neutral', appliesTo: ETF, // stocks follow with the Stocks updater (benchmark plan 3.2)
+    nullWhen: { en: 'no payment in 12 months, or under a year of history unless the last four payments are monthly', ru: 'выплат за 12 месяцев не было или история короче года, если только последние четыре выплаты не ежемесячные' },
+    short: { en: 'Weekly, monthly, quarterly, semiannual, annual or irregular', ru: 'Еженедельно, ежемесячно, ежеквартально, раз в полгода, раз в год или нерегулярно' },
+    guide: {
+      en: 'How often the security pays, from the Yahoo dividend events: counting calendar months keeps a monthly payer with supplemental payments monthly (MAIN: 16 events in 12 months) and a December special does not break quarterly. The refinement and Monthly payments filters on monthly; the brand\'s own frequency text is only a cross-check',
+      ru: 'Как часто бумага платит, по дивидендным событиям Yahoo: подсчёт календарных месяцев оставляет ежемесячного плательщика с доплатами ежемесячным (MAIN: 16 событий за 12 месяцев), а декабрьский спецдивиденд не ломает квартальную частоту. Уточнение «и Ежемесячные выплаты» фильтрует по monthly; текст частоты от бренда - только сверка',
+    },
+  }),
+  def({
+    id: 'expenseRatio', name: { en: 'Expense ratio (net)', ru: 'Расходы фонда (нетто)' }, formula: 'terValue of the brand feed: the net expense ratio after waivers, percent a year',
+    unit: 'percent', basis: 'issuer', source: 'issuer', direction: 'lower-is-better', appliesTo: ETF,
+    nullWhen: { en: 'the brand publishes no expense ratio for the fund', ru: 'бренд не публикует расходы фонда' },
+    short: { en: 'Yearly cost of holding the fund after fee waivers', ru: 'Годовая стоимость владения фондом после скидок на комиссию' },
+    guide: {
+      en: 'The net expense ratio the issuer publishes (terValue), in percent a year, after fee waivers; the gross one is expenseRatioGross. 0.03-0.10 is typical for index funds, 0.35-0.75 for active, thematic and option-income funds. The refinement and Costs up to filters on it; Best in sector ranks it inside the sector',
+      ru: 'Чистые расходы фонда, которые публикует эмитент (terValue), в процентах в год, после скидок на комиссию; валовые - в expenseRatioGross. 0,03-0,10 типично для индексных фондов, 0,35-0,75 - для активных, тематических и опционных. Уточнение «и Расходы до» фильтрует по ним; «Лучшие в секторе» ранжирует их внутри сектора',
+    },
+  }),
+  def({
+    id: 'expenseRatioGross', name: { en: 'Expense ratio (gross)', ru: 'Расходы фонда (брутто)' }, formula: 'terGrossValue of the brand feed: the expense ratio before waivers, percent a year',
+    unit: 'percent', basis: 'issuer', source: 'issuer', direction: 'lower-is-better', appliesTo: ETF,
+    nullWhen: { en: 'the brand publishes only one expense ratio (then it is the net one)', ru: 'бренд публикует только одни расходы (тогда это нетто)' },
+    short: { en: 'Yearly cost before fee waivers', ru: 'Годовая стоимость до скидок на комиссию' },
+    guide: {
+      en: 'The gross expense ratio before fee waivers, as the issuer publishes it (terGrossValue). A gross well above the net means a waiver the issuer can end, usually with a date in the prospectus; most index funds publish one number, which is then the net one',
+      ru: 'Валовые расходы до скидок на комиссию, как их публикует эмитент (terGrossValue). Брутто заметно выше нетто означает скидку, которую эмитент может отменить, обычно с датой в проспекте; большинство индексных фондов публикуют одно число, и тогда это нетто',
+    },
+  }),
+  def({
+    id: 'indexFamily', name: { en: 'Index family', ru: 'Семейство индекса' }, formula: 'sp500 or nasdaq100 from the fund name or a ticker list (src/core/screener/etf-classes.json), else empty',
+    unit: 'category', basis: 'meta', source: 'computed', direction: 'neutral', appliesTo: ETF,
+    nullWhen: { en: 'the name does not name the S&P 500, S&P 100, Select Sector or Nasdaq-100 and the ticker is not on the lists', ru: 'в названии нет S&P 500, S&P 100, Select Sector или Nasdaq-100, и тикера нет в списках' },
+    short: { en: 'Built on the S&P 500 or the Nasdaq-100', ru: 'Построен на S&P 500 или Nasdaq-100' },
+    guide: {
+      en: 'Which index the fund is built on, from its name and a short ticker list in etf-classes.json (funds like IVV or JEPI whose name does not carry the index). A wrong class is fixed in that file, no feed change. For funds the names miss, the refinement and Index family also offers Moves like SPY and Moves like QQQ by correlation and beta',
+      ru: 'На каком индексе построен фонд - по названию и короткому списку тикеров в etf-classes.json (фонды вроде IVV или JEPI, у которых индекса нет в названии). Неверный класс правится в этом файле, без изменения фидов. Для фондов, которых названия не находят, уточнение «и Семейство индекса» предлагает «Ходит как SPY» и «Ходит как QQQ» по корреляции и бете',
+    },
+  }),
+  def({
+    id: 'indexVariant', name: { en: 'Index variant', ru: 'Вариант индекса' }, formula: 'first match on the name: geared, hedged, income, equal-weight, sector, dividend, factor, screened, else core; only with indexFamily',
+    unit: 'category', basis: 'meta', source: 'computed', direction: 'neutral', appliesTo: ETF,
+    nullWhen: { en: 'indexFamily is empty', ru: 'indexFamily пусто' },
+    short: { en: 'Core tracker, sector, factor, income, hedged or geared', ru: 'Индексный трекер, сектор, фактор, доход, хедж или плечо' },
+    guide: {
+      en: 'What the fund does with its index: core tracks it (SPY, IVV, QQQ), equal-weight, sector (XLK), factor (momentum, quality, low volatility), dividend, income (covered calls), screened (ESG), hedged (buffers, collars) or geared (leveraged and inverse). The S&P 500 and Nasdaq-100 options of Index family leave out hedged and geared funds',
+      ru: 'Что фонд делает со своим индексом: core - отслеживает его (SPY, IVV, QQQ), equal-weight - равные веса, sector - сектор (XLK), factor - фактор (моментум, качество, низкая волатильность), dividend - дивиденды, income - доход (покрытые коллы), screened - фильтр (ESG), hedged - защита (буферы, коллары), geared - плечо и инверсия. Варианты S&P 500 и Nasdaq-100 уточнения «Семейство индекса» не берут hedged и geared',
+    },
+  }),
+  def({
+    id: 'isGeared', name: { en: 'Leveraged or inverse', ru: 'С плечом или инверсный' }, formula: 'the fund name says Ultra, UltraPro, UltraShort, Inverse, Leveraged, Boosted, 2x or 3x, or starts with Short (not Short-Term, Short Duration, Short Maturity, Ultra-Short bond funds)',
+    unit: 'flag', basis: 'meta', source: 'computed', direction: 'neutral', appliesTo: ETF,
+    short: { en: 'Daily leveraged or inverse fund', ru: 'Фонд с дневным плечом или обратный' },
+    guide: {
+      en: 'True for daily leveraged and inverse funds (SSO, SH, TQQQ, SQQQ), from the name. They reset exposure every day, so their long-run returns and drawdowns are not comparable with a normal fund, and they distort every ranking; every new chip excludes them. Ultra-short bond funds (JPST, ICSH, VUSB) are not geared',
+      ru: 'True для фондов с дневным плечом и обратных (SSO, SH, TQQQ, SQQQ), по названию. Они каждый день пересчитывают экспозицию, поэтому их долгосрочная доходность и просадки несравнимы с обычным фондом и искажают любой рейтинг; все новые чипы их исключают. Ультракороткие облигационные фонды (JPST, ICSH, VUSB) к ним не относятся',
+    },
+  }),
+  def({
+    id: 'qualifiedDividendPct', name: { en: 'Qualified dividends', ru: 'Квалифицированные дивиденды' }, formula: 'qualified dividends (Box 1b) / ordinary dividends (Box 1a) × 100 of the last tax year from the issuer\'s tax document (src/core/screener/qdi.json), else the estimate of the fund class',
+    unit: 'percent', basis: 'calendar-year', source: 'issuer', direction: 'higher-is-better', appliesTo: ETF,
+    nullWhen: { en: 'no official value and the class is never estimated (option income, multi-asset)', ru: 'официального значения нет, а класс никогда не оценивается (опционный доход, смешанные фонды)' },
+    short: { en: 'Share of the dividends taxed at the lower qualified rate', ru: 'Доля дивидендов, облагаемая по льготной ставке qualified' },
+    guide: {
+      en: 'The share of the ordinary dividends that the issuer reported as qualified dividend income for the last tax year (US tax: taxed like long-term capital gains). Official values come from the yearly tax supplements of eight issuers; other funds get a class estimate (US equity 95, international 60, REIT 5, bonds 0) shown by qualifiedDividendBasis. The denominator is ordinary dividends, not return of capital',
+      ru: 'Доля обычных дивидендов, которую эмитент указал как квалифицированный дивидендный доход за последний налоговый год (налог США: облагается как долгосрочный прирост капитала). Официальные значения - из годовых налоговых документов восьми эмитентов; остальные фонды получают оценку класса (акции США 95, международные 60, REIT 5, облигации 0), её показывает qualifiedDividendBasis. Знаменатель - обычные дивиденды, не возврат капитала',
+    },
+  }),
+  def({
+    id: 'qualifiedDividendYear', name: { en: 'Qualified dividends tax year', ru: 'Налоговый год квалифицированных дивидендов' }, formula: 'the tax year of qualifiedDividendPct (qdi.json year)',
+    unit: 'count', basis: 'calendar-year', source: 'issuer', direction: 'neutral', appliesTo: ETF,
+    nullWhen: { en: 'qualifiedDividendPct is empty', ru: 'qualifiedDividendPct пусто' },
+    short: { en: 'Which tax year the qualified share describes', ru: 'К какому налоговому году относится доля qualified' },
+    guide: {
+      en: 'The tax year of qualifiedDividendPct. Issuers publish the supplements from January to March for the previous year, so the value is up to a year old; a fund that changed its strategy since then can differ now',
+      ru: 'Налоговый год значения qualifiedDividendPct. Эмитенты публикуют документы с января по март за прошлый год, поэтому значению до года; фонд, сменивший стратегию с тех пор, сейчас может отличаться',
+    },
+  }),
+  def({
+    id: 'qualifiedDividendBasis', name: { en: 'Qualified dividends basis', ru: 'Основа квалифицированных дивидендов' }, formula: 'official (the issuer\'s year-end tax document) or estimated (the class rule of qdi.json)',
+    unit: 'category', basis: 'meta', source: 'computed', direction: 'neutral', appliesTo: ETF,
+    nullWhen: { en: 'qualifiedDividendPct is empty', ru: 'qualifiedDividendPct пусто' },
+    short: { en: 'Official tax document or an estimate by fund class', ru: 'Официальный налоговый документ или оценка по классу фонда' },
+    guide: {
+      en: 'official: the percent comes from the issuer\'s year-end tax document. estimated: the issuer\'s document was not readable, so the fund class sets a typical value (US equity 95, international 60, preferred 60, REIT, BDC and MLP 5, bonds, commodities and geared funds 0); option-income and multi-asset funds are never estimated',
+      ru: 'official: процент взят из годового налогового документа эмитента. estimated: документ эмитента прочитать не удалось, поэтому типичное значение задаёт класс фонда (акции США 95, международные 60, привилегированные 60, REIT, BDC и MLP 5, облигации, сырьё и фонды с плечом 0); опционные и смешанные фонды никогда не оцениваются',
+    },
+  }),
+];
+
+const BASE: MetricDef[] = [...MARKET, ...VALUATION, ...DIVIDENDS, ...BALANCE, ...GROWTH, ...MARGINS, ...PERFORMANCE, ...TOTAL_RETURN, ...META, ...SWINGS, ...BENCHMARK_METRICS, ...SEC_DERIVED, ...FOREIGN, ...PLANNED, ...SCORE_INPUTS, ...FIELDS, ...SCORE_OUTPUTS];
 
 const textCompanion = (base: MetricDef): MetricDef => def({
   id: `${base.id}Text`, name: { en: `${base.name.en} (text)`, ru: `${base.name.ru} (текст)` }, formula: `issuer display text of ${base.id}`,

@@ -5,7 +5,8 @@
  * the metrics that are not in the feed yet. Rules: null is never 0; a relative scope reads the share of the group (rows with
  * a value) that is strictly lower, 0-100; a group with fewer than MIN_GROUP values behaves as missing; a condition on a metric
  * that does not apply to the row type (quickRatio for an ETF) is skipped; a row of a type the preset does not apply to fails;
- * the peers scope of a ticker without a peer group compares it with its industry (plan stage 6)
+ * the peers scope of a ticker without a peer group compares it with its industry (plan stage 6); the benchmark scope compares a
+ * row's value minus the value of a named ticker of the universe (benchmark plan 4.1)
  */
 import { createRegistry, isNumericMetric, Registry } from '../metrics';
 import { Condition, Expression, HISTORY_METRICS, PeerGroups, Preset, RELATIVE_SCOPES, ScreenerRow, Scope } from './types';
@@ -30,6 +31,8 @@ export type Universe = {
   available: Record<string, boolean>;
   tables: Record<string, Float64Array>;
   conditionCache: Record<string, ConditionResult>;
+  /** row index of each ticker for the benchmark scope (ETF rows win over stock rows), built on first use */
+  tickerIndex?: Record<string, number>;
 };
 
 export function createUniverse(rows: ScreenerRow[], options: { peers?: PeerGroups; registry?: Registry } = {}): Universe {
@@ -144,7 +147,20 @@ export function compare(v: unknown, op: Condition['op'], target: Condition['valu
   return x <= t;
 }
 
-export const conditionKey = (c: Condition): string => JSON.stringify([c.metric, c.op, c.value, c.scope ?? 'absolute', c.missing ?? 'fail']);
+export const conditionKey = (c: Condition): string => JSON.stringify([c.metric, c.op, c.value, c.scope ?? 'absolute', c.missing ?? 'fail', c.benchmark ?? '']);
+
+/** The row index of a ticker for the benchmark scope: the first ETF row with it, else the first stock row; -1 when absent */
+export function benchmarkRowIndex(universe: Universe, ticker: string): number {
+  if (!universe.tickerIndex) {
+    const index: Record<string, number> = {};
+    universe.rows.forEach((row, i) => { if (row.type === 'etf' && index[row.ticker] === undefined) index[row.ticker] = i; });
+    universe.rows.forEach((row, i) => { if (index[row.ticker] === undefined) index[row.ticker] = i; });
+    universe.tickerIndex = index;
+  }
+  const key = String(ticker ?? '').trim().toUpperCase().replace(/\./g, '-');
+  const i = universe.tickerIndex[key];
+  return i === undefined ? -1 : i;
+}
 
 export function evaluateCondition(universe: Universe, condition: Condition): ConditionResult {
   const key = conditionKey(condition);
@@ -156,15 +172,25 @@ export function evaluateCondition(universe: Universe, condition: Condition): Con
   const scope: Scope = condition.scope ?? 'absolute';
   const onMissing = condition.missing === 'skip' ? SKIP : FAIL;
   const relative = RELATIVE_SCOPES.indexOf(scope) >= 0;
+  const bench = scope === 'benchmark';
   let status: ConditionStatus = 'ok';
-  if (!def || (scope === 'history' && HISTORY_METRICS.indexOf(condition.metric) < 0) || (relative && !isNumericMetric(def))) status = 'invalid';
+  if (!def || (scope === 'history' && HISTORY_METRICS.indexOf(condition.metric) < 0) || ((relative || bench) && !isNumericMetric(def)) || (bench && !condition.benchmark)) status = 'invalid';
   else if (!universe.available[condition.metric]) status = 'unavailable';
   const table = status === 'ok' && relative ? percentiles(universe, condition.metric, scope) : null;
+  let benchValue = 0;
+  if (status === 'ok' && bench) {
+    const at = benchmarkRowIndex(universe, String(condition.benchmark));
+    const v = at < 0 ? null : numeric(fieldValue(universe.rows[at], condition.metric));
+    if (v === null) status = 'unavailable';
+    else benchValue = v;
+  }
   let passed = 0;
   for (let i = 0; i < rows.length; i += 1) {
     if (def && def.appliesTo.indexOf(rows[i].type) < 0) { states[i] = SKIP; continue; }
     if (status !== 'ok') { states[i] = onMissing; continue; }
-    const v = table ? table[i] : fieldValue(rows[i], condition.metric);
+    const own = table ? table[i] : fieldValue(rows[i], condition.metric);
+    if (isMissing(own)) { states[i] = onMissing; continue; }
+    const v = bench ? (numeric(own) === null ? NaN : (own as number) - benchValue) : own;
     if (isMissing(v)) { states[i] = onMissing; continue; }
     const ok = compare(v, condition.op, condition.value);
     states[i] = ok ? PASS : FAIL;
@@ -175,7 +201,7 @@ export function evaluateCondition(universe: Universe, condition: Condition): Con
   return result;
 }
 
-export type FunnelStep = { index: number; metric: string; op: Condition['op']; scope: Scope; status: ConditionStatus; left: number };
+export type FunnelStep = { index: number; metric: string; op: Condition['op']; scope: Scope; benchmark?: string; status: ConditionStatus; left: number };
 export type PresetResult = {
   id: string;
   /** 1 for a row that matches */
@@ -217,12 +243,14 @@ export function evaluatePreset(universe: Universe, preset: Preset): PresetResult
       if (typeOk[i] && passedSoFar[i] + applicableAfter[k + 1][i] >= needed[i]) left += 1;
     }
     const c = conditions[k];
-    funnel.push({ index: preset.conditions.indexOf(c), metric: c.metric, op: c.op, scope: c.scope ?? 'absolute', status: results[k].status, left });
+    funnel.push({ index: preset.conditions.indexOf(c), metric: c.metric, op: c.op, scope: c.scope ?? 'absolute', ...(c.benchmark ? { benchmark: c.benchmark } : {}), status: results[k].status, left });
   }
   const pass = new Uint8Array(n);
   let count = 0;
   for (let i = 0; i < n; i += 1) if (typeOk[i] && passedSoFar[i] >= needed[i]) { pass[i] = 1; count += 1; }
-  const names = (status: ConditionStatus) => conditions.filter((_, k) => results[k].status === status).map((c) => c.metric).filter((v, k, all) => all.indexOf(v) === k);
+  // an unavailable benchmark value is named <ticker>.<metric> (SPY.dividendYield), a metric missing from the feed by its id
+  const names = (status: ConditionStatus) => conditions.filter((_, k) => results[k].status === status)
+    .map((c) => (status === 'unavailable' && c.scope === 'benchmark' && universe.available[c.metric] ? `${String(c.benchmark).toUpperCase()}.${c.metric}` : c.metric)).filter((v, k, all) => all.indexOf(v) === k);
   return { id: preset.id, pass, count, start, funnel, unavailable: names('unavailable'), invalid: names('invalid') };
 }
 

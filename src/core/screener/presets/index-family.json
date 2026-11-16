@@ -1,0 +1,152 @@
+{
+  "schemaVersion": 1,
+  "id": "index-family",
+  "title": {
+    "en": "Index family",
+    "ru": "Семейство индекса"
+  },
+  "description": {
+    "en": "Refinement: funds built on the chosen index (S&P 500 or Nasdaq-100 by name or a ticker list: core trackers, equal weight, sector, factor, dividend, income and screened versions; hedged and leveraged ones left out), or funds that move like SPY or QQQ (correlation of 0.9 or more and beta 0.8 to 1.2 over the last year), always without leveraged or inverse funds",
+    "ru": "Уточнение: фонды, построенные на выбранном индексе (S&P 500 или Nasdaq-100 по названию или списку тикеров: индексные, равновзвешенные, секторные, факторные, дивидендные, доходные и отфильтрованные версии; хеджированные и с плечом не входят), или фонды, которые ходят как SPY или QQQ (корреляция от 0,9 и бета от 0,8 до 1,2 за последний год), всегда без фондов с плечом и обратных"
+  },
+  "appliesTo": [
+    "etf"
+  ],
+  "match": "all",
+  "refine": true,
+  "conditions": [
+    {
+      "metric": "isGeared",
+      "op": "=",
+      "value": false,
+      "scope": "absolute",
+      "missing": "fail"
+    }
+  ],
+  "pickers": [
+    {
+      "id": "family",
+      "title": {
+        "en": "Family",
+        "ru": "Семейство"
+      },
+      "default": "sp500",
+      "options": [
+        {
+          "id": "sp500",
+          "title": {
+            "en": "S&P 500",
+            "ru": "S&P 500"
+          },
+          "conditions": [
+            {
+              "metric": "indexFamily",
+              "op": "=",
+              "value": "sp500",
+              "scope": "absolute",
+              "missing": "fail"
+            },
+            {
+              "metric": "indexVariant",
+              "op": "in",
+              "value": [
+                "core",
+                "equal-weight",
+                "sector",
+                "factor",
+                "dividend",
+                "income",
+                "screened"
+              ],
+              "scope": "absolute",
+              "missing": "fail"
+            }
+          ]
+        },
+        {
+          "id": "nasdaq100",
+          "title": {
+            "en": "Nasdaq-100",
+            "ru": "Nasdaq-100"
+          },
+          "conditions": [
+            {
+              "metric": "indexFamily",
+              "op": "=",
+              "value": "nasdaq100",
+              "scope": "absolute",
+              "missing": "fail"
+            },
+            {
+              "metric": "indexVariant",
+              "op": "in",
+              "value": [
+                "core",
+                "equal-weight",
+                "sector",
+                "factor",
+                "dividend",
+                "income",
+                "screened"
+              ],
+              "scope": "absolute",
+              "missing": "fail"
+            }
+          ]
+        },
+        {
+          "id": "like-spy",
+          "title": {
+            "en": "Moves like SPY",
+            "ru": "Ходит как SPY"
+          },
+          "conditions": [
+            {
+              "metric": "corr1ySpy",
+              "op": ">=",
+              "value": 0.9,
+              "scope": "absolute",
+              "missing": "fail"
+            },
+            {
+              "metric": "beta1ySpy",
+              "op": "range",
+              "value": [
+                0.8,
+                1.2
+              ],
+              "scope": "absolute",
+              "missing": "fail"
+            }
+          ]
+        },
+        {
+          "id": "like-qqq",
+          "title": {
+            "en": "Moves like QQQ",
+            "ru": "Ходит как QQQ"
+          },
+          "conditions": [
+            {
+              "metric": "corr1yQqq",
+              "op": ">=",
+              "value": 0.9,
+              "scope": "absolute",
+              "missing": "fail"
+            },
+            {
+              "metric": "beta1yQqq",
+              "op": "range",
+              "value": [
+                0.8,
+                1.2
+              ],
+              "scope": "absolute",
+              "missing": "fail"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -10,7 +10,7 @@ import { validatePreset } from './validate';
 
 /** A condition with the defaults written out and the editor-only `enabled: true` dropped, keys in schema order */
 function canonicalCondition(c: Condition): Condition {
-  const out: Condition = { metric: c.metric, op: c.op, value: c.value, scope: c.scope ?? 'absolute', missing: c.missing ?? 'fail' };
+  const out: Condition = { metric: c.metric, op: c.op, value: c.value, scope: c.scope ?? 'absolute', ...(c.benchmark ? { benchmark: c.benchmark } : {}), missing: c.missing ?? 'fail' };
   if (c.enabled === false) out.enabled = false;
   if (c.help) out.help = c.help;
   return out;

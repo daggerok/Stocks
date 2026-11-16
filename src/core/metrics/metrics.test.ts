@@ -11,9 +11,14 @@ const ETF_METRIC_KEYS = [
   'indicatedDividendYield', 'secYieldUnsubsidized', 'tr1yText', 'tr3yText', 'tr5yText', 'tr10yText', 'cagr3yText', 'cagr5yText', 'cagr10yText',
   'siAnnText', 'indicatedDividendYieldText', 'secYieldUnsubsidizedText', 'ytdText', 'dividendYieldBasisText', 'dividendYieldComputed', 'secYieldKind',
   'dividendRate', 'dividendGrowth', 'dividendGrowth3y', 'dividendGrowth5y', 'dividendStreak', 'dividendCut10y',
+  // the two payment keys of the dividends block and the 32 keys of the benchmark block (benchmark plan 3.1, 3.2)
+  'paymentsPerYear', 'payFrequency', 'perf1y', 'perf3y', 'perf5y', 'perf10y', 'perfSi', 'maxDrawdown1y', 'maxDrawdown3y', 'maxDrawdown5y', 'maxDrawdown10y',
+  'vsSpy1y', 'vsSpy3y', 'vsSpy5y', 'vsSpy10y', 'beta1ySpy', 'corr1ySpy', 'upCapture3ySpy', 'downCapture3ySpy', 'relStrength3mSpy', 'stressReturnSpy', 'stressBasisSpy',
+  'vsQqq1y', 'vsQqq3y', 'vsQqq5y', 'vsQqq10y', 'beta1yQqq', 'corr1yQqq', 'upCapture3yQqq', 'downCapture3yQqq', 'relStrength3mQqq', 'stressReturnQqq', 'stressBasisQqq',
+  'benchmarkAsOf',
 ];
 /** Row fields and the metrics the base presets reference before the updater publishes them */
-const SCREENER_KEYS = ['ticker', 'type', 'sector', 'industry', 'isMine', 'size', 'peg', 'pePct5y', 'pFcfPct5y', 'yieldVsAvg5y', 'operatingMarginSlope3y', 'niVolatility5y', 'fcfVolatility5y', 'cfoToNi', 'forwardToTtmPe', 'volatility1y', 'pctFromAth', 'capexToRevenueDelta3y', 'sigmaFromMean60d', 'isReit'];
+const SCREENER_KEYS = ['ticker', 'type', 'sector', 'industry', 'isMine', 'size', 'expenseRatio', 'expenseRatioGross', 'indexFamily', 'indexVariant', 'isGeared', 'qualifiedDividendPct', 'qualifiedDividendYear', 'qualifiedDividendBasis', 'peg', 'pePct5y', 'pFcfPct5y', 'yieldVsAvg5y', 'operatingMarginSlope3y', 'niVolatility5y', 'fcfVolatility5y', 'cfoToNi', 'forwardToTtmPe', 'volatility1y', 'pctFromAth', 'capexToRevenueDelta3y', 'sigmaFromMean60d', 'isReit'];
 
 describe('metrics registry', () => {
   test('covers every metrics key of the Stocks feed, the ETF feeds and the screener', () => {
@@ -45,8 +50,9 @@ describe('metrics registry', () => {
     expect(REGISTRY.byId.range52w.appliesTo).toEqual(['stock', 'etf']);
     expect(ETF_METRIC_KEYS.filter((k) => REGISTRY.byId[k].appliesTo.indexOf('etf') < 0)).toEqual([]);
     expect(STOCK_METRIC_KEYS.filter((k) => REGISTRY.byId[k].appliesTo.indexOf('stock') < 0)).toEqual([]);
-    // "1-year return" is the total return tr1y for both types (owner answer N2); perf1y is a separate price return, ETFs do not publish it
-    expect([REGISTRY.byId.tr1y.appliesTo, REGISTRY.byId.perf1y.appliesTo]).toEqual([['stock', 'etf'], ['stock']]);
+    // "1-year return" is the total return tr1y for both types (owner answer N2); perf1y is a separate price return, which ETFs publish
+    // from the benchmark block (1Y to 10Y only; the short windows stay stock metrics)
+    expect([REGISTRY.byId.tr1y.appliesTo, REGISTRY.byId.perf1y.appliesTo, REGISTRY.byId.perf10y.appliesTo, REGISTRY.byId.perf6m.appliesTo]).toEqual([['stock', 'etf'], ['stock', 'etf'], ['stock', 'etf'], ['stock']]);
     expect([REGISTRY.byId.tr1y.name.en, REGISTRY.byId.perf1y.name.en, REGISTRY.byId.perf1y.name.ru]).toEqual(['Total return 1Y', 'Price return 1Y', 'Ценовая доходность за год']);
   });
 
@@ -56,7 +62,7 @@ describe('metrics registry', () => {
     expect(groups.reduce((n, g) => n + g.metrics.length, 0)).toBe(METRICS.length);
     expect(groups.every((g) => g.metrics.length > 0)).toBe(true);
     const of = (id: string) => metricGroup(REGISTRY.byId[id]);
-    expect(['pe', 'roic', 'grossMarginDelta3y', 'quickRatio', 'dividendGrowth5y', 'epsGrowth3y', 'perf1y', 'secYieldText', 'isMine'].map(of))
-      .toEqual(['valuation', 'quality', 'quality', 'safety', 'dividends', 'growth', 'price', 'etf', 'fields']);
+    expect(['pe', 'roic', 'grossMarginDelta3y', 'quickRatio', 'dividendGrowth5y', 'epsGrowth3y', 'perf1y', 'secYieldText', 'isMine', 'vsQqq10y', 'stressBasisSpy', 'payFrequency', 'qualifiedDividendPct', 'expenseRatio', 'isGeared'].map(of))
+      .toEqual(['valuation', 'quality', 'quality', 'safety', 'dividends', 'growth', 'price', 'etf', 'fields', 'price', 'price', 'dividends', 'dividends', 'etf', 'fields']);
   });
 });
