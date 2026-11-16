@@ -2,7 +2,7 @@
 import { describe, expect, test } from 'bun:test';
 import { createUniverse, evaluatePreset, evaluatePresets } from '../screener/engine';
 import { PRESET_SCHEMA_VERSION, type Condition, type Preset, type ScreenerRow } from '../screener/types';
-import { applyScoresSnapshot, buildScoresSnapshot, canonicalJson, computeScoring, etfScoresKey, fnv1a, SCORES_SCHEMA_VERSION, SCORING_FORMULA_VERSION, parseScoresSnapshot, presetHash, type ScoringConfig, scoresText, snapshotPresetResult, stocksScoresKey, withScoreMetrics } from '.';
+import { applyScoresSnapshot, buildScoresSnapshot, canonicalJson, computeScoring, fnv1a, SCORES_SCHEMA_VERSION, SCORING_FORMULA_VERSION, parseScoresSnapshot, presetHash, type ScoringConfig, scoresText, snapshotPresetResult, stocksScoresKey, withScoreMetrics } from '.';
 
 type M = Record<string, unknown>;
 const T = (en: string) => ({ en, ru: en });
@@ -33,7 +33,6 @@ const preset = (id: string, appliesTo: Preset['appliesTo'], conditions: Conditio
 const PRESETS: Preset[] = [
   preset('payers', ['stock', 'etf'], [c('dividendYield', '>', 0)]),
   preset('buy', ['stock', 'etf'], [c('status', '=', 'buy')]),
-  // market scope ranks stocks and ETFs together: a stock's result changes once the ETFs join
   preset('low-range', ['stock', 'etf'], [c('range52w', '<', 50, 'market')]),
 ];
 
@@ -53,7 +52,6 @@ const ETFS: ScreenerRow[] = [
 ];
 const PEERS = { Software: ['AAA', 'DDD'] };
 const FEED = { generatedAt: '2026-11-15T10:00:00Z', companies: STOCKS.length };
-const BRANDS: Array<[string, string]> = [['Schwab', '2026-11-15T09:00:00Z'], ['SPDR', '2026-11-14T09:00:00Z']];
 
 /** What the page computes without the file */
 function computed(rows: ScreenerRow[]) {
@@ -63,27 +61,29 @@ function computed(rows: ScreenerRow[]) {
 }
 
 describe('scores snapshot', () => {
-  const snapshot = parseScoresSnapshot(JSON.parse(scoresText(buildScoresSnapshot({ config: CONFIG, presets: PRESETS, peers: PEERS, feed: FEED }, STOCKS, { brands: BRANDS, rows: ETFS }))));
+  const text = scoresText(buildScoresSnapshot({ config: CONFIG, presets: PRESETS, peers: PEERS, feed: FEED }, STOCKS));
+  const snapshot = parseScoresSnapshot(JSON.parse(text));
   const stocksKey = stocksScoresKey(CONFIG, PEERS, FEED);
-  const keys = { stocks: stocksKey, etfs: etfScoresKey(stocksKey, BRANDS) };
 
   test('the stock rows from the file equal computeScoring and the base presets of the stock universe, in any row order', () => {
     expect(snapshot).not.toBeNull();
     const rows = STOCKS.slice().reverse();
-    const applied = snapshot ? applyScoresSnapshot(snapshot, rows, CONFIG, keys) : null;
+    const applied = snapshot ? applyScoresSnapshot(snapshot, rows, CONFIG, stocksKey) : null;
     const fresh = computed(rows);
     expect(applied?.result.rows).toEqual(fresh.result.rows);
     PRESETS.forEach((p) => { expect(applied?.pass[p.id]).toEqual(fresh.presets[p.id].pass); expect(applied?.hashes[p.id]).toBe(presetHash(p)); });
     expect(fresh.result.rows.some((r) => r.status === 'buy') && fresh.result.rows.some((r) => r.flags.length > 0)).toBe(true); // the sample is not trivial
   });
 
-  test('stocks with ETFs: the ETF part and the stock rows a market-scope preset changes give the result of the whole universe', () => {
-    expect(snapshot?.etfs?.stocks.length).toBeGreaterThan(0);
-    const rows = [ETFS[2], STOCKS[0], ETFS[0], ...STOCKS.slice(1), ETFS[1], ETFS[3]];
-    const applied = snapshot ? applyScoresSnapshot(snapshot, rows, CONFIG, keys) : null;
-    const fresh = computed(rows);
-    expect(applied?.result.rows).toEqual(fresh.result.rows);
-    PRESETS.forEach((p) => expect(applied?.pass[p.id]).toEqual(fresh.presets[p.id].pass));
+  test('stocks only (hub plan H4): no ETF part is written, an older file with one is still read for its stock rows, ETF rows never use it', () => {
+    expect(JSON.parse(text)).not.toHaveProperty('etfs');
+    const older = { ...JSON.parse(text), etfs: { key: 'old', brands: [['Schwab', '2026-11-15T09:00:00Z']], stocks: [[...JSON.parse(text).stocks.rows[0]]], rows: [['VVV']] } };
+    const parsed = parseScoresSnapshot(older);
+    expect(parsed).not.toHaveProperty('etfs');
+    const applied = parsed ? applyScoresSnapshot(parsed, STOCKS, CONFIG, stocksKey) : null;
+    expect(applied?.result.rows).toEqual(computed(STOCKS).result.rows);
+    expect(applyScoresSnapshot(snapshot ?? older, STOCKS.concat(ETFS), CONFIG, stocksKey)).toBeNull();
+    expect(applyScoresSnapshot(snapshot ?? older, STOCKS.slice(0, 5).concat([ETFS[0]]), CONFIG, stocksKey)).toBeNull();
   });
 
   test('the stock key carries the formula version of score.ts: a formula change in code alone never reuses an old file', () => {
@@ -93,19 +93,17 @@ describe('scores snapshot', () => {
     expect(stocksKey).not.toBe(fnv1a(canonicalJson({ ...body, f: SCORING_FORMULA_VERSION - 1 })));
   });
 
-  test('another key, an incomplete ETF view or other rows: not used (the page computes)', () => {
+  test('another key or other rows: not used (the page computes)', () => {
     if (!snapshot) throw new Error('no snapshot');
-    expect(applyScoresSnapshot(snapshot, STOCKS, CONFIG, { ...keys, stocks: stocksScoresKey(CONFIG, PEERS, { ...FEED, generatedAt: '2026-11-16T10:00:00Z' }) })).toBeNull();
-    expect(applyScoresSnapshot(snapshot, STOCKS, CONFIG, { ...keys, stocks: stocksScoresKey(CONFIG, { Software: ['AAA'] }, FEED) })).toBeNull();
-    expect(applyScoresSnapshot(snapshot, STOCKS, CONFIG, { ...keys, stocks: stocksScoresKey({ ...CONFIG, minGroupSize: 4 }, PEERS, FEED) })).toBeNull();
+    expect(applyScoresSnapshot(snapshot, STOCKS, CONFIG, stocksScoresKey(CONFIG, PEERS, { ...FEED, generatedAt: '2026-11-16T10:00:00Z' }))).toBeNull();
+    expect(applyScoresSnapshot(snapshot, STOCKS, CONFIG, stocksScoresKey(CONFIG, { Software: ['AAA'] }, FEED))).toBeNull();
+    expect(applyScoresSnapshot(snapshot, STOCKS, CONFIG, stocksScoresKey({ ...CONFIG, minGroupSize: 4 }, PEERS, FEED))).toBeNull();
     // a file from before a buy zone rule (owner N47: Quality always required) is stale for the page that has the rule
     const ruled: ScoringConfig = { ...CONFIG, buyRequiresScores: { minWeight: 0.15, always: ['quality'] } };
     expect(stocksScoresKey(ruled, PEERS, FEED)).not.toBe(stocksScoresKey({ ...ruled, buyRequiresScores: { minWeight: 0.15 } }, PEERS, FEED));
-    expect(applyScoresSnapshot(snapshot, STOCKS, ruled, { ...keys, stocks: stocksScoresKey(ruled, PEERS, FEED) })).toBeNull();
-    expect(applyScoresSnapshot(snapshot, STOCKS.concat(ETFS), CONFIG, { ...keys, etfs: null })).toBeNull();
-    expect(applyScoresSnapshot(snapshot, STOCKS.concat(ETFS), CONFIG, { ...keys, etfs: etfScoresKey(stocksKey, BRANDS.slice(0, 1)) })).toBeNull();
-    expect(applyScoresSnapshot(snapshot, STOCKS.slice(1), CONFIG, keys)).toBeNull();
-    expect(applyScoresSnapshot(snapshot, STOCKS.concat([stock('ZZZ', {})]).slice(1), CONFIG, keys)).toBeNull();
+    expect(applyScoresSnapshot(snapshot, STOCKS, ruled, stocksScoresKey(ruled, PEERS, FEED))).toBeNull();
+    expect(applyScoresSnapshot(snapshot, STOCKS.slice(1), CONFIG, stocksKey)).toBeNull();
+    expect(applyScoresSnapshot(snapshot, STOCKS.concat([stock('ZZZ', {})]).slice(1), CONFIG, stocksKey)).toBeNull();
     expect(parseScoresSnapshot({ ...snapshot, schemaVersion: 2 })).toBeNull();
   });
 

@@ -48,7 +48,7 @@ export type ScreenerUiHost = {
   storagePrefix: string;
   /** id of the element the panel renders into */
   panelId: string;
-  /** the universe switch: Stocks ['stock', 'etf', 'all']; one entry hides the switch, the first one is the default */
+  /** the universe switch, e.g. ['stock', 'etf', 'all']; one entry hides the switch (Stocks ['stock'], the ETFs hub ['etf']), the first one is the default; a stored type not in the list falls back to it */
   types: TypeFilter[];
   /** folders with index.json + preset files (base and own) and the committed peers.json; an empty ownPresetsUrl or peersUrl is not fetched (an app without committed own presets or peers) */
   presetsUrl: string;
@@ -56,7 +56,7 @@ export type ScreenerUiHost = {
   peersUrl: string;
   /** false hides the Peers button and the peer group editor (an app without peer groups, the ETFs hub); default true */
   peers?: boolean;
-  /** keeps only the base presets this app can match (the ETFs hub: presets that apply to ETFs); default every preset */
+  /** keeps only the base presets this app can match (Stocks: presets that apply to stocks, the ETFs hub: to ETFs); default every preset */
   presetFilter?: (preset: Preset) => boolean;
   t: typeof coreT;
   pick: typeof corePick;
@@ -79,9 +79,9 @@ export type ScreenerUiHost = {
   knownTickers: () => string[];
   /** the table renders again (every screener change) */
   rerender: () => void;
-  /** a universe type was chosen (Stocks loads the ETF feeds for etf and all) */
+  /** a universe type was chosen (only with a switch) */
   typeChosen: (type: TypeFilter) => void;
-  /** extra parts of the status line after the loading text (Stocks: ETF feed progress and failures) */
+  /** extra parts of the status line after the loading text */
   statusParts: () => string[];
   /** peer groups changed: before the panel and table render (drop the scored universe) and after them (dependent views) */
   peersChanging: () => void;
@@ -627,7 +627,9 @@ export function createScreenerUi(host: ScreenerUiHost) {
   function metricDatalistHtml(): string {
     if (metricOptionsLocale !== getLocale()) {
       metricOptionsLocale = getLocale();
-      metricOptionsHtml = groupMetrics(REGISTRY.metrics).map(group => group.metrics.filter(m => m.unit !== 'text' && m.unit !== 'date')
+      // only metrics of the row types this panel lists (Stocks: stock metrics, the ETFs hub: ETF metrics)
+      const types: string[] = TYPE_FILTERS.indexOf('all') >= 0 ? ['stock', 'etf'] : TYPE_FILTERS;
+      metricOptionsHtml = groupMetrics(REGISTRY.metrics.filter(m => m.appliesTo.some(a => types.indexOf(a) >= 0))).map(group => group.metrics.filter(m => m.unit !== 'text' && m.unit !== 'date')
         .map(m => `<option value="${escapeHtml(m.id)}">${escapeHtml(`${pick(m.name)} · ${pick(group.title)}${m.source === 'planned' ? ` · ${t('guide.planned')}` : ''}`)}</option>`).join('')).join('');
     }
     return `<datalist id="scr-metric-list">${metricOptionsHtml}</datalist>`;
