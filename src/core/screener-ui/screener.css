@@ -1,0 +1,144 @@
+/* Screener panel of src/core/screener-ui (the module renders this markup): switches, preset chips, the condition editor, the funnel,
+   the peer group editor, the Presets badges and the scoring cells of the table. Imported by src/index.css right after Tailwind and by
+   any other app that mounts the panel (the ETFs hub: `@import "stocks/src/core/screener-ui/screener.css";`). Plain CSS, no Tailwind
+   utilities; dark mode through the `.dark` class on <html> */
+.scr-bar{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem .6rem}
+.scr-label{font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#64748b}
+.scr-seg{display:inline-flex;border:1px solid #e2e8f0;border-radius:.5rem;overflow:hidden}
+.scr-seg button{font-size:.8125rem;font-weight:500;padding:.3rem .65rem;background:#fff;color:#475569;cursor:pointer}
+.scr-seg button+button{border-left:1px solid #e2e8f0}
+.scr-seg button[aria-pressed="true"]{background:#eff6ff;color:#1d4ed8;font-weight:600}
+.scr-chips{display:flex;flex-wrap:wrap;gap:.375rem}
+.scr-chip{display:inline-flex;align-items:stretch;border:1px solid #e2e8f0;border-radius:9999px;background:#fff;overflow:hidden;font-size:.8125rem}
+.scr-chip button{cursor:pointer;color:#334155;background:transparent}
+.scr-chip-main{display:inline-flex;align-items:center;gap:.35rem;padding:.25rem .3rem .25rem .7rem;font-weight:500}
+.scr-chip .scr-chip-btn{padding:.25rem .4rem;color:#94a3b8;font-size:.75rem}
+.scr-chip .scr-chip-btn:hover,.scr-chip .scr-chip-main:hover{background:#f1f5f9}
+.scr-chip .scr-chip-btn[aria-pressed="true"]{color:#be123c;font-weight:700}
+.scr-chip .scr-chip-btn[aria-expanded="true"]{color:#1d4ed8}
+.scr-chip .scr-chip-variant{border:0;border-left:1px solid #e2e8f0;background:transparent;color:#1d4ed8;font-size:.75rem;padding:0 .2rem;cursor:pointer}
+.scr-chip.is-in{border-color:#3b82f6;background:#eff6ff}
+.scr-chip.is-in .scr-chip-main{color:#1d4ed8;font-weight:600}
+.scr-chip.is-out{border-color:#fda4af;background:#fff1f2}
+.scr-chip.is-out .scr-chip-main{color:#be123c;text-decoration:line-through}
+.scr-chip.is-open{box-shadow:0 0 0 2px rgba(59,130,246,.35)}
+.scr-chip.is-refine{border-style:dashed}
+.scr-count{font-size:.7rem;font-weight:600;padding:0 .35rem;border-radius:9999px;background:#f1f5f9;color:#475569}
+.scr-edited{color:#d97706;font-weight:700}
+.scr-dot{width:.45rem;height:.45rem;border-radius:9999px;background:#f59e0b}
+.scr-sep{font-size:.75rem;color:#94a3b8;font-style:italic}
+.scr-chip-and{font-size:.75rem;color:#94a3b8;font-style:italic;font-weight:400}
+.scr-tools{display:inline-flex;gap:.375rem;margin-left:auto}
+.scr-import{cursor:pointer}
+.scr-muted{font-size:.75rem;color:#64748b}
+.scr-hint{margin:.5rem 0 0;font-size:.75rem;color:#94a3b8}
+.scr-error{font-size:.75rem;color:#e11d48}
+.scr-warn{font-size:.7rem;color:#b45309}
+.scr-flag{font-size:.7rem;font-weight:600;padding:.1rem .45rem;border-radius:9999px;background:#fef3c7;color:#92400e;border:1px solid #fde68a}
+.scr-editor{margin-top:.75rem;padding-top:.75rem;border-top:1px solid #e2e8f0}
+.scr-ed-head{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem .75rem;font-size:.875rem}
+.scr-ed-actions{display:inline-flex;flex-wrap:wrap;gap:.375rem;margin-left:auto}
+.scr-desc{margin:.4rem 0 0;font-size:.75rem;color:#64748b;max-width:70rem}
+.scr-match,.scr-title-edit{display:inline-flex;align-items:center;gap:.35rem;font-size:.75rem;color:#64748b}
+.scr-start{font-size:.75rem;color:#475569;font-weight:500}
+.scr-table-wrap{max-height:40vh;overflow:auto;margin-top:.5rem}
+.scr-conds{border-collapse:collapse;font-size:.8125rem;width:100%}
+.scr-conds th{text-align:left;font-size:.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:#64748b;padding:.25rem .4rem;white-space:nowrap}
+.scr-conds td{padding:.25rem .4rem;vertical-align:top;border-top:1px solid #f1f5f9}
+.scr-cond.is-changed td{background:#fffbeb}
+.scr-cond.is-off td{opacity:.55}
+.scr-input{font-size:.8125rem;padding:.2rem .4rem;border:1px solid #e2e8f0;border-radius:.375rem;background:#fff;color:#0f172a;max-width:100%}
+.scr-input:focus{outline:none;border-color:#3b82f6;box-shadow:0 0 0 2px rgba(59,130,246,.2)}
+.scr-metric{width:11rem}
+.scr-num{width:6.5rem}
+.scr-metric-name{font-size:.7rem;color:#64748b;margin-top:.1rem;max-width:12rem;white-space:normal}
+.scr-range{display:inline-flex;align-items:center;gap:.25rem}
+.scr-list{display:flex;flex-wrap:wrap;gap:.25rem;max-width:26rem}
+.scr-li{display:inline-flex;align-items:center;gap:.2rem;font-size:.75rem;padding:.05rem .2rem .05rem .45rem;border-radius:9999px;background:#f1f5f9;color:#334155}
+.scr-li button{font-size:.65rem;color:#94a3b8;cursor:pointer;padding:0 .15rem}
+.scr-li button:hover{color:#e11d48}
+.scr-list-add{width:9rem}
+.scr-funnel{white-space:nowrap;font-size:.75rem}
+.scr-left{color:#047857;font-weight:600}
+.scr-left.is-empty{color:#e11d48}
+.scr-x{color:#94a3b8;cursor:pointer;padding:0 .25rem}
+.scr-x:hover{color:#e11d48}
+.scr-ed-foot{display:flex;flex-wrap:wrap;align-items:center;gap:.6rem;margin-top:.5rem}
+.scr-badges{white-space:normal;min-width:8rem}
+.scr-badge{display:inline-block;font-size:.68rem;font-weight:600;line-height:1.2;padding:.1rem .4rem;margin:.05rem .15rem .05rem 0;border-radius:9999px;background:#eef2ff;color:#4338ca;border:1px solid #e0e7ff;white-space:nowrap}
+.dark .scr-label,.dark .scr-muted,.dark .scr-desc,.dark .scr-match,.dark .scr-title-edit,.dark .scr-metric-name,.dark .scr-conds th{color:#94a3b8}
+.dark .scr-seg{border-color:#334155}
+.dark .scr-seg button{background:#0f172a;color:#cbd5e1}
+.dark .scr-seg button+button{border-left-color:#334155}
+.dark .scr-seg button[aria-pressed="true"]{background:rgba(30,64,175,.35);color:#93c5fd}
+.dark .scr-chip{background:#0f172a;border-color:#334155}
+.dark .scr-chip button{color:#e2e8f0}
+.dark .scr-chip .scr-chip-btn:hover,.dark .scr-chip .scr-chip-main:hover{background:#1e293b}
+.dark .scr-chip .scr-chip-variant{border-left-color:#334155;color:#93c5fd;background:#0f172a}
+.dark .scr-chip.is-in{border-color:#3b82f6;background:rgba(30,64,175,.3)}
+.dark .scr-chip.is-in .scr-chip-main{color:#93c5fd}
+.dark .scr-chip.is-out{border-color:#9f1239;background:rgba(159,18,57,.2)}
+.dark .scr-chip.is-out .scr-chip-main{color:#fda4af}
+.dark .scr-count{background:#1e293b;color:#cbd5e1}
+.dark .scr-start{color:#cbd5e1}
+.dark .scr-editor{border-top-color:#334155}
+.dark .scr-conds td{border-top-color:#1e293b}
+.dark .scr-cond.is-changed td{background:rgba(180,83,9,.18)}
+.dark .scr-input{background:#0f172a;border-color:#334155;color:#e2e8f0}
+.dark .scr-li{background:#1e293b;color:#e2e8f0}
+.dark .scr-left{color:#34d399}
+.dark .scr-left.is-empty{color:#fb7185}
+.dark .scr-flag{background:rgba(146,64,14,.3);color:#fcd34d;border-color:rgba(253,230,138,.3)}
+.dark .scr-badge{background:rgba(67,56,202,.25);color:#c7d2fe;border-color:rgba(99,102,241,.35)}
+/* scoring columns (plan stage 5): colored scores, status pills, Why and Flags cut to one line (the full text is the cell tooltip) */
+.scr-score{display:inline-block;min-width:2.1rem;text-align:center;font-weight:600;border-radius:.375rem;padding:.05rem .35rem}
+.scr-score.is-good{background:#dcfce7;color:#166534}
+.scr-score.is-mid{background:#fef3c7;color:#92400e}
+.scr-score.is-bad{background:#ffe4e6;color:#9f1239}
+.dark .scr-score.is-good{background:rgba(22,163,74,.25);color:#bbf7d0}
+.dark .scr-score.is-mid{background:rgba(217,119,6,.25);color:#fde68a}
+.dark .scr-score.is-bad{background:rgba(225,29,72,.25);color:#fecdd3}
+.scr-status{display:inline-block;font-size:.72rem;font-weight:600;line-height:1.2;padding:.12rem .45rem;border-radius:9999px;white-space:nowrap;border:1px solid transparent}
+.scr-status.is-buy{background:#dcfce7;color:#166534;border-color:#bbf7d0}
+.scr-status.is-watch{background:#e0f2fe;color:#075985;border-color:#bae6fd}
+.scr-status.is-rejected{background:#ffe4e6;color:#9f1239;border-color:#fecdd3}
+.dark .scr-status.is-buy{background:rgba(22,163,74,.25);color:#bbf7d0;border-color:rgba(22,163,74,.4)}
+.dark .scr-status.is-watch{background:rgba(2,132,199,.25);color:#bae6fd;border-color:rgba(2,132,199,.4)}
+.dark .scr-status.is-rejected{background:rgba(225,29,72,.25);color:#fecdd3;border-color:rgba(225,29,72,.4)}
+.scr-why,.scr-flags{max-width:24rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* peer group editor (plan stage 6) */
+.peer-group{display:flex;flex-wrap:wrap;align-items:center;gap:.4rem .6rem;padding:.4rem 0;border-top:1px solid #f1f5f9;font-size:.8125rem}
+.peer-group .scr-list{max-width:none;flex:1}
+.dark .peer-group{border-top-color:#1e293b}
+/* language-stable widths of the screener head and chips (owner 2026-11-14, see the language-stable block of src/index.css) */
+.scr-label{width:5.5rem;flex:none;text-align:center}
+.scr-seg{flex:none}
+.scr-seg button{width:4.5rem;text-align:center}
+.scr-seg-any button{width:5.75rem}
+#scr-status{flex:1 1 0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* screener head row (owner 2026-11-15): [Stocks ETFs All][All of Any of] SCREENER <status> [tools]. The title sits in the middle of the row:
+   the two sides are equally wide (fixed), the center has an empty pad and the status of the same flexible width around the title, so the
+   title never moves and a long status ends in an ellipsis (full text in its tooltip). Below 1280 px the title line wraps under the buttons */
+.scr-side{display:inline-flex;flex-wrap:wrap;align-items:center;gap:.5rem .6rem;flex:none;max-width:100%}
+.scr-center{display:flex;align-items:center;gap:.6rem;min-width:0;flex:1 1 100%;order:3;height:1.75rem}
+.scr-center-pad{flex:1 1 0;min-width:0}
+.scr-tools{flex:none}
+@media (min-width:1280px){
+  .scr-bar{flex-wrap:nowrap}
+  .scr-side{width:26.5rem;flex-wrap:nowrap}
+  .scr-center{flex:1 1 0;order:0}
+  .scr-tools{justify-content:flex-end;margin-left:0}
+}
+.scr-tools>[data-act="clear"]{width:7.5rem}
+.scr-tools>[data-act="peers"]{width:9rem}
+.scr-tools>.scr-import{width:5.5rem}
+.scr-tools>*{text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.scr-chips{display:grid;grid-template-columns:repeat(auto-fill,minmax(15rem,1fr));gap:.375rem;margin-top:.5rem}
+.scr-chips-sep{grid-template-columns:2.25rem repeat(auto-fill,minmax(15rem,1fr))}
+.scr-chips-sep>.scr-sep{align-self:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.scr-chip{min-width:0}
+.scr-chip-main{flex:1 1 auto;min-width:0}
+.scr-chip-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.scr-chip-main .scr-count{margin-left:auto}
+.scr-chip .scr-chip-variant{flex:none;width:4.5rem}
+.scr-hint{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
