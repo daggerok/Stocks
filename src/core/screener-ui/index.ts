@@ -50,10 +50,14 @@ export type ScreenerUiHost = {
   panelId: string;
   /** the universe switch: Stocks ['stock', 'etf', 'all']; one entry hides the switch, the first one is the default */
   types: TypeFilter[];
-  /** folders with index.json + preset files (base and own) and the committed peers.json */
+  /** folders with index.json + preset files (base and own) and the committed peers.json; an empty ownPresetsUrl or peersUrl is not fetched (an app without committed own presets or peers) */
   presetsUrl: string;
   ownPresetsUrl: string;
   peersUrl: string;
+  /** false hides the Peers button and the peer group editor (an app without peer groups, the ETFs hub); default true */
+  peers?: boolean;
+  /** keeps only the base presets this app can match (the ETFs hub: presets that apply to ETFs); default every preset */
+  presetFilter?: (preset: Preset) => boolean;
   t: typeof coreT;
   pick: typeof corePick;
   getLocale: typeof coreGetLocale;
@@ -120,6 +124,7 @@ export function createScreenerUi(host: ScreenerUiHost) {
   const OWN_PRESETS_KEY = keys.own; // own presets of this browser (data: Clear keeps them)
   const PEERS_KEY = keys.peers; // peer groups changed in this browser over the committed peers.json (data: Clear keeps them)
   const TYPE_FILTERS = host.types;
+  const peersShown = host.peers !== false;
   const scr: ScreenerState = {
     type: TYPE_FILTERS[0], any: false, chips: {}, drafts: {}, expanded: null, base: [], raw: [], variants: {}, repoOwn: [], browserOwn: [], lastExported: {}, peers: {},
     peersRepo: {}, peersOverlay: {}, peersExported: '', peersOpen: false, peersMessage: '',
@@ -330,6 +335,7 @@ export function createScreenerUi(host: ScreenerUiHost) {
 
   /** the committed peers.json (Stocks: user-data/peers.json), merged with this browser's overlay */
   async function loadRepoPeers(): Promise<void> {
+    if (!host.peersUrl) { scr.peers = mergePeers(scr.peersRepo, scr.peersOverlay); return; }
     try {
       const parsed = parsePeersText(JSON.stringify(await fetchJson(host.peersUrl)));
       if (parsed.errors.length) console.warn(`${peersLabel}: ${parsed.errors.join('; ')}`);
@@ -648,7 +654,7 @@ export function createScreenerUi(host: ScreenerUiHost) {
       <span class="scr-center"><span class="scr-center-pad"></span><span class="scr-label">${escapeHtml(t('screener.title'))}</span><span id="scr-status" class="scr-muted" aria-live="polite" title="${escapeHtml(screenerStatusText())}">${escapeHtml(screenerStatusText())}</span></span>
       <span class="scr-side scr-tools">
         ${chosen ? `<button type="button" class="dd-act" data-act="clear" title="${escapeHtml(t('screener.clear.tip'))}">${escapeHtml(t('screener.clear'))}</button>` : ''}
-        <button type="button" class="dd-act" data-act="peers" aria-expanded="${scr.peersOpen}" title="${escapeHtml(t('peers.button.tip'))}">${escapeHtml(t('peers.button'))} (${Object.keys(scr.peers).length})${peersAreExported() ? '' : '<span class="scr-dot"></span>'}</button>
+        ${peersShown ? `<button type="button" class="dd-act" data-act="peers" aria-expanded="${scr.peersOpen}" title="${escapeHtml(t('peers.button.tip'))}">${escapeHtml(t('peers.button'))} (${Object.keys(scr.peers).length})${peersAreExported() ? '' : '<span class="scr-dot"></span>'}</button>` : ''}
         <label class="dd-act scr-import" title="${escapeHtml(t('screener.import.tip'))}">${escapeHtml(t('screener.import'))}<input type="file" id="scr-import-input" accept=".json,application/json" multiple hidden /></label>
       </span>
     </div>
@@ -656,7 +662,7 @@ export function createScreenerUi(host: ScreenerUiHost) {
     ${refine ? `<div class="scr-chips scr-chips-refine">${refine}</div>` : ''}
     ${own ? `<div class="scr-chips scr-chips-sep"><span class="scr-sep" title="${escapeHtml(t('screener.own'))}">${escapeHtml(t('screener.own'))}</span>${own}</div>` : ''}
     ${!chosen && !scr.expanded && scr.status === 'ready' ? `<p class="scr-hint" title="${escapeHtml(t('screener.none'))}">${escapeHtml(t('screener.none'))}</p>` : ''}
-    ${scr.peersOpen ? peersPanelHtml() : ''}
+    ${peersShown && scr.peersOpen ? peersPanelHtml() : ''}
     ${scr.expanded && effectivePreset(scr.expanded) ? editorHtml(scr.expanded) + metricDatalistHtml() : ''}`;
   }
 
@@ -907,7 +913,8 @@ export function createScreenerUi(host: ScreenerUiHost) {
   /** The base presets (scr.raw, scr.base, scr.status) and the committed own presets; the host applies a #preset link after it */
   async function loadPresets(): Promise<void> {
     try {
-      scr.raw = await fetchPresetFolder(host.presetsUrl);
+      const keep = host.presetFilter;
+      scr.raw = (await fetchPresetFolder(host.presetsUrl)).filter(p => !keep || keep(p));
       scr.base = resolvedBase();
       scr.status = 'ready';
     } catch (error) {
@@ -915,6 +922,7 @@ export function createScreenerUi(host: ScreenerUiHost) {
       scr.error = error instanceof Error ? error.message : String(error);
       console.warn(`Base presets unavailable: ${scr.error}`);
     }
+    if (!host.ownPresetsUrl) return;
     try { scr.repoOwn = (await fetchPresetFolder(host.ownPresetsUrl)).map(p => withVariant(p)); } catch (error) { console.warn(`${host.ownPresetsUrl.replace(/^\.\//, '').replace(/\/$/, '')} unavailable:`, error); }
   }
 
