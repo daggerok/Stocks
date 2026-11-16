@@ -2,7 +2,7 @@
 import { describe, expect, test } from 'bun:test';
 import { createUniverse, evaluatePreset, evaluatePresets } from '../screener/engine';
 import { PRESET_SCHEMA_VERSION, type Condition, type Preset, type ScreenerRow } from '../screener/types';
-import { applyScoresSnapshot, buildScoresSnapshot, computeScoring, etfScoresKey, parseScoresSnapshot, presetHash, type ScoringConfig, scoresText, snapshotPresetResult, stocksScoresKey, withScoreMetrics } from '.';
+import { applyScoresSnapshot, buildScoresSnapshot, canonicalJson, computeScoring, etfScoresKey, fnv1a, SCORES_SCHEMA_VERSION, SCORING_FORMULA_VERSION, parseScoresSnapshot, presetHash, type ScoringConfig, scoresText, snapshotPresetResult, stocksScoresKey, withScoreMetrics } from '.';
 
 type M = Record<string, unknown>;
 const T = (en: string) => ({ en, ru: en });
@@ -84,6 +84,13 @@ describe('scores snapshot', () => {
     const fresh = computed(rows);
     expect(applied?.result.rows).toEqual(fresh.result.rows);
     PRESETS.forEach((p) => expect(applied?.pass[p.id]).toEqual(fresh.presets[p.id].pass));
+  });
+
+  test('the stock key carries the formula version of score.ts: a formula change in code alone never reuses an old file', () => {
+    const body = { v: SCORES_SCHEMA_VERSION, config: CONFIG, peers: PEERS, generatedAt: FEED.generatedAt, companies: FEED.companies };
+    expect(SCORING_FORMULA_VERSION).toBeGreaterThanOrEqual(2); // 2: an empty heavy score counts as 0 (owner 2026-11-15)
+    expect(stocksKey).toBe(fnv1a(canonicalJson({ ...body, f: SCORING_FORMULA_VERSION })));
+    expect(stocksKey).not.toBe(fnv1a(canonicalJson({ ...body, f: SCORING_FORMULA_VERSION - 1 })));
   });
 
   test('another key, an incomplete ETF view or other rows: not used (the page computes)', () => {

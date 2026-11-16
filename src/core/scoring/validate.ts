@@ -88,6 +88,7 @@ export function validateScoringConfig(config: ScoringConfig, registry: Registry 
     const where = `score ${id}`;
     if (!s) { errors.push(`${where}: missing`); return; }
     if (!hasText(s.title)) errors.push(`${where}: title needs en and ru`);
+    if (s.minWeightShare !== undefined && (!isNum(s.minWeightShare) || s.minWeightShare <= 0 || s.minWeightShare > 1)) errors.push(`${where}: minWeightShare must be above 0 and at most 1`);
     if (s.noData !== undefined && !hasText(s.noData)) errors.push(`${where}: noData needs en and ru`);
     if (!Array.isArray(s.appliesTo) || !s.appliesTo.length || s.appliesTo.some((t) => t !== 'stock' && t !== 'etf')) errors.push(`${where}: appliesTo must list stock and/or etf`);
     if (!Array.isArray(s.items) || !s.items.length) errors.push(`${where}: no items`);

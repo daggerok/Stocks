@@ -8,7 +8,7 @@ import { REGISTRY, type Registry } from '../metrics';
 import type { MetricDef } from '../metrics/types';
 import { fieldValue, numeric } from '../screener/engine';
 import type { Condition, ScreenerRow } from '../screener/types';
-import { scoreSkipped } from './score';
+import { scoreSkipped, zeroScores } from './score';
 import { type Rule, type RowScoring, SCORE_IDS, type ScoreId, type ScoringConfig, type Status } from './types';
 
 const tr = (locale: Locale, key: string, params?: Params): string => format(DICTIONARIES[locale]?.[key] ?? DICTIONARIES.en[key] ?? key, params);
@@ -72,8 +72,9 @@ const pctText = (share: number): string => `${trim((share * 100).toFixed(share *
 
 /**
  * Tooltip of the Total score cell: each score that counts times its archetype weight, heaviest first, and the total.
- * "Growth: quality 66 × 35% + entry point 53 × 30% + cheap 86 × 20% + safety 62 × 15% = 65". An empty score is listed as
- * "no data" (a non-payer's Dividend as "no dividend") and the scaling of the other weights is spelled out on a second line
+ * "Growth: quality 66 × 35% + entry point 53 × 30% + cheap 86 × 20% + safety 62 × 15% = 65". An empty heavy score counts as 0
+ * and shows as "cheap (no data × 15% = 0)" with a line that says so; a lighter empty one is listed as "no data" (a non-payer's
+ * Dividend as "no dividend") and the scaling of the other weights is spelled out on a second line
  */
 export function totalScoreText(config: ScoringConfig, scoring: RowScoring, row: ScreenerRow, locale: Locale): string {
   const a = config.archetypes[scoring.archetype];
@@ -83,17 +84,23 @@ export function totalScoreText(config: ScoringConfig, scoring: RowScoring, row: 
   if (!ids.length) return '';
   const total = ids.reduce((s, id) => s + a.scoreWeights[id], 0);
   const name = (id: ScoreId) => pick(config.scores[id].title, locale).toLocaleLowerCase(locale);
-  const empty = ids.filter((id) => scoring.scores[id] === null);
+  const zero = zeroScores(config, a.scoreWeights, scoring.scores, row);
+  const empty = ids.filter((id) => scoring.scores[id] === null && zero.indexOf(id) < 0); // left out, the other weights scaled up
   const terms = ids.map((id) => {
     const v = scoring.scores[id];
+    const w = pctText(a.scoreWeights[id] / total);
+    if (zero.indexOf(id) >= 0) return `${name(id)} (${tr(locale, 'scoring.total.noData')} × ${w} = 0)`;
     const value = v !== null ? String(v) : tr(locale, scoreSkipped(config, id, row) ? 'scoring.total.noDividend' : 'scoring.total.noData');
-    return `${name(id)} ${value} × ${pctText(a.scoreWeights[id] / total)}`;
+    return `${name(id)} ${value} × ${w}`;
   });
   const head = `${archetypeText(config, scoring.archetype, locale)}: ${terms.join(' + ')}`;
-  const share = ids.filter((id) => scoring.scores[id] !== null).reduce((s, id) => s + a.scoreWeights[id], 0) / total;
-  if (scoring.statusScore === null) return `${head}\n${tr(locale, 'scoring.total.none', { share: pctText(share), min: pctText(config.minWeightShare) })}`;
-  if (!empty.length) return `${head} = ${scoring.statusScore}`;
-  return `${head}\n= ${Math.round(scoring.statusScore * share)} / ${pctText(share)} = ${scoring.statusScore}\n${tr(locale, 'scoring.total.scaled', { missing: empty.map(name).join(', '), share: pctText(share) })}`;
+  const weightOf = (list: ScoreId[]) => list.reduce((s, id) => s + a.scoreWeights[id], 0) / total;
+  const data = weightOf(ids.filter((id) => scoring.scores[id] !== null));
+  if (scoring.statusScore === null) return `${head}\n${tr(locale, 'scoring.total.none', { share: pctText(data), min: pctText(config.minWeightShare) })}`;
+  const zeroLine = zero.length ? `\n${tr(locale, 'scoring.total.zero', { missing: zero.map(name).join(', '), min: pctText(config.buyRequiresScores ? config.buyRequiresScores.minWeight : 0) })}` : '';
+  if (!empty.length) return `${head} = ${scoring.statusScore}${zeroLine}`;
+  const share = data + weightOf(zero);
+  return `${head}\n= ${Math.round(scoring.statusScore * share)} / ${pctText(share)} = ${scoring.statusScore}\n${tr(locale, 'scoring.total.scaled', { missing: empty.map(name).join(', '), share: pctText(share) })}${zeroLine}`;
 }
 
 /** The reasons of the Why column in order, at most config.whyLimit */

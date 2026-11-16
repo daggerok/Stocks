@@ -748,6 +748,15 @@ const SEC_DERIVED: MetricDef[] = [
     },
   }),
   def({
+    id: 'marginNote', name: { en: 'Margin note', ru: 'Пометка к маржам' }, formula: '"revenue below profit" when a net, gross, EBITDA or operating margin is above 100% or TTM net income is above TTM revenue; "FCF above revenue" when the FCF margin is above 100% or TTM FCF is above TTM revenue; both joined with "; "; else empty',
+    unit: 'text', basis: 'ttm', source: 'sec', direction: 'neutral',
+    short: { en: 'Why the margins are empty: impossible values above 100%', ru: 'Почему маржи пустые: невозможные значения выше 100%' },
+    guide: {
+      en: 'A margin above 100% is impossible, so the updater does not publish one (owner 2026-11-15). "revenue below profit": the tagged revenue is only a part of the real one (FUTU tagged 1.36B of revenue next to 1.45B of net income, an operating margin of 133%), so every ratio over revenue is empty: the net, gross, EBITDA, FCF and operating margins, their changes and 3-year trends, capex to revenue. "FCF above revenue": the operating cash flow carries money that is not earned (client funds of a broker, sales of investments of a closed-end fund or a BDC), so the FCF margin and the cash conversion ratios cfoToNi and fcfToNi are empty. Amounts, growth rates and multiples stay; a real high margin of 90% stays too',
+      ru: 'Маржа выше 100% невозможна, поэтому апдейтер её не публикует (владелец, 2026-11-15). «revenue below profit»: размеченная выручка - только часть настоящей (у FUTU выручка 1,36 млрд при чистой прибыли 1,45 млрд, операционная маржа 133%), поэтому пусты все отношения к выручке: чистая, валовая, EBITDA, FCF и операционная маржа, их изменения и тренды за 3 года, капзатраты к выручке. «FCF above revenue»: операционный поток несёт не заработанные деньги (средства клиентов брокера, продажи вложений закрытого фонда или BDC), поэтому пусты маржа FCF и конверсия в деньги cfoToNi и fcfToNi. Суммы, темпы роста и мультипликаторы остаются; настоящая высокая маржа 90% тоже остаётся',
+    },
+  }),
+  def({
     id: 'grossMarginSlope3y', name: { en: 'Gross margin trend 3Y', ru: 'Тренд валовой маржи за 3 года' }, formula: 'least-squares slope of the gross margins of the latest 4 fiscal years (FY-3 to FY0), percentage points per year',
     unit: 'pp', basis: 'fy', source: 'sec', direction: 'higher-is-better', thresholds: { good: 0 },
     nullWhen: { en: 'one of the 4 fiscal years is missing, not a year apart, or has no positive revenue or gross profit', ru: 'нет одного из 4 финансовых лет, года не идут подряд или в году нет положительной выручки или валовой прибыли' },
@@ -1183,13 +1192,13 @@ const SCORING_NOTE: Text = {
 };
 const scoring = (spec: Spec): MetricDef => def({ ...spec, guide: { en: `${spec.guide.en}. ${SCORING_NOTE.en}`, ru: `${spec.guide.ru}. ${SCORING_NOTE.ru}` } });
 const SCORE_SPECS: Array<[string, string, string, AssetType[], string, string, string, string]> = [
-  ['scoreCheap', 'Cheap', 'Дёшево', STOCK, 'peg, pegHist, forwardToTtmPe, pePct5y, pFcfPct5y, forwardPe (sector and peers)',
-    'how cheap the stock is against its sector, its peers and its own history: both PEGs, forward P/E against TTM, the 5-year P/E and P/FCF percentiles and the forward P/E itself',
-    'Насколько бумага дешева относительно сектора, пиров и своей истории: оба PEG, форвардный P/E к TTM, перцентили P/E и P/FCF за 5 лет и сам форвардный P/E',
+  ['scoreCheap', 'Cheap', 'Дёшево', STOCK, 'peg, pegHist, forwardToTtmPe, pePct5y, pFcfPct5y, forwardPe (sector and peers), pe (sector)',
+    'how cheap the stock is against its sector, its peers and its own history: both PEGs, forward P/E against TTM, the 5-year P/E and P/FCF percentiles, the forward P/E itself and the TTM P/E in the sector. It needs a quarter of the weight (its own minWeightShare 0.25), so a foreign filer with a P/E and one more valuation metric gets a score',
+    'Насколько бумага дешева относительно сектора, пиров и своей истории: оба PEG, форвардный P/E к TTM, перцентили P/E и P/FCF за 5 лет, сам форвардный P/E и P/E TTM в секторе. Ей нужна четверть веса (свой minWeightShare 0.25), поэтому иностранный эмитент с P/E и ещё одной метрикой оценки получает оценку',
     'Valuation against sector, peers and own history'],
   ['scoreQuality', 'Quality', 'Качественно', STOCK, 'roic, grossMarginSlope3y, operatingMarginSlope3y, cfoToNi, fcfToNi',
-    'how good the business is: return on invested capital, the 3-year trends of the gross and operating margins and how much of the profit turns into cash',
-    'Насколько хорош бизнес: доходность вложенного капитала, тренды валовой и операционной маржи за 3 года и какая доля прибыли превращается в деньги',
+    'how good the business is: return on invested capital, the 3-year trends of the gross and operating margins and how much of the profit turns into cash. A stock whose margins would be above 100% has those inputs empty (marginNote), so impossible numbers never lift it',
+    'Насколько хорош бизнес: доходность вложенного капитала, тренды валовой и операционной маржи за 3 года и какая доля прибыли превращается в деньги. У бумаги, чьи маржи вышли бы выше 100%, эти входы пусты (marginNote), поэтому невозможные числа её не поднимают',
     'Returns on capital, margin trends, cash conversion'],
   ['scoreSafety', 'Safety', 'Безопасно', STOCK, 'debtToEquity, netDebtToEbitda, interestCoverage, altmanZ, piotroskiF, niVolatility5y, fcfVolatility5y',
     'how safe the balance sheet and the earnings are: debt to equity, net debt to EBITDA, interest coverage, Altman Z, Piotroski F and the stability of net income and free cash flow',
@@ -1220,11 +1229,11 @@ const SCORE_OUTPUTS: MetricDef[] = [
   scoring({
     id: 'statusScore', name: { en: 'Total score', ru: 'Итоговая оценка' }, formula: 'weighted mean of the five scores with the score weights of the archetype; compared with the buy and reject thresholds of the archetype',
     unit: 'count', basis: 'snapshot', source: 'computed', direction: 'higher-is-better', appliesTo: BOTH,
-    nullWhen: { en: 'less than half of the weight of the scores that apply to the row has a value', ru: 'значения есть меньше чем у половины веса оценок, относящихся к строке' },
+    nullWhen: { en: 'less than half of the weight of the scores that apply to the row has a value (a heavy empty score counted as 0 does not count as a value)', ru: 'значения есть меньше чем у половины веса оценок, относящихся к строке (тяжёлая пустая оценка, посчитанная как 0, значением не считается)' },
     short: { en: 'Weighted sum of the five scores behind the status', ru: 'Взвешенная сумма пяти оценок, по которой ставится статус' },
     guide: {
-      en: 'The five scores combined with the score weights of the row\'s archetype: a stable stock leans on Safety and Cheap, a growing one on Quality, a volatile one on Entry point. Empty scores are left out and the weights of the rest are scaled up, as long as at least half of the weight is present. The status compares this number with the thresholds of the archetype. Hover the cell for the sum: each score times its weight, an empty score as no data and the scaling of the other weights',
-      ru: 'Пять оценок, сложенные с весами архетипа строки: у стабильной бумаги главный вес у «Безопасно» и «Дёшево», у растущей - у «Качественно», у волатильной - у «Точки входа». Пустые оценки не участвуют, веса остальных растягиваются, пока есть хотя бы половина веса. Статус сравнивает это число с порогами архетипа. Подсказка ячейки показывает сумму: каждая оценка на свой вес, пустая - как «нет данных», и растяжение остальных весов',
+      en: 'The five scores combined with the score weights of the row\'s archetype: a stable stock leans on Safety and Cheap, a growing one on Quality, a volatile one on Entry point. An empty score with 15% of the archetype weight or more (buyRequiresScores) counts as 0, so missing data never lifts the total (owner 2026-11-15: FUTU had no Cheap score and a total of 80 from the rest); a lighter empty score, the Dividend score of a non-payer and an empty Safety score of a Financial Services stock are left out and the weights of the rest are scaled up. The total needs at least half of the weight with data. The status compares this number with the thresholds of the archetype. Hover the cell for the sum: each score times its weight, a heavy empty score as no data × weight = 0, a lighter one as no data with the scaling of the other weights',
+      ru: 'Пять оценок, сложенные с весами архетипа строки: у стабильной бумаги главный вес у «Безопасно» и «Дёшево», у растущей - у «Качественно», у волатильной - у «Точки входа». Пустая оценка с весом архетипа от 15% (buyRequiresScores) считается как 0, поэтому нехватка данных никогда не поднимает итог (владелец, 2026-11-15: у FUTU не было оценки «Дёшево», а итог 80 собрался из остальных); более лёгкая пустая оценка, «Дивиденд» бумаги без выплат и пустая «Безопасно» у бумаги сектора Financial Services не участвуют, веса остальных растягиваются. Итогу нужны данные хотя бы у половины веса. Статус сравнивает это число с порогами архетипа. Подсказка ячейки показывает сумму: каждая оценка на свой вес, тяжёлая пустая - как «нет данных × вес = 0», более лёгкая - как «нет данных» с растяжением остальных весов',
     },
   }),
   scoring({
