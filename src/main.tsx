@@ -202,7 +202,7 @@ function buildColumns(): Col[] {
     ['capexToCfo', 'pct'], ['capexToRevenue', 'pct'], ['capexToRevenueDelta3y', 'pp'], ['epsNiGrowthGap3y', 'pp'], ['ffoApprox', 'money']].forEach(([key, fmt]) => reg(key, 'Quality', fmt as CellFormat));
   [['interestCoverage', 'x'], ['interestCoverageNote', 'text'], ['cashRunwayMonths', 'int'], ['altmanZ', 'x'], ['altmanVariant', 'text'], ['piotroskiF', 'int'], ['fcfNegativeYears', 'int'],
     ['balanceYoyMaxChange', 'pct'], ['balanceYoyMaxLine', 'text']].forEach(([key, fmt]) => reg(key, 'Safety', fmt as CellFormat));
-  [['dividendRate', 'price'], ['ffoPayoutApprox', 'pct'], ['yieldVsAvg5y', 'x'], ['dividendStreak', 'int'], ['dividendCut10y', 'text'], ['dividendIrregular', 'text']].forEach(([key, fmt]) => reg(key, 'Dividends', fmt as CellFormat));
+  [['dividendRate', 'price'], ['ffoPayoutApprox', 'pct'], ['yieldVsAvg5y', 'x'], ['dividendStreak', 'int'], ['dividendCut10y', 'text'], ['dividendIrregular', 'text'], ['paymentsPerYear', 'int'], ['payFrequency', 'text']].forEach(([key, fmt]) => reg(key, 'Dividends', fmt as CellFormat));
   [['niGrowth3y', 'pct'], ['niGrowth5y', 'pct'], ['cfoGrowth3y', 'pct'], ['ffoGrowth3y', 'pct']].forEach(([key, fmt]) => reg(key, 'Growth', fmt as CellFormat));
   reg('athDateTs', 'Swings', 'date', 'athDate');
   reg('athBasis', 'Swings', 'text');

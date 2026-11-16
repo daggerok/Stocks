@@ -189,8 +189,8 @@ describe('benchmark presets', () => {
     expect(run(rows, withPickers(RAW['high-income'], { risk: 'calm' }))).toEqual(['JEPQ']);
   });
 
-  test('Monthly payments: payFrequency monthly, ETFs only until the Stocks updater publishes the key', () => {
-    const rows = [stockRow({ ticker: 'O', metrics: { payFrequency: 'monthly' } }), row('JEPI', { payFrequency: 'monthly' }), row('GLD', { payFrequency: null })];
-    expect(run(rows, RAW['monthly-pay'])).toEqual(['JEPI']);
+  test('Monthly payments applies to stocks and ETFs: payFrequency monthly', () => {
+    const rows = [stockRow({ ticker: 'O', metrics: { payFrequency: 'monthly' } }), stockRow({ ticker: 'KO', metrics: { payFrequency: 'quarterly' } }), row('JEPI', { payFrequency: 'monthly' }), row('GLD', { payFrequency: null })];
+    expect(run(rows, RAW['monthly-pay'])).toEqual(['O', 'JEPI']);
   });
 });
