@@ -408,3 +408,50 @@ describe('FUTU 2026-11-15: an empty heavy score counts as 0, P/E in the Cheap sc
     expect(r[20].scores.cheap).toBeNull(); // P/E alone is 1 of 7.5: still no data
   });
 });
+
+describe('buyRequiresScores.always: no buy zone without a Quality score, whatever its weight (owner N47 b, 2026-11-16)', () => {
+  const config = loadScoringConfig();
+  const qualityKeys = ['roic', 'grossMarginSlope3y', 'operatingMarginSlope3y', 'cfoToNi', 'fcfToNi'];
+  // 25 volatile Financial Services stocks (FUTU's sector), the best one (k = 24) may lose its quality metrics like FUTU after the revenue sanity
+  const build = (dropQuality: boolean, sector = 'Financial Services') => Array.from({ length: 25 }, (_, k) => {
+    const m: M = { volatility1y: 60, pctFrom52wHigh: -k, pctFromAth: -k, range52w: 100 - 4 * k, sigmaFromMean60d: 2 - k / 5, debtToEquity: 3 - k / 10, netDebtToEbitda: 3 - k / 10, interestCoverage: k, altmanZ: 3 + k, piotroskiF: k % 10, niVolatility5y: 50 - k, fcfVolatility5y: 50 - k, roic: k, grossMarginSlope3y: k, operatingMarginSlope3y: k, cfoToNi: k, fcfToNi: k, peg: 3 - k / 10, pegHist: 3 - k / 10, pe: 30 - k, forwardPe: 30 - k };
+    if (k === 24 && dropQuality) qualityKeys.forEach((key) => delete m[key]);
+    return stock(`V${k}`, m, sector);
+  });
+  const last = (rows: ScreenerRow[], cfg = config) => computeScoring(createUniverse(rows), cfg).rows[24];
+  const without = { ...config, buyRequiresScores: { ...(config.buyRequiresScores ?? { minWeight: 0.15 }), always: undefined } };
+
+  test('the shipped config requires Quality, below minWeight for volatile, and validates; always takes known score ids only', () => {
+    expect(config.buyRequiresScores?.always).toEqual(['quality']);
+    expect(config.archetypes.volatile.scoreWeights.quality).toBeLessThan(config.buyRequiresScores?.minWeight ?? 0);
+    expect(validateScoringConfig(config)).toEqual([]);
+    const msg = 'buyRequiresScores.always needs a list of known score ids (cheap, quality, safety, dividend, entry)';
+    expect(validateScoringConfig({ ...config, buyRequiresScores: { minWeight: 0.15, always: ['nope' as never] } })).toContain(msg);
+    expect(validateScoringConfig({ ...config, buyRequiresScores: { minWeight: 0.15, always: 'quality' as never } })).toContain(msg);
+  });
+
+  test('a FUTU-like row (Buy zone total, empty Quality) is at most Watch with the reason, EN and RU; the Total does not count Quality as 0', () => {
+    const rows = build(true);
+    const r = last(rows);
+    const before = last(rows, without);
+    expect([before.scores.quality, before.status, before.missing]).toEqual([null, 'buy', []]);
+    expect([r.scores.quality, r.status, r.missing, r.statusScore]).toEqual([null, 'watch', ['quality'], before.statusScore]);
+    expect(whyParts(config, r, rows[24], 'en')).toContain('at most Watch: no data for the Quality score');
+    expect(whyParts(config, r, rows[24], 'ru')).toContain('не выше «Наблюдать»: нет данных для оценки качества');
+  });
+
+  test('a row with a Quality score is unchanged by the rule', () => {
+    const rows = build(false);
+    const r = last(rows);
+    expect(r.scores.quality).not.toBeNull();
+    expect([r.status, r.missing, r.statusScore]).toEqual(['buy', [], last(rows, without).statusScore]);
+  });
+
+  test('exempt applies to the always scores too; the shipped config does not exempt Quality, so Financial Services need it', () => {
+    expect((config.buyRequiresScores?.exempt ?? []).some((e) => e.score === 'quality')).toBe(false);
+    const req = config.buyRequiresScores ?? { minWeight: 0.15 };
+    const exempt = { ...config, buyRequiresScores: { ...req, exempt: [{ score: 'quality' as const, sector: ['Financial Services'] }] } };
+    expect([last(build(true), exempt).status, last(build(true), exempt).missing]).toEqual(['buy', []]);
+    expect([last(build(true, 'Technology'), exempt).status, last(build(true, 'Technology'), exempt).missing]).toEqual(['watch', ['quality']]);
+  });
+});

@@ -11,7 +11,8 @@
  * - the status score combines the scores with the archetype's score weights: an empty heavy score (buyRequiresScores weight,
  *   not exempt, owner 2026-11-15) counts as 0, a lighter empty one is left out and the other weights are scaled up; it is empty
  *   when less than minWeightShare of the weight has data. A stop factor of the archetype rejects the row, otherwise the
- *   archetype's buy and reject thresholds decide; a buy zone needs the heavy scores (buyRequiresScores) and no buy cap, else Watch
+ *   archetype's buy and reject thresholds decide; a buy zone needs the heavy scores and the `always` scores (buyRequiresScores,
+ *   Quality since owner N47) and no buy cap, else Watch
  */
 import type { AssetType, Direction } from '../metrics/types';
 import { evaluateCondition, evaluatePreset, fieldValue, numeric, PASS, percentiles, type Universe } from '../screener/engine';
@@ -112,9 +113,13 @@ export const scoreSkipped = (config: ScoringConfig, id: ScoreId, row: ScreenerRo
 export const scoreExempt = (config: ScoringConfig, id: ScoreId, row: ScreenerRow): boolean =>
   row.type === 'stock' && !!row.sector && (config.buyRequiresScores?.exempt ?? []).some((e) => e.score === id && e.sector.indexOf(row.sector as string) >= 0);
 
-/** Empty scores whose archetype weight is at least minWeight (buyRequiresScores), heaviest first */
-export function missingScores(config: ScoringConfig, weights: Record<ScoreId, number>, scores: Record<ScoreId, number | null>, row: ScreenerRow, minWeight: number): ScoreId[] {
-  return SCORE_IDS.filter((id) => (weights[id] ?? 0) > 0 && (weights[id] ?? 0) >= minWeight - 1e-9 && scores[id] === null && !scoreSkipped(config, id, row) && !scoreExempt(config, id, row))
+/**
+ * Empty scores whose archetype weight is at least minWeight (buyRequiresScores), plus the `always` ones whatever their weight
+ * (owner N47: Quality), heaviest first; skipped and exempt scores never count
+ */
+export function missingScores(config: ScoringConfig, weights: Record<ScoreId, number>, scores: Record<ScoreId, number | null>, row: ScreenerRow, minWeight: number, always: readonly ScoreId[] = []): ScoreId[] {
+  const required = (id: ScoreId) => always.indexOf(id) >= 0 || ((weights[id] ?? 0) > 0 && (weights[id] ?? 0) >= minWeight - 1e-9);
+  return SCORE_IDS.filter((id) => required(id) && scores[id] === null && !scoreSkipped(config, id, row) && !scoreExempt(config, id, row))
     .sort((x, y) => (weights[y] ?? 0) - (weights[x] ?? 0));
 }
 
@@ -221,7 +226,8 @@ export function computeScoring(universe: Universe, config: ScoringConfig): Scori
     if (stops.length) status = 'rejected';
     else if (statusScore !== null) status = statusScore >= a.buy ? 'buy' : statusScore < a.reject ? 'rejected' : 'watch';
     const caps = status === 'buy' ? capPass.filter((c) => c.pass[i] === 1).map((c) => c.id) : [];
-    const missing = status === 'buy' && config.buyRequiresScores ? missingScores(config, a.scoreWeights, rowScores, row, config.buyRequiresScores.minWeight) : [];
+    const req = config.buyRequiresScores;
+    const missing = status === 'buy' && req ? missingScores(config, a.scoreWeights, rowScores, row, req.minWeight, req.always) : [];
     if (caps.length || missing.length) status = 'watch';
     const notes: number[] = [];
     config.notes.forEach((note, k) => {

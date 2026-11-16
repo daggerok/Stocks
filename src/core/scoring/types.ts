@@ -102,9 +102,11 @@ export type ScoringConfig = {
   buyCaps?: Rule[];
   /**
    * a buy zone needs every score whose archetype weight is at least `minWeight` (a share of the score weights): an empty one makes
-   * the row at most Watch and Why names it (owner 2026-11-15). A score that does not apply to the row (Dividend of a non-payer) is skipped
+   * the row at most Watch and Why names it (owner 2026-11-15). A score that does not apply to the row (Dividend of a non-payer) is skipped.
+   * `always` lists scores the buy zone needs whatever their archetype weight (owner N47, 2026-11-16: Quality); they only cap the
+   * status, an empty one is not counted as 0 in the Total (that stays tied to minWeight). `exempt` applies to them too
    */
-  buyRequiresScores?: { minWeight: number; exempt?: BuyExemption[] };
+  buyRequiresScores?: { minWeight: number; always?: ScoreId[]; exempt?: BuyExemption[] };
   flags: Rule[];
   notes: Note[];
 };
