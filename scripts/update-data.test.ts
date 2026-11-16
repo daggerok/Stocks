@@ -561,9 +561,9 @@ describe('pipeline', () => {
     const peers = mergePeers(parsePeersText(readFileSync(join(__dirname, '..', 'user-data', 'peers.json'), 'utf8')).groups, {});
     const rows = storeRows(index.companies, feedMineSet(index.companies, index.mineTickers ?? null));
     const key = stocksScoresKey(config, peers, { generatedAt: index.generatedAt, companies: index.companies.length });
-    const applied = snapshot ? applyScoresSnapshot(snapshot, rows, config, { stocks: key, etfs: null }) : null;
+    const applied = snapshot ? applyScoresSnapshot(snapshot, rows, config, key) : null;
     expect(applied?.result.rows).toEqual(computeScoring(createUniverse(rows, { peers }), config).rows);
-    expect(snapshot?.etfs).toBeNull(); // the ETF part comes from --publish only
+    expect(JSON.parse(text)).not.toHaveProperty('etfs'); // stocks only: the ETFs hub scores its funds itself
     await run(controls());
     expect(await readText('scores.json')).toBe(text);
   });

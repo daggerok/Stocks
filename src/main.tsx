@@ -2,7 +2,7 @@
 import { format, getLocale, Params, pick, setLocale, t } from './core/i18n';
 import { groupMetrics, isNumericMetric, MetricDef, REGISTRY } from './core/metrics';
 import {
-  createUniverse, ETF_BRANDS_URL, EtfBrand, etfFeedUrl, etfMetrics, etfRow, parseEtfBrands, normalizeTicker, isReitIndustry, stockRow, Universe, feedMineSet,
+  createUniverse, normalizeTicker, isReitIndustry, stockRow, Universe, feedMineSet,
   cleanTickers, groupName, groupsOf, peersKey, setGroup,
 } from './core/screener';
 import { createScreenerUi, numberInput, numberOrNull, screenerStorageKeys } from './core/screener-ui';
@@ -18,7 +18,7 @@ import { chartScale, ChartSeries, longRunSeries, peerRow, peerTickers, statement
 import {
   archetypeText, computeScoring, flagTexts, RowScoring, SCORE_IDS, SCORE_METRICS, SCORING_CONFIG_URL, ScoringConfig, ScoringResult, statusText,
   totalScoreText, validateScoringConfig, whyText, withScoreMetrics,
-  AppliedScores, applyScoresSnapshot, etfScoresKey, parseScoresSnapshot, presetHash, SCORES_FILE, ScoresSnapshot, snapshotPresetResult, stocksScoresKey,
+  AppliedScores, applyScoresSnapshot, parseScoresSnapshot, presetHash, SCORES_FILE, ScoresSnapshot, snapshotPresetResult, stocksScoresKey,
 } from './core/scoring';
 import { filterSignals, parseSignals, signalDates, signalNames, SIGNAL_TYPES, SignalsDoc, signalText, signalTypeName, SIGNALS_FILE } from './core/signals';
 
@@ -62,7 +62,7 @@ const COLUMN_TYPES_KEY = 'stocks-column-types';
 const SHOW_FILTERS_KEY = 'stocks-show-filters';
 const STICKY_RANK_KEY = 'stocks-sticky-rank';
 const SCREENER_STORAGE_PREFIX = 'stocks';
-// stocks-screener (chosen chips, edits, Stocks / ETFs: Clear resets it), stocks-screener-variants (horizons: Clear resets it),
+// stocks-screener (chosen chips and edits: Clear resets it), stocks-screener-variants (horizons: Clear resets it),
 // stocks-own-presets and stocks-peers (data: Clear keeps them); written by the screener panel of src/core/screener-ui
 const SCREENER_KEYS = screenerStorageKeys(SCREENER_STORAGE_PREFIX);
 const SIMILAR_KEY = 'stocks-similar'; // the metric group and own set of Similar to X (a convenience: Clear keeps it)
@@ -234,7 +234,7 @@ function dateColumnText(key: string, row: any): string {
   const value = get ? get(row, row && row.metrics ? row.metrics : {}) : null;
   return typeof value === 'string' ? value : '';
 }
-const STRING_SORT_KEYS = ['ticker', 'name', 'type', 'exchange', 'sector', 'industry'];
+const STRING_SORT_KEYS = ['ticker', 'name', 'exchange', 'sector', 'industry'];
 const ASC_FIRST_KEYS = ['ticker', 'name', 'exchange', 'sector', 'industry', 'section', 'metric', 'kind'];
 
 // Hover explanations for table headers (custom tooltips, see initTooltips).
@@ -412,8 +412,6 @@ type Store = {
   exchanges: string[];
   sectorId: Uint16Array;
   sectors: string[];
-  assetType: Uint8Array; // 0 stock, 1 ETF (from the brand feeds)
-  typeText: string[];
   num: Record<string, Float64Array>;
   /** texts of the text columns (TEXT_KEYS) */
   text: Record<string, string[]>;
@@ -1194,8 +1192,6 @@ function buildStore(rows: any[]): Store {
     exchanges: [],
     sectorId: new Uint16Array(n),
     sectors: [],
-    assetType: new Uint8Array(n),
-    typeText: new Array(n),
     num,
     text,
     ticker: new Array(n),
@@ -1225,8 +1221,6 @@ function buildStore(rows: any[]): Store {
     result.exchangeText[i] = exchange;
     result.sectorText[i] = sector;
     result.industryText[i] = String(row.industry || '');
-    result.assetType[i] = row.assetType === 'etf' ? 1 : 0;
-    result.typeText[i] = row.assetType === 'etf' ? 'ETF' : 'Stock';
     NUMERIC_KEYS.concat(['marketCap', 'price']).forEach(key => {
       const value = numberOrNull(metrics[key]);
       if (value !== null) num[key][i] = value;
@@ -1242,7 +1236,7 @@ function buildStore(rows: any[]): Store {
     result.fields.sector[i] = sector.toLowerCase();
     result.fields.industry[i] = result.industryText[i].toLowerCase();
     result.fields.basis[i] = `${BASIS_BADGES[Number.isFinite(num.basisCls[i]) ? String(num.basisCls[i]) : 'none'].label} ${basisWords}`.toLowerCase();
-    result.search[i] = [row.ticker, row.name, exchange, sector, row.industry, basisWords, row.cik, result.typeText[i], row.brand].map(value => String(value ?? '').toLowerCase()).join(' ');
+    result.search[i] = [row.ticker, row.name, exchange, sector, row.industry, basisWords, row.cik].map(value => String(value ?? '').toLowerCase()).join(' ');
     result.keyIndex.set(row.ticker, i);
   }
   return result;
@@ -1252,7 +1246,7 @@ function applyIndex(data: any): void {
   generatedAt = data.generatedAt || '';
   stockCompanies = Array.isArray(data.companies) ? data.companies : [];
   mineTickers = Array.isArray(data.mineTickers) ? data.mineTickers.map(String) : null;
-  rebuildStore(); // with the ETF rows when they are loaded
+  rebuildStore();
 }
 
 function onStoreChanged(): void {
@@ -1415,7 +1409,6 @@ async function loadCatalog(): Promise<void> {
 
 function renderLoadProgress(): void {
   if (state.loading) el.loadProgress.textContent = `${L('Loading the stock feed…')}${store ? ` ${L('{count} stocks from cache', { count: store.n.toLocaleString('en-US') })}` : ''}`;
-  else if (etfState === 'loading') el.loadProgress.textContent = t('screener.loadingEtfs', { done: etfDone, total: etfBrands.length });
   else el.loadProgress.textContent = usingRemote ? L('remote (github.io)') : '';
   el.loadProgress.hidden = !el.loadProgress.textContent;
 }
@@ -1589,7 +1582,6 @@ type CatalogColumn = { key: string; label: string; kind: 'text' | 'num' | 'basis
 const BASE_FILTER_COLUMNS: CatalogColumn[] = [
   { key: 'ticker', label: 'Ticker', kind: 'text', fmt: 'text' },
   { key: 'name', label: 'Company', kind: 'text', fmt: 'text' },
-  { key: 'type', label: 'Type', kind: 'text', fmt: 'text' },
   { key: 'exchange', label: 'Exchange', kind: 'text', fmt: 'text' },
   { key: 'sector', label: 'Sector', kind: 'text', fmt: 'text' },
   { key: 'industry', label: 'Industry', kind: 'text', fmt: 'text' },
@@ -1619,7 +1611,6 @@ function menuColumns(): Array<{ key: string; label: string; locked: boolean }> {
 /** Header of a base column in the current language (screener and scoring columns keep their own keys) */
 function baseColLabel(col: CatalogColumn): string {
   if (col.key === 'presets') return t('screener.badges');
-  if (col.key === 'type') return t('screener.type.column');
   if (SCORING_TEXT_KEYS.includes(col.key)) return t(`scoring.col.${col.key}`);
   return L(col.label);
 }
@@ -1638,7 +1629,6 @@ function catalogFilterColumns(): CatalogColumn[] {
 function catalogCellText(col: CatalogColumn, id: number): string {
   const s = store;
   if (!s) return '';
-  if (col.key === 'type') return L(s.typeText[id]).toLowerCase();
   if (col.key === 'presets') return passedPresets(id).map(p => pick(p.title)).join(' ').toLowerCase();
   if (SCORING_TEXT_KEYS.includes(col.key)) return scoringText(col.key, id).toLowerCase();
   if (s.text[col.key]) return (s.text[col.key][id] ? L(s.text[col.key][id]) : '').toLowerCase();
@@ -1758,7 +1748,7 @@ function sortArrayFor(key: string): Float64Array | null {
   if (!STRING_SORT_KEYS.includes(key) && !s.text[key]) return null;
   const cached = s.rankCache[key];
   if (cached) return cached;
-  const texts = s.text[key] ? s.text[key] : key === 'ticker' ? s.ticker : key === 'name' ? s.name : key === 'type' ? s.typeText : key === 'exchange' ? s.exchangeText : key === 'sector' ? s.sectorText : s.industryText;
+  const texts = s.text[key] ? s.text[key] : key === 'ticker' ? s.ticker : key === 'name' ? s.name : key === 'exchange' ? s.exchangeText : key === 'sector' ? s.sectorText : s.industryText;
   const order = Array.from({ length: s.n }, (_, i) => i).sort((a, b) => collator.compare(texts[a], texts[b]) || a - b);
   const ranks = new Float64Array(s.n).fill(NaN);
   let rank = -1;
@@ -2942,9 +2932,8 @@ function stockRowHtml(id: number, index: number, cols: Col[]): string {
               <button data-blacklist="${escapeHtml(key)}" class="w-4 h-4 rounded-sm text-slate-300 dark:text-slate-600 hover:text-rose-500 dark:hover:text-rose-400 leading-none transition" title="${escapeHtml(L('Blacklist {ticker} - hide it from All Stocks', { ticker: key }))}">✕</button>
             </div>
           </td>
-          <td class="catalog-sticky-col catalog-sticky-ticker py-2.5 px-4 font-mono font-semibold text-blue-600 dark:text-blue-400">${s.assetType[id] === 0 ? `<button type="button" class="tp-open" data-page="${escapeHtml(key)}" title="${escapeHtml(t('tp.open.tip', { ticker: key }))}">${escapeHtml(key)}</button>` : escapeHtml(key)}</td>
+          <td class="catalog-sticky-col catalog-sticky-ticker py-2.5 px-4 font-mono font-semibold text-blue-600 dark:text-blue-400"><button type="button" class="tp-open" data-page="${escapeHtml(key)}" title="${escapeHtml(t('tp.open.tip', { ticker: key }))}">${escapeHtml(key)}</button></td>
           ${state.hiddenCols.has('name') ? '' : `<td class="py-2.5 px-4 text-slate-700 dark:text-slate-300 font-medium" title="${escapeHtml(s.name[id])}">${escapeHtml(s.name[id])}</td>`}
-          ${state.hiddenCols.has('type') ? '' : `<td class="py-2.5 px-4 text-slate-600 dark:text-slate-300"${s.raw[id].brand ? ` title="${escapeHtml(s.raw[id].brand)}"` : ''}>${escapeHtml(L(s.typeText[id]))}</td>`}
           ${state.hiddenCols.has('exchange') ? '' : `<td class="py-2.5 px-4 text-slate-600 dark:text-slate-300">${escapeHtml(s.exchangeText[id] || DASH)}</td>`}
           ${state.hiddenCols.has('sector') ? '' : `<td class="py-2.5 px-4 text-slate-600 dark:text-slate-300">${escapeHtml(s.sectorText[id] || DASH)}</td>`}
           ${state.hiddenCols.has('industry') ? '' : `<td class="py-2.5 px-4 text-slate-600 dark:text-slate-300" title="${escapeHtml(s.industryText[id])}">${escapeHtml(s.industryText[id] || DASH)}</td>`}
@@ -3212,10 +3201,9 @@ function renderCatalogTable(anchor: ViewAnchor | null = null): void {
       ? L('Loading the stock catalog…')
       : store.n === 0
         ? L('The stock feed is empty. Run ./scripts/update-data.ts first.')
-        : etfState === 'loading' && scr.type === 'etf' ? t('screener.loadingEtfs', { done: etfDone, total: etfBrands.length })
-          : state.activeTab === 'watchlist' ? L('No selected stocks match your search and filters.')
-            : Object.keys(scr.chips).length ? L('No {what} match your search, screener presets and filters.', { what: L(scr.type === 'stock' ? 'stocks' : scr.type === 'etf' ? 'ETFs' : 'stocks or ETFs') })
-              : L('No {what} match your search and filters.', { what: L(scr.type === 'stock' ? 'stocks' : scr.type === 'etf' ? 'ETFs' : 'stocks or ETFs') });
+        : state.activeTab === 'watchlist' ? L('No selected stocks match your search and filters.')
+          : Object.keys(scr.chips).length ? L('No {what} match your search, screener presets and filters.', { what: L('stocks') })
+            : L('No {what} match your search and filters.', { what: L('stocks') });
     el.tableBody.innerHTML = `<tr><td colspan="${catalogColspan()}" class="py-12 text-center text-slate-400 dark:text-slate-500">${escapeHtml(message)}</td></tr>`;
   } else {
     el.tableBody.innerHTML = catalogWindowHtml(mountedFrom, mounted, cols);
@@ -3232,7 +3220,7 @@ function renderCatalogStatus(ids: number[]): void {
   const queryText = catalogQuery() ? ` matching “${catalogQuery()}”` : '';
   const rankText = state.stickyRank && ids.length ? ` # = rank among ${catalogBaseline().ids.length.toLocaleString('en-US')} before the column filters.` : '';
   setStatus(`Showing ${ids.length} stock${ids.length === 1 ? '' : 's'}${queryText}.${selected ? ` ${selected} selected.` : ' No stocks selected yet.'}${rankText}`, selected ? 'success' : 'info');
-  el.tickerCount.textContent = L(scr.type === 'stock' ? '{count} stocks' : scr.type === 'etf' ? '{count} ETFs' : '{count} rows', { count: ids.length.toLocaleString('en-US') });
+  el.tickerCount.textContent = L('{count} stocks', { count: ids.length.toLocaleString('en-US') });
 }
 
 /**
@@ -3849,7 +3837,7 @@ const RESET_ITEMS: ResetItem[] = [
   { id: 'sticky-rank', label: 'Sticky #', keys: [STICKY_RANK_KEY], reset: () => { state.stickyRank = false; } },
   { id: 'views', label: 'Scroll positions (remembered table views)', keys: [VIEW_KEY], reset: () => { savedViews = {}; settledViewTabs.clear(); restoringViewTabs.clear(); clearTimeout(saveViewTimer); } },
   { id: 'blacklist', label: 'Blacklist', keys: [BLACKLIST_KEY], reset: () => { state.blacklist.clear(); blacklistVersion += 1; } },
-  { id: 'screener', label: 'Screener: chosen presets, edits and Stocks / ETFs (own presets are kept)', keys: [SCREENER_KEYS.screener], reset: () => screener.reset() },
+  { id: 'screener', label: 'Screener: chosen presets and edits (own presets are kept)', keys: [SCREENER_KEYS.screener], reset: () => screener.reset() },
   { id: 'screener-variants', label: 'Screener horizons (Stable growth 1Y to 10Y)', keys: [SCREENER_KEYS.variants], reset: () => screener.resetVariants() },
 ];
 
@@ -4076,13 +4064,12 @@ function currentExportRows(): { headers: string[]; rows: string[][]; scope: stri
   const s = store;
   const ids = catalogIds();
   return {
-    headers: ['#', L('Selected'), L('Ticker'), L('Company'), t('screener.type.column'), L('Exchange'), L('Sector'), L('Industry'), `${L('Price')} ($)`, `${L('Market Cap')} ($)`, t('screener.badges'), ...SCORING_TEXT_KEYS.map(key => t(`scoring.col.${key}`)), ...COLS.map(col => (col.fmt === 'pct' ? `${colLabel(col)} (%)` : col.fmt === 'pp' ? `${colLabel(col)} (${L('pp')})` : colLabel(col)))],
+    headers: ['#', L('Selected'), L('Ticker'), L('Company'), L('Exchange'), L('Sector'), L('Industry'), `${L('Price')} ($)`, `${L('Market Cap')} ($)`, t('screener.badges'), ...SCORING_TEXT_KEYS.map(key => t(`scoring.col.${key}`)), ...COLS.map(col => (col.fmt === 'pct' ? `${colLabel(col)} (%)` : col.fmt === 'pp' ? `${colLabel(col)} (${L('pp')})` : colLabel(col)))],
     rows: s ? ids.map((id, index) => [
       String(catalogRowNumber(id, index)),
       state.selected.has(s.ticker[id]) ? L('yes') : L('no'),
       s.ticker[id],
       s.name[id],
-      L(s.typeText[id]),
       s.exchangeText[id],
       s.sectorText[id],
       s.industryText[id],
@@ -4472,20 +4459,14 @@ function bindEvents(): void {
 }
 
 // =========================================================================
-// 14. Screener, ETF rows, language switch and guide (plan stages 2 and 4; engine, presets and texts live in src/core)
+// 14. Screener, language switch and guide (plan stages 2 and 4; engine, presets and texts live in src/core)
+// Stocks screens stocks only: ETFs are screened in the ETFs hub over its own brand feeds (owner 2026-11-16, hub plan H4)
 // =========================================================================
 
-const ETF_CONCURRENCY = 6;
 const GUIDE_SECTIONS = ['presets', 'scopes', 'missing', 'swings', 'scores', 'archetypes', 'flags', 'thresholds', 'own', 'peers', 'similar', 'dcf', 'tenk', 'method', 'owndata'];
 
 let stockCompanies: any[] = []; // rows of api/stocks/index.json
 let mineTickers: string[] | null = null; // the owner's list as the feed publishes it (index.json mineTickers), null before the feed has it
-let etfRows: any[] = [];
-let etfState: 'idle' | 'loading' | 'done' = 'idle';
-let etfDone = 0;
-let etfFailed: string[] = [];
-let etfBrands: EtfBrand[] = []; // the hub's brands.json (owner answer N5), loaded with the first ETF view
-let etfListError = ''; // why brands.json could not be read; the stocks stay usable
 let screenUniverse: { version: number; universe: Universe } | null = null;
 let scoringConfig: ScoringConfig | null = null; // src/core/scoring/config.json as dist/scoring.json, null until loaded or when invalid
 let similarConfig: SimilarConfig | null = null; // src/core/similar/config.json as dist/similar.json (owner answer N33), null until loaded or when invalid
@@ -4493,16 +4474,19 @@ let scoringResult: ScoringResult | null = null; // one entry per store row, rebu
 let scoresSnapshot: ScoresSnapshot | null = null; // api/stocks/scores.json (perf plan stage 2), null when missing or unreadable
 let scoresApplied: { version: number; applied: AppliedScores } | null = null; // the snapshot used for this store version: base preset bits
 let scoresKeyCache: { config: ScoringConfig | null; peers: string; feed: string; key: string } | null = null;
-let etfStamps: string[] = []; // generatedAt of each brand feed, in hub order (the key of the ETF part of scores.json)
 let scoringRows: any[] = []; // the engine rows the result was computed on (the Why and Flags texts read their metrics)
 let scoringTextCache: { sig: string; texts: Record<string, string[]>; tips: Record<string, string[]>; sorts: Record<string, Float64Array> } | null = null;
 let guideOpen = false;
 
-/** The screener panel (src/core/screener-ui) over the store rows: Stocks, ETFs and All, the stocks-screener-* keys, scores.json as the scores provider */
+/**
+ * The screener panel (src/core/screener-ui) over the stock rows: no type switch (an old stored ETFs or All choice falls back to
+ * stocks), only the base presets that can match a stock, the stocks-screener-* keys, scores.json as the scores provider
+ */
 const screener = createScreenerUi({
   storagePrefix: SCREENER_STORAGE_PREFIX,
   panelId: 'screener-panel',
-  types: ['stock', 'etf', 'all'],
+  types: ['stock'],
+  presetFilter: p => p.appliesTo.indexOf('stock') >= 0,
   presetsUrl: './presets/',
   ownPresetsUrl: './user-data/presets/',
   peersUrl: './user-data/peers.json',
@@ -4521,15 +4505,8 @@ const screener = createScreenerUi({
   },
   knownTickers: () => knownStockTickers(),
   rerender: () => render(),
-  typeChosen: type => { if (type !== 'stock') void ensureEtfs(); },
-  statusParts: () => {
-    const parts: string[] = [];
-    if (etfState === 'loading') parts.push(t('screener.loadingEtfs', { done: etfDone, total: etfBrands.length }));
-    else if (etfState === 'done') parts.push(t('screener.etfsLoaded', { count: etfRows.length.toLocaleString('en-US'), brands: etfBrands.length - etfFailed.length }));
-    if (etfListError) parts.push(t('screener.etfListFailed', { error: etfListError }));
-    if (etfFailed.length) parts.push(t('screener.etfFailed', { count: etfFailed.length, brands: etfFailed.join(', ') }));
-    return parts;
-  },
+  typeChosen: () => { /* one type, no switch */ },
+  statusParts: () => [],
   peersChanging: () => { screenUniverse = null; similarCache = null; },
   peersChanged: () => { if (tickerPage.ticker) renderTickerPage(); },
 });
@@ -4543,21 +4520,11 @@ const {
 function knownStockTickers(): string[] {
   const s = store;
   if (!s) return [];
-  return s.ticker.filter((_, i) => s.assetType[i] === 0);
-}
-
-/** An ETF fund row of a brand feed in the shape of a stock row of the store; stock-only fields stay empty (perf1y too: the 1-year return is tr1y) */
-function etfStoreRow(fund: any, brand: EtfBrand): any {
-  const metrics = etfMetrics(fund);
-  return {
-    ...fund, ticker: normalizeTicker(fund.ticker), assetType: 'etf', brand: brand.repo, exchange: typeof fund.exchange === 'string' ? fund.exchange : '',
-    sector: null, industry: null, cik: null, dataFile: null, fundamentalsAsOf: null, fundamentalsBasis: null,
-    price: numberOrNull(metrics.range52wClose) ?? numberOrNull(fund.navValue), metrics,
-  };
+  return s.ticker.slice();
 }
 
 function rebuildStore(): void {
-  store = buildStore(stockCompanies.concat(etfRows)); // stocks first: a ticker that is both keeps its stock row
+  store = buildStore(stockCompanies);
   viewCache = null;
   baselineCache = null;
   renderScreener(); // chip counts and the funnel read the new rows (before the table, whose Presets column needs the results)
@@ -4571,7 +4538,7 @@ function screenerUniverse(): Universe | null {
   if (screenUniverse && screenUniverse.version === s.version) return screenUniverse.universe;
   // Mine: the feed's isMine flags and mineTickers once the updater publishes them; before that the stock feed IS the owner's list
   const mine = feedMineSet(stockCompanies, mineTickers);
-  const rows = s.raw.map((raw: any) => (raw.assetType === 'etf' ? etfRow(raw, mine) : stockRow(raw, mine)));
+  const rows = s.raw.map((raw: any) => stockRow(raw, mine));
   let universe: Universe | null = null;
   scoringResult = null;
   scoresApplied = null;
@@ -4614,24 +4581,17 @@ function scoresFromSnapshot(rows: any[], config: ScoringConfig): AppliedScores |
   const snapshot = scoresSnapshot;
   if (!snapshot) return null;
   const stocksKey = stocksKeyNow(config);
-  // the ETF part only fits when every brand of the hub list was read
-  const complete = etfState === 'done' && !etfFailed.length && !etfListError && etfBrands.length > 0;
-  const etfsKey = complete ? etfScoresKey(stocksKey, etfBrands.map((b, i): [string, string] => [b.repo, etfStamps[i] || ''])) : null;
-  return applyScoresSnapshot(snapshot, rows, config, { stocks: stocksKey, etfs: etfsKey });
+  return applyScoresSnapshot(snapshot, rows, config, stocksKey);
 }
 
-/** The chosen security type and screener chips keep this store id */
+/** The screener chips keep this store id */
 function passesScreener(id: number, mask: Uint8Array | null): boolean {
-  const s = store;
-  if (!s) return false;
-  if (scr.type !== 'all' && s.assetType[id] !== (scr.type === 'etf' ? 1 : 0)) return false;
-  return !mask || mask[id] === 1;
+  return !!store && (!mask || mask[id] === 1);
 }
 
 /** Header tooltip of a catalog column: the registry name and short text in the current language, else the built-in English text */
 function catalogHeaderTip(key: string): string {
   if (key === 'presets') return t('screener.badges.tip');
-  if (key === 'type') return t('screener.type.column.tip');
   if (SCORING_TEXT_KEYS.includes(key)) return t(`scoring.col.${key}.tip`);
   const def = REGISTRY.byId[key === 'athDateTs' ? 'athDate' : key];
   if (def) return `${pick(def.name)}: ${pick(def.short)}`;
@@ -4718,7 +4678,7 @@ function scoringCellsHtml(id: number): string {
     + cell('flags', escapeHtml(cache.texts.flags[id] || ''), 'scr-flags text-rose-600 dark:text-rose-400', cache.tips.flags[id] || '');
 }
 
-// ---- loading: base presets, own presets and peers are static files next to the page; ETFs come from the brand feeds ----
+// ---- loading: base presets, own presets and peers are static files next to the page ----
 
 /** scores.json next to index.json (perf plan stage 2); missing, unreadable or stale it is simply not used */
 async function loadScoresSnapshot(): Promise<void> {
@@ -4763,65 +4723,14 @@ async function loadScreenerData(): Promise<void> {
   await screener.loadPresets();
   screenUniverse = null;
   const message = screener.applyHashPreset();
-  if (scr.type !== 'stock') void ensureEtfs();
   screener.changed(message);
   renderSignals(); // preset and flag names of the signals
-}
-
-async function ensureEtfs(): Promise<void> {
-  if (etfState !== 'idle') return;
-  etfState = 'loading';
-  etfDone = 0;
-  etfFailed = [];
-  etfListError = '';
-  renderScreener();
-  render();
-  try {
-    const parsed = parseEtfBrands(await fetchJson(ETF_BRANDS_URL, INDEX_TIMEOUT_MS));
-    if (parsed.errors.length) console.warn(`ETF brands.json: ${parsed.errors.join('; ')}`);
-    if (!parsed.brands.length) throw new Error(parsed.errors[0] || 'no brands');
-    etfBrands = parsed.brands;
-  } catch (error) {
-    etfBrands = [];
-    etfListError = error instanceof Error ? error.message : String(error);
-    console.warn('ETF brand list unavailable:', etfListError);
-  }
-  const brands = etfBrands;
-  const perBrand: any[][] = brands.map(() => []);
-  etfStamps = brands.map(() => '');
-  const queue = brands.map((_, i) => i);
-  const worker = async (): Promise<void> => {
-    for (;;) {
-      const i = queue.shift();
-      if (i === undefined) return;
-      const brand = brands[i];
-      try {
-        const data = await fetchJson(etfFeedUrl(brand), INDEX_TIMEOUT_MS);
-        if (!data || !Array.isArray(data.funds)) throw new Error('malformed index.json');
-        etfStamps[i] = String(data.generatedAt ?? '');
-        data.funds.forEach((fund: any) => { if (fund && typeof fund.ticker === 'string' && fund.ticker.trim()) perBrand[i].push(etfStoreRow(fund, brand)); });
-      } catch (error) {
-        etfFailed.push(brand.repo);
-        console.warn(`ETF feed ${brand.repo} unavailable:`, error instanceof Error ? error.message : error);
-      }
-      etfDone += 1;
-      screener.renderStatus();
-      renderLoadProgress();
-    }
-  };
-  await Promise.all(Array.from({ length: ETF_CONCURRENCY }, () => worker()));
-  etfRows = perBrand.reduce((all: any[], rows) => all.concat(rows), []); // brand order: the first brand of a duplicate ticker always wins
-  etfState = 'done';
-  rebuildStore();
-  renderScreener();
-  renderLoadProgress();
 }
 
 function onHashChange(): void {
   if (applyHashView()) return;
   const message = screener.applyHashPreset();
   if (!message) return;
-  if (scr.type !== 'stock') void ensureEtfs();
   screener.changed(message);
 }
 
@@ -5341,8 +5250,7 @@ function chartsTabHtml(ticker: string, meta: any): string {
 function peersTabHtml(ticker: string, id: number): string {
   const s = store;
   if (!s) return '';
-  const stocks = s.raw.filter((_: any, i: number) => s.assetType[i] === 0);
-  const chosen = peerTickers(ticker, scr.peers, stocks);
+  const chosen = peerTickers(ticker, scr.peers, s.raw);
   const basis = chosen.basis === 'group' ? t('tp.peers.basis.group', { name: chosen.group || '' }) : chosen.basis === 'industry' ? t('tp.peers.basis.industry', { industry: s.raw[id].industry || '' }) : t('tp.peers.basis.none');
   const rows = chosen.tickers.map(tk => {
     const index = s.keyIndex.get(tk);
@@ -5762,11 +5670,10 @@ function paragraphs(text: string): string {
 }
 
 function guideMetricHtml(m: MetricDef): string {
-  const types = m.appliesTo.map(type => t(`type.${type}`)).join(', ');
   return `<article class="guide-metric" id="guide-m-${escapeHtml(m.id)}" data-metric="${escapeHtml(m.id)}">
     <h4>${escapeHtml(pick(m.name))} <code>${escapeHtml(m.id)}</code>${m.source === 'planned' ? ` <span class="scr-flag">${escapeHtml(t('guide.planned'))}</span>` : ''}</h4>
     <p class="guide-short">${escapeHtml(pick(m.short))}</p>
-    <p class="guide-formula"><span class="guide-label">${escapeHtml(t('guide.formula'))}:</span> <code>${escapeHtml(m.formula)}</code> · ${escapeHtml(t('guide.appliesTo'))}: ${escapeHtml(types)}</p>
+    <p class="guide-formula"><span class="guide-label">${escapeHtml(t('guide.formula'))}:</span> <code>${escapeHtml(m.formula)}</code></p>
     ${paragraphs(pick(m.guide))}
     ${m.nullWhen ? `<p><span class="guide-label">${escapeHtml(t('guide.nullWhen'))}:</span> ${escapeHtml(pick(m.nullWhen))}</p>` : ''}
     ${m.sectorNotes ? `<p><span class="guide-label">${escapeHtml(t('guide.sectorNotes'))}:</span> ${escapeHtml(pick(m.sectorNotes))}</p>` : ''}
@@ -5780,7 +5687,7 @@ function renderGuide(): void {
   const hit = (text: string) => !query || text.toLowerCase().includes(query);
   const sections = GUIDE_SECTIONS.filter(key => hit(`${t(`guide.s.${key}.title`)} ${t(`guide.s.${key}.body`)}`))
     .map(key => `<section class="guide-section" data-section="${key}"><h3>${escapeHtml(t(`guide.s.${key}.title`))}</h3>${paragraphs(t(`guide.s.${key}.body`))}</section>`).join('');
-  const groups = groupMetrics(REGISTRY.metrics).map(group => {
+  const groups = groupMetrics(REGISTRY.metrics.filter(m => m.appliesTo.indexOf('stock') >= 0)).map(group => { // stock metrics only: ETFs are in the hub
     const metrics = group.metrics.filter(m => hit([m.id, m.name.en, m.name.ru, pick(m.short), pick(m.guide), m.formula].join(' ')));
     return metrics.length ? `<section class="guide-group" data-group="${group.id}"><h3>${escapeHtml(pick(group.title))} <span class="scr-muted">${metrics.length}</span></h3>${metrics.map(guideMetricHtml).join('')}</section>` : '';
   }).join('');
@@ -6056,9 +5963,12 @@ init();
 
 // ---- browser test hooks: the module scope hides these from the page, the UI tests in ../ETFs/.claude/tools/ui-std reach them through window ----
 
-/** Registry metrics of a stock without a table column (owner answers N8, N16, N23: must stay empty; the columns browser test reads it) */
+/**
+ * Registry metrics of a stock without a table column (owner answers N8, N16, N23: must stay empty; the columns browser test reads it).
+ * type has no column since hub plan H4: every row is a stock
+ */
 function metricsWithoutColumn(): string[] {
-  const shown = new Set(COLS.map(col => col.key).concat(BASE_FILTER_COLUMNS.map(col => col.key), ['marketCap', 'price', 'size', 'performanceAsOf', 'athDate']));
+  const shown = new Set(COLS.map(col => col.key).concat(BASE_FILTER_COLUMNS.map(col => col.key), ['marketCap', 'price', 'size', 'performanceAsOf', 'athDate', 'type']));
   return REGISTRY.metrics.filter(m => m.appliesTo.indexOf('stock') >= 0 && m.source !== 'planned' && !shown.has(m.id)).map(m => m.id);
 }
 Object.assign(window, { state, render, catalogIds, catalogFilterColumns, detectedCatalogType, filterExpressionFor, gridTypeCache, menuColumns, metricsWithoutColumn });

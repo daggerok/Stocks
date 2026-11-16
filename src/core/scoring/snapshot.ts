@@ -4,13 +4,10 @@
  * presets it passes, the page reads it next to index.json and skips computeScoring and the base presets when the key matches.
  * No DOM, no fs: the updater and the page call the same functions, so the file always holds what computeScoring gives.
  *
- * - stocks: the scoring of the stock universe alone (what the page computes on load); key = SCORING_FORMULA_VERSION of
- *   score.ts, config, effective peer groups, index.json generatedAt and company count
- * - etfs: written by --publish (ETF scores rank inside a fund category across all brands, no single brand can compute them):
- *   the ETF rows of the stock + ETF universe and the few stock rows whose result changes when ETFs join (a market-scope condition);
- *   key = the stocks key and each loaded brand's generatedAt in hub order
- * - a key that differs (a newer config, a peers overlay in the browser, a brand that failed or moved on) means the page
- *   recomputes as before; a preset whose definition differs from the published one (a draft, another variant) is evaluated
+ * - stocks: the scoring of the stock universe (what the page computes on load); key = SCORING_FORMULA_VERSION of score.ts,
+ *   config, effective peer groups, index.json generatedAt and company count. Stocks lists stocks only: the ETFs hub scores its
+ *   funds itself (hub plan H4), so the file has no ETF part; the `etfs` part of an older file is ignored
+ * - a key that differs (a newer config, a peers overlay in the browser) means the page recomputes as before; a preset whose definition differs from the published one (a draft, another variant) is evaluated
  *   as before, the others take their pass bits from the file
  */
 import { createUniverse, evaluatePreset, evaluatePresets, type PresetResult, type Universe } from '../screener/engine';
@@ -29,14 +26,12 @@ const MAX_PRESETS = 52;
 /** one row in SCORES_FIELDS order */
 export type SnapshotRow = unknown[];
 export type ScoresPart = { key: string; rows: SnapshotRow[] };
-export type EtfScoresPart = ScoresPart & { brands: Array<[string, string]>; stocks: SnapshotRow[] };
 export type ScoresSnapshot = {
   schemaVersion: number;
   generatedAt: string;
   fields: string[];
   presets: Array<{ id: string; hash: string }>;
   stocks: ScoresPart;
-  etfs: EtfScoresPart | null;
 };
 
 /** JSON with object keys in name order, so equal values give equal text whatever order they were built in */
@@ -66,9 +61,6 @@ export function stocksScoresKey(config: ScoringConfig, peers: PeerGroups, feed: 
   return fnv1a(canonicalJson({ v: SCORES_SCHEMA_VERSION, f: SCORING_FORMULA_VERSION, config, peers, generatedAt: feed.generatedAt, companies: feed.companies }));
 }
 
-/** The key of the ETF part: the stock key and every loaded brand with its feed's generatedAt, in hub order */
-export const etfScoresKey = (stocksKey: string, brands: Array<[string, string]>): string => fnv1a(canonicalJson({ stocksKey, brands }));
-
 /** Scoring and base presets of one universe of rows, the same steps the page runs */
 function scoreRows(rows: ScreenerRow[], config: ScoringConfig, presets: Preset[], peers: PeerGroups): SnapshotRow[] {
   const result = computeScoring(createUniverse(rows, { peers }), config);
@@ -93,37 +85,26 @@ export type ScoresInput = {
   now?: Date;
 };
 
-/**
- * The snapshot of the stock rows and, with `etf`, of the ETF rows (already without the tickers the stocks have, in hub order).
- * The stock rows must be the page's stock rows (feedMineSet + stockRow of every index row with a ticker)
- */
-export function buildScoresSnapshot(input: ScoresInput, stockRows: ScreenerRow[], etf?: { brands: Array<[string, string]>; rows: ScreenerRow[] }): ScoresSnapshot {
+/** The snapshot of the stock rows; they must be the page's stock rows (storeRows: feedMineSet + stockRow of every index row with a ticker) */
+export function buildScoresSnapshot(input: ScoresInput, stockRows: ScreenerRow[]): ScoresSnapshot {
   if (input.presets.length > MAX_PRESETS) throw new Error(`scores.json: ${input.presets.length} base presets, at most ${MAX_PRESETS} fit the preset bits`);
   const { config, presets, peers } = input;
   const stocksKey = stocksScoresKey(config, peers, input.feed);
   const stocks = scoreRows(stockRows, config, presets, peers);
-  let etfs: EtfScoresPart | null = null;
-  if (etf) {
-    const all = scoreRows(stockRows.concat(etf.rows), config, presets, peers);
-    const changed = all.slice(0, stockRows.length).filter((row, i) => JSON.stringify(row) !== JSON.stringify(stocks[i]));
-    etfs = { key: etfScoresKey(stocksKey, etf.brands), brands: etf.brands, stocks: changed, rows: all.slice(stockRows.length) }; // the order of scoresText
-  }
   return {
     schemaVersion: SCORES_SCHEMA_VERSION,
     generatedAt: (input.now ?? new Date()).toISOString().replace(/\.\d{3}Z$/, 'Z'),
     fields: SCORES_FIELDS.slice(),
     presets: presets.map((p) => ({ id: p.id, hash: presetHash(p) })),
     stocks: { key: stocksKey, rows: stocks },
-    etfs,
   };
 }
 
 /** The file text: one row per line, small diffs and readable */
 export function scoresText(snapshot: ScoresSnapshot): string {
   const rows = (list: SnapshotRow[]) => (list.length ? `[\n${list.map((r) => JSON.stringify(r)).join(',\n')}\n]` : '[]');
-  const part = (p: ScoresPart, extra = '') => `{"key": ${JSON.stringify(p.key)},${extra} "rows": ${rows(p.rows)}}`;
-  const etfs = snapshot.etfs ? part(snapshot.etfs, ` "brands": ${JSON.stringify(snapshot.etfs.brands)}, "stocks": ${rows(snapshot.etfs.stocks)},`) : 'null';
-  return `{"schemaVersion": ${snapshot.schemaVersion}, "generatedAt": ${JSON.stringify(snapshot.generatedAt)}, "fields": ${JSON.stringify(snapshot.fields)}, "presets": ${JSON.stringify(snapshot.presets)},\n"stocks": ${part(snapshot.stocks)},\n"etfs": ${etfs}\n}\n`;
+  const part = (p: ScoresPart) => `{"key": ${JSON.stringify(p.key)}, "rows": ${rows(p.rows)}}`;
+  return `{"schemaVersion": ${snapshot.schemaVersion}, "generatedAt": ${JSON.stringify(snapshot.generatedAt)}, "fields": ${JSON.stringify(snapshot.fields)}, "presets": ${JSON.stringify(snapshot.presets)},\n"stocks": ${part(snapshot.stocks)}\n}\n`;
 }
 
 const strings = (v: unknown): string[] => (Array.isArray(v) ? v.map(String) : []);
@@ -150,30 +131,22 @@ export type AppliedScores = {
   hashes: Record<string, string>;
 };
 
-/** A snapshot read from the network: the shape this code writes, else null */
+/** A snapshot read from the network: the shape this code writes, else null; the `etfs` part of an older file is dropped unread */
 export function parseScoresSnapshot(data: unknown): ScoresSnapshot | null {
   const d = data as ScoresSnapshot;
   if (!d || typeof d !== 'object' || d.schemaVersion !== SCORES_SCHEMA_VERSION || canonicalJson(d.fields) !== canonicalJson(SCORES_FIELDS)) return null;
   if (!Array.isArray(d.presets) || !d.stocks || typeof d.stocks.key !== 'string' || !Array.isArray(d.stocks.rows)) return null;
-  if (d.etfs && (typeof d.etfs.key !== 'string' || !Array.isArray(d.etfs.rows) || !Array.isArray(d.etfs.stocks))) return null;
-  return d;
+  return { schemaVersion: d.schemaVersion, generatedAt: d.generatedAt, fields: d.fields, presets: d.presets, stocks: d.stocks };
 }
 
 /**
- * The scoring of `rows` (the page's engine rows, any order) from the snapshot, or null when it does not fit: another key, an ETF
- * row without the ETF part, a row the snapshot does not have or the other way round. `etfsKey` is null when the ETF view is
- * incomplete (a brand failed): then rows with ETFs never use the file
+ * The scoring of `rows` (the page's stock rows, any order) from the snapshot, or null when it does not fit: another key, a row
+ * that is not a stock, a row the snapshot does not have or the other way round
  */
-export function applyScoresSnapshot(snapshot: ScoresSnapshot, rows: ScreenerRow[], config: ScoringConfig, keys: { stocks: string; etfs: string | null }): AppliedScores | null {
-  if (snapshot.stocks.key !== keys.stocks) return null;
-  const withEtfs = rows.some((r) => r.type === 'etf');
-  if (withEtfs && (!snapshot.etfs || keys.etfs === null || snapshot.etfs.key !== keys.etfs)) return null;
+export function applyScoresSnapshot(snapshot: ScoresSnapshot, rows: ScreenerRow[], config: ScoringConfig, stocksKey: string): AppliedScores | null {
+  if (snapshot.stocks.key !== stocksKey) return null;
   const byKey = new Map<string, SnapshotRow>();
   snapshot.stocks.rows.forEach((r) => byKey.set(`stock:${r[0]}`, r));
-  if (withEtfs && snapshot.etfs) {
-    snapshot.etfs.stocks.forEach((r) => byKey.set(`stock:${r[0]}`, r));
-    snapshot.etfs.rows.forEach((r) => byKey.set(`etf:${r[0]}`, r));
-  }
   if (byKey.size !== rows.length) return null;
   const pass: Record<string, Uint8Array> = {};
   const hashes: Record<string, string> = {};

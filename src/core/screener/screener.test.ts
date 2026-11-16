@@ -2,7 +2,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   Condition, createUniverse, etfRow, evaluateCondition, evaluateExpression, evaluatePreset, evaluatePresets, FAIL, intersections, PASS, percentiles,
-  Preset, ScreenerRow, SKIP, stockRow, tickersOf, universeRows, validatePreset,
+  Preset, ScreenerRow, SKIP, stockRow, storeRows, tickersOf, validatePreset,
 } from '.';
 import { loadPresets, loadRawPresets } from './load-presets';
 import { pickVariant, withVariant } from './variants';
@@ -262,8 +262,9 @@ describe('rows', () => {
     expect(etfRow({ ticker: 'IAU', metrics: { tr1y: null } }).metrics).toEqual({ tr1y: null });
     expect(etfRow({ ticker: 'brk.b' }, new Set(['BRK-B'])).isMine).toBe(true);
     expect(etfRow({ ticker: 'X', isMine: true, aumValue: null })).toEqual({ ticker: 'X', type: 'etf', sector: null, industry: null, isMine: true, size: null, metrics: {} });
-    const all = universeRows({ companies: [{ ticker: 'AAPL', metrics: {} }] }, [{ funds: [{ ticker: 'SPY' }] }, { funds: [{ ticker: 'SPY' }, { ticker: 'GLD' }] }], ['gld']);
-    expect(all.map((r) => `${r.type}:${r.ticker}:${r.isMine}`)).toEqual(['stock:AAPL:false', 'etf:SPY:false', 'etf:GLD:true']);
+    // the Stocks store: stock rows only, the first row of a ticker wins
+    const rows = storeRows([{ ticker: 'AAPL', metrics: {} }, { ticker: 'MSFT' }, { ticker: 'AAPL', name: 'again' }, { ticker: '' }], new Set(['MSFT']));
+    expect(rows.map((r) => `${r.type}:${r.ticker}:${r.isMine}`)).toEqual(['stock:AAPL:false', 'stock:MSFT:true']);
     expect(PASS).toBe(1);
   });
 });

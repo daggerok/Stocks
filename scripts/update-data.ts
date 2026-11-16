@@ -22,7 +22,6 @@ import { loadScoringConfig } from '../src/core/scoring/load-config';
 import { BASE_PRESET_DIR, loadPresets } from '../src/core/screener/load-presets';
 import { mergePeers, parsePeersText } from '../src/core/screener/peers';
 import { feedMineSet, storeRows } from '../src/core/screener/rows';
-import { ETF_BRANDS_URL, etfFeedUrl, parseEtfBrands } from '../src/core/screener/etf-brands';
 import { validatePreset } from '../src/core/screener/validate';
 
 // Stocks listed on Nasdaq, NYSE and Cboe: static ./api/stocks feed.
@@ -1532,42 +1531,13 @@ export function indexDocument(companies: JsonRecord[], mineTickers?: string[]): 
 }
 
 const scoresFile = () => new URL(SCORES_FILE, API_ROOT);
-/** The sibling checkouts of investments/: the hub (ETFs/src/brands.json) and the 29 brands (<repo>/api/<slug>/index.json) */
-let BRANDS_ROOT = new URL('../../', SCRIPTS_DIR);
-export function useBrandsRoot(root: URL): URL { const previous = BRANDS_ROOT; BRANDS_ROOT = root; return previous; }
-
-/** A brand feed or the hub list: the sibling checkout when present (local publish), else the GitHub Pages copy the page reads */
-async function siblingOrPages(local: URL, remote: string): Promise<unknown> {
-  try { return JSON.parse(await readFile(local, 'utf8')); } catch { /* no checkout: the published copy */ }
-  const response = await fetch(remote, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
-  if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
-  return response.json();
-}
-
-/** The ETF brands in hub order with each feed's generatedAt and funds; a brand that cannot be read is left out (as in the page) */
-async function loadBrandFeeds(): Promise<{ brands: Array<[string, string]>; funds: unknown[][] }> {
-  const parsed = parseEtfBrands(await siblingOrPages(new URL('ETFs/src/brands.json', BRANDS_ROOT), ETF_BRANDS_URL));
-  if (!parsed.brands.length) throw new Error(parsed.errors[0] || 'brands.json lists no brands');
-  const feeds = await Promise.all(parsed.brands.map(async (brand) => {
-    try {
-      const data = (await siblingOrPages(new URL(`${encodeURIComponent(brand.repo)}/api/${brand.slug}/index.json`, BRANDS_ROOT), etfFeedUrl(brand))) as JsonRecord;
-      if (!data || !Array.isArray(data.funds)) throw new Error('malformed index.json');
-      return { repo: brand.repo, generatedAt: String(data.generatedAt ?? ''), funds: data.funds as unknown[] };
-    } catch (error) {
-      console.warn(`[ scores    ] ETF feed ${brand.repo} unavailable: ${error instanceof Error ? error.message : String(error)}`);
-      return null;
-    }
-  }));
-  const ok = feeds.filter((f): f is { repo: string; generatedAt: string; funds: unknown[] } => f !== null);
-  return { brands: ok.map((f) => [f.repo, f.generatedAt] as [string, string]), funds: ok.map((f) => f.funds) };
-}
 
 /**
  * api/stocks/scores.json (perf plan stage 2): the scoring and base preset bits of every stock row, computed by the same core the
- * page runs, so the page skips computeScoring on load when the key matches. Every update run writes the stock part; --publish
- * (etfs) also writes the ETF part from the 29 brand feeds (ETF scores rank across all brands). Zero diff when nothing moved
+ * page runs, so the page skips computeScoring on load when the key matches. Stocks only: no ETF brand feed is read (the ETFs hub
+ * scores its funds itself, hub plan H4). Every update run and --publish write it; zero diff when nothing moved
  */
-export async function writeScores(options: { etfs?: boolean; also?: URL } = {}): Promise<ScoresSnapshot> {
+export async function writeScores(options: { also?: URL } = {}): Promise<ScoresSnapshot> {
   const index = await readJson(indexFile());
   if (!index || !Array.isArray(index.companies)) throw new Error(`${fileURLToPath(indexFile())} is missing or has no companies`);
   const root = fileURLToPath(new URL('../', SCRIPTS_DIR));
@@ -1577,16 +1547,11 @@ export async function writeScores(options: { etfs?: boolean; also?: URL } = {}):
   const companies: unknown[] = index.companies;
   const mine = feedMineSet(companies as JsonRecord[], Array.isArray(index.mineTickers) ? index.mineTickers.map(String) : null);
   const stockRows = storeRows(companies, mine);
-  let etf: { brands: Array<[string, string]>; rows: ReturnType<typeof storeRows> } | undefined;
-  if (options.etfs) {
-    const feeds = await loadBrandFeeds();
-    etf = { brands: feeds.brands, rows: storeRows(companies, mine, feeds.funds).slice(stockRows.length) };
-  }
   const input = { config: loadScoringConfig(), presets, peers, feed: { generatedAt: String(index.generatedAt ?? ''), companies: companies.length } };
-  const snapshot = buildScoresSnapshot(input, stockRows, etf);
+  const snapshot = buildScoresSnapshot(input, stockRows);
   await writeIfChanged(scoresFile(), snapshot, (v) => scoresText(v as ScoresSnapshot));
   if (options.also) await writeFeedFile(new URL(SCORES_FILE, options.also), await readFile(scoresFile(), 'utf8'));
-  console.log(`[ scores    ] ${SCORES_FILE}: ${snapshot.stocks.rows.length} stocks${snapshot.etfs ? `, ${snapshot.etfs.rows.length} ETFs of ${snapshot.etfs.brands.length} brands (${snapshot.etfs.stocks.length} stock rows differ with ETFs)` : ''}`);
+  console.log(`[ scores    ] ${SCORES_FILE}: ${snapshot.stocks.rows.length} stocks`);
   return snapshot;
 }
 
@@ -1905,8 +1870,8 @@ async function main(): Promise<void> {
   else if (process.argv.includes('--publish')) {
     try {
       const noBuild = process.argv.includes('--no-build');
-      // the scores of this checkout's code over the local feed and the brand feeds; with --no-build also into the built dist
-      await writeScores({ etfs: true, also: noBuild ? new URL('../dist/api/stocks/', SCRIPTS_DIR) : undefined })
+      // the scores of this checkout's code over the local feed; with --no-build also into the built dist
+      await writeScores({ also: noBuild ? new URL('../dist/api/stocks/', SCRIPTS_DIR) : undefined })
         .catch((error) => console.warn(`[ scores    ] ${SCORES_FILE} not written (the page computes the scores): ${error instanceof Error ? error.message : String(error)}`));
       const done = publishSite(!noBuild);
       console.log(`[ publish   ] ${PAGES_BRANCH} <- ${done.commit.slice(0, 9)} (${done.companies} companies): ${PUBLISHED_SITE_URL}`);

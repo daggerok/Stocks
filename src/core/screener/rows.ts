@@ -1,6 +1,7 @@
 /// <reference lib="esnext" />
 /**
- * Row adapter: a company row of api/stocks/index.json and a fund row of an ETF brand index.json become one engine row.
+ * Row adapter: a company row of api/stocks/index.json (the Stocks page) or a fund row of an ETF brand index.json (the ETFs hub,
+ * which reads the brand feeds itself) becomes an engine row.
  * size is marketCap for a stock and aumValue for an ETF (plan 1.6). The sector of an ETF is its fund category from the brand
  * feed (owner answer N4; the engine and the scores never mix it with stock sectors); ETFs have no industry (null, so industry
  * conditions treat them as missing). isMine comes from the row's own flag once the feed publishes it (plan 1.1), else from the
@@ -42,18 +43,6 @@ export function etfRow(fund: Feed, mineList?: ReadonlySet<string> | readonly str
   return { ticker, type: 'etf', sector: text(fund.category), industry: null, isMine: mine(fund, ticker, mineList), size: num(fund.aumValue), metrics: etfMetrics(fund) };
 }
 
-/** All rows of one stocks index and any number of ETF brand indexes; an ETF ticker already present (a fund in two feeds) keeps its first row */
-export function universeRows(stocks: Feed | null, etfIndexes: Feed[], mineList?: readonly string[]): ScreenerRow[] {
-  const set = mineList ? mineList.map(normalizeTicker) : undefined;
-  const out: ScreenerRow[] = [];
-  const seen: Record<string, boolean> = {};
-  const push = (row: ScreenerRow) => { const key = `${row.type}:${row.ticker}`; if (!seen[key]) { seen[key] = true; out.push(row); } };
-  const list = (doc: Feed | null, key: string): Feed[] => (doc && Array.isArray(doc[key]) ? (doc[key] as Feed[]) : []);
-  list(stocks, 'companies').forEach((c) => push(stockRow(c, set)));
-  etfIndexes.forEach((doc) => list(doc, 'funds').forEach((f) => push(etfRow(f, set))));
-  return out;
-}
-
 /**
  * The owner's tickers as the page reads them from index.json: mineTickers once the updater publishes them; before that, when no
  * row has an isMine flag, the stock feed itself is the owner's list. The page and the scores snapshot use the same set
@@ -64,10 +53,10 @@ export function feedMineSet(companies: readonly Feed[], mineTickers: readonly st
 }
 
 /**
- * The engine rows of the page's store, in feed order: every stock row with a ticker (first one of a ticker wins), then the ETF
- * funds of each brand in hub order whose ticker the stocks or an earlier brand do not have (main.tsx buildStore and ensureEtfs)
+ * The engine rows of the Stocks page's store, in feed order: every stock row with a ticker (first one of a ticker wins), as
+ * main.tsx buildStore. Stocks lists stocks only; the ETFs hub builds its fund rows with etfRow
  */
-export function storeRows(companies: readonly unknown[], mine: ReadonlySet<string>, brandFunds: ReadonlyArray<readonly unknown[]> = []): ScreenerRow[] {
+export function storeRows(companies: readonly unknown[], mine: ReadonlySet<string>): ScreenerRow[] {
   const seen = new Set<string>();
   const out: ScreenerRow[] = [];
   companies.forEach((c) => {
@@ -76,13 +65,5 @@ export function storeRows(companies: readonly unknown[], mine: ReadonlySet<strin
     seen.add(row.ticker);
     out.push(stockRow(row, mine));
   });
-  brandFunds.forEach((funds) => funds.forEach((f) => {
-    const fund = f as Feed;
-    if (!fund || typeof fund.ticker !== 'string' || !fund.ticker.trim()) return;
-    const ticker = normalizeTicker(fund.ticker);
-    if (seen.has(ticker)) return;
-    seen.add(ticker);
-    out.push(etfRow(fund, mine));
-  }));
   return out;
 }
