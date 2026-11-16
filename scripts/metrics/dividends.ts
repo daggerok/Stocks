@@ -94,3 +94,35 @@ export function dividendIrregular(annual: AnnualDps[], lastDate: string): boolea
   const years = Array.from(paid).sort((x, y) => x - y);
   return years.some((y, i) => i > 0 && y - years[i - 1] > 1);
 }
+
+/** Payments in 12 months and the payment frequency (benchmark plan 3.2), the same rule as the shared dividends block of the 29 ETF updaters */
+export const DIVIDEND_FREQUENCY_KEYS = ['paymentsPerYear', 'payFrequency'];
+export type DividendEvent = { date: string; amount: number };
+const monthIndex = (date: string): number => Number(date.slice(0, 4)) * 12 + Number(date.slice(5, 7)) - 1;
+
+/**
+ * Events in the dividendRate window (`date > asOf - 365.25 days`) and the frequency, first rule that matches: no event -> null;
+ * 40 events or more -> weekly; 11 calendar months or more, or the last 4 events of the whole history in 4 consecutive months with
+ * the newest in the window -> monthly; history under 365 days -> null (too young); 3-5 months with 6 events or fewer -> quarterly;
+ * 2 months -> semiannual; 1 month -> annual; else irregular. Counting months keeps MAIN (16 events in 12 months) monthly
+ */
+export function payFrequency(events: readonly DividendEvent[], asOf: string, firstDay: string | null): { paymentsPerYear: number | null; payFrequency: string | null } {
+  const list = events.filter((e) => e && typeof e.date === 'string' && Number.isFinite(e.amount) && e.amount > 0).slice().sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  const asOfMs = Date.parse(`${asOf}T00:00:00Z`);
+  const cutoff = new Date(asOfMs - 365.25 * 86400000).toISOString().slice(0, 10);
+  const window = list.filter((e) => e.date > cutoff);
+  if (!window.length) return { paymentsPerYear: null, payFrequency: null };
+  const months = new Set(window.map((e) => e.date.slice(0, 7))).size;
+  const n = list.length;
+  const lastFour = n >= 4 && list[n - 1].date > cutoff && [n - 3, n - 2, n - 1].every((i) => monthIndex(list[i].date) - monthIndex(list[i - 1].date) === 1);
+  const firstMs = firstDay ? Date.parse(`${firstDay}T00:00:00Z`) : NaN;
+  let frequency: string | null;
+  if (window.length >= 40) frequency = 'weekly';
+  else if (months >= 11 || lastFour) frequency = 'monthly';
+  else if (!Number.isFinite(firstMs) || asOfMs - firstMs < 365 * 86400000) frequency = null;
+  else if (months >= 3 && months <= 5 && window.length <= 6) frequency = 'quarterly';
+  else if (months === 2) frequency = 'semiannual';
+  else if (months === 1) frequency = 'annual';
+  else frequency = 'irregular';
+  return { paymentsPerYear: window.length, payFrequency: frequency };
+}

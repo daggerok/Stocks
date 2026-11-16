@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { epsCagr3y, ESTIMATE_METRIC_KEYS, estimateMetrics, parseEstimates, type Estimates } from './metrics/estimates';
 import { capMultiples, FUNDAMENTAL_METRIC_KEYS, fundamentalMetrics, isFinancial, ownEbitdaMetrics, STALE_TTM_MULTIPLE_KEYS, staleAnnualTtm, TTM_AMOUNT_KEYS, ttmAmounts, withRevenueSanity, withSectorExceptions } from './metrics/fundamentals';
 import { HISTORY_METRIC_KEYS, historyMetrics } from './metrics/history';
-import { ANNUAL_DPS_YEARS, DIVIDEND_HISTORY_KEYS, DIVIDEND_REGULARITY_KEYS, dividendHistory, dividendIrregular } from './metrics/dividends';
+import { ANNUAL_DPS_YEARS, DIVIDEND_FREQUENCY_KEYS, DIVIDEND_HISTORY_KEYS, DIVIDEND_REGULARITY_KEYS, dividendHistory, dividendIrregular, payFrequency } from './metrics/dividends';
 import { pctFrom52wHigh, swingMetrics } from './metrics/swing';
 import { column, parseCompanyFacts, SEC_FORMS, type SecFundamentals, type Split } from './sec/companyfacts';
 import { fxPairs, fxPoints, usdLayer, usdView, type FxSeries, type UsdLayer } from './sec/fx';
@@ -666,7 +666,7 @@ export function priceReturns(days: ChartDay[]): JsonRecord {
   };
 }
 
-export function dividendMetrics(dividends: ParsedChart['dividends'], price: number | null, lastDate: string): { metrics: JsonRecord; annual: Array<{ year: number; dps: number }> } {
+export function dividendMetrics(dividends: ParsedChart['dividends'], price: number | null, lastDate: string, firstDate: string | null = null): { metrics: JsonRecord; annual: Array<{ year: number; dps: number }> } {
   const byYear = new Map<number, number>();
   for (const d of dividends) byYear.set(Number(d.date.slice(0, 4)), (byYear.get(Number(d.date.slice(0, 4))) ?? 0) + d.amount);
   const lastYear = Number(lastDate.slice(0, 4));
@@ -689,6 +689,7 @@ export function dividendMetrics(dividends: ParsedChart['dividends'], price: numb
       dividendGrowth: growth(1), dividendGrowth3y: growth(3), dividendGrowth5y: growth(5),
       ...dividendHistory(annual, lastDate), // streak of yearly increases and the 10-year cut flag (scripts/metrics/dividends.ts)
       dividendIrregular: dividendIrregular(annual, lastDate), // a year without payments between paying years in the last 6 calendar years
+      ...payFrequency(dividends, lastDate, firstDate), // payments in 12 months and weekly, monthly, quarterly ... (benchmark plan 3.2)
     },
     annual,
   };
@@ -868,7 +869,7 @@ export const rowFromMeta = (meta: JsonRecord): JsonRecord => Object.fromEntries(
 const METRIC_KEYS = [
   'marketCap', 'enterpriseValue', 'price', 'week52High', 'week52Low', 'range52w', 'beta', 'sharesOutstanding',
   'pe', 'forwardPe', 'ps', 'forwardPs', 'pFcf', 'evEbitda', 'fcfToEbitda', 'pb',
-  'dividendYield', 'dividendRate', 'dividendGrowth', 'dividendGrowth3y', 'dividendGrowth5y', ...DIVIDEND_HISTORY_KEYS, ...DIVIDEND_REGULARITY_KEYS, 'payoutRatio', 'fcfPayout',
+  'dividendYield', 'dividendRate', 'dividendGrowth', 'dividendGrowth3y', 'dividendGrowth5y', ...DIVIDEND_HISTORY_KEYS, ...DIVIDEND_REGULARITY_KEYS, ...DIVIDEND_FREQUENCY_KEYS, 'payoutRatio', 'fcfPayout',
   'currentRatio', 'quickRatio', 'debtToEquity', 'netDebtToEbitda', 'roic',
   ...['revenue', 'eps', 'fcf', 'ebitda', 'capex', 'assets', 'debt'].flatMap((n) => [`${n}Growth`, `${n}Growth3y`, `${n}Growth5y`]),
   'netMargin', 'grossMargin', 'ebitdaMargin', 'fcfMargin',
@@ -1207,7 +1208,7 @@ export async function processCompany(listing: Listing, config: UpdaterConfig, pr
   if (chart) {
     const last = chart.days[chart.days.length - 1];
     const price = chart.price ?? last.close;
-    const div = dividendMetrics(chart.dividends, price, last.date);
+    const div = dividendMetrics(chart.dividends, price, last.date, chart.days[0].date);
     const valuation = snapshot ? valuationMetrics(snapshot) : (prevMarket?.valuation ?? {});
     const range = snapshot ? { low: snapshot.week52Low, high: snapshot.week52High } : closeRange52w(chart.days); // a failed snapshot: the closes still give the range
     market = {

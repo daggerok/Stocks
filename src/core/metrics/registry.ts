@@ -1501,17 +1501,17 @@ const BENCHMARK_METRICS: MetricDef[] = [
   }),
   def({
     id: 'paymentsPerYear', name: { en: 'Payments in 12 months', ru: 'Выплат за 12 месяцев' }, formula: 'number of dividend events with dates after the dividendRate cutoff (last close minus 365.25 days), Yahoo chart',
-    unit: 'count', basis: 'ttm', source: 'yahoo-chart', direction: 'neutral', appliesTo: ETF, // stocks follow with the Stocks updater (benchmark plan 3.2)
+    unit: 'count', basis: 'ttm', source: 'yahoo-chart', direction: 'neutral', appliesTo: BOTH,
     nullWhen: { en: 'no payment in the last 12 months', ru: 'выплат за последние 12 месяцев не было' },
     short: { en: 'How many dividends were paid in the last year', ru: 'Сколько дивидендов выплачено за последний год' },
     guide: {
-      en: 'The number of dividend events in the same 12-month window as dividendRate: 4 for a quarterly payer, 12 for a monthly one, 52 or so for a weekly option-income fund. A supplemental or special payment adds one, which is why payFrequency counts months instead. ETFs from the shared dividends block of the brand updaters',
-      ru: 'Число дивидендных событий в том же 12-месячном окне, что и у dividendRate: 4 у квартального плательщика, 12 у ежемесячного, около 52 у еженедельного опционного фонда. Дополнительная или специальная выплата прибавляет одну, поэтому payFrequency считает месяцы. ETF - из общего блока dividends брендовых апдейтеров',
+      en: 'The number of dividend events in the same 12-month window as dividendRate: 4 for a quarterly payer, 12 for a monthly one, 52 or so for a weekly option-income fund. A supplemental or special payment adds one, which is why payFrequency counts months instead. Stocks from the Stocks updater (scripts/metrics/dividends.ts), ETFs from the shared dividends block of the brand updaters',
+      ru: 'Число дивидендных событий в том же 12-месячном окне, что и у dividendRate: 4 у квартального плательщика, 12 у ежемесячного, около 52 у еженедельного опционного фонда. Дополнительная или специальная выплата прибавляет одну, поэтому payFrequency считает месяцы. Акции - из апдейтера Stocks (scripts/metrics/dividends.ts), ETF - из общего блока dividends брендовых апдейтеров',
     },
   }),
   def({
     id: 'payFrequency', name: { en: 'Payment frequency', ru: 'Частота выплат' }, formula: 'weekly (40+ events), monthly (11+ months or the last 4 payments in 4 consecutive months), quarterly (3-5 months, 6 events or fewer), semiannual (2), annual (1), else irregular; by calendar months of the 12-month window',
-    unit: 'category', basis: 'ttm', source: 'yahoo-chart', direction: 'neutral', appliesTo: ETF, // stocks follow with the Stocks updater (benchmark plan 3.2)
+    unit: 'category', basis: 'ttm', source: 'yahoo-chart', direction: 'neutral', appliesTo: BOTH,
     nullWhen: { en: 'no payment in 12 months, or under a year of history unless the last four payments are monthly', ru: 'выплат за 12 месяцев не было или история короче года, если только последние четыре выплаты не ежемесячные' },
     short: { en: 'Weekly, monthly, quarterly, semiannual, annual or irregular', ru: 'Еженедельно, ежемесячно, ежеквартально, раз в полгода, раз в год или нерегулярно' },
     guide: {
