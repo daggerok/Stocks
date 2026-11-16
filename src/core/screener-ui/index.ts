@@ -1,7 +1,8 @@
 /// <reference lib="esnext" />
 /**
  * Screener panel UI: the universe switch, the combine switch, preset chips with refinements and own presets, horizon variants,
- * the condition editor with the funnel, the status line, the peer group editor, preset export, import and share links.
+ * chip pickers (benchmark, horizon, level: benchmark plan 4.2), the condition editor with the funnel, the status line, the peer group
+ * editor, preset export, import and share links.
  * The ONE core module that touches the DOM (it renders into the host's panel element and reads its inputs); everything it
  * computes comes from the UI-free core (screener engine, presets, peers) and from the host through `ScreenerUiHost`.
  * Stocks mounts it over its table (src/main.tsx); the ETFs hub takes it as a git dependency (`stocks/src/core/screener-ui`)
@@ -13,7 +14,7 @@ import {
   canonicalPreset, changedConditions, changedGroups, cleanTickers, Condition as ScreenerCondition, decodePresetHash, deleteGroup, encodePresetHash, evaluateExpression,
   evaluatePreset, evaluatePresets, Expression, FunnelStep, groupName, HISTORY_METRICS, importGroups, mergeOwnPresets, mergePeers, Missing, Op, ownCopy, OwnEntry,
   parsePeersText, parsePresetText, PeerGroups, PEERS_FILE_NAME, peersExported, peersFileText, peersKey, PeersOverlay, Preset, PRESET_SCHEMA_VERSION, presetFileName,
-  presetFileText, presetKey, PresetResult, RELATIVE_SCOPES, samePreset, Scope, SCOPES, setGroup, uniqueId, Universe, validatePreset, withVariant,
+  presetFileText, presetKey, PresetResult, RELATIVE_SCOPES, samePreset, Scope, SCOPES, setGroup, uniqueId, Universe, validatePreset, withPickers, withVariant,
 } from '../screener';
 
 export type ChipMode = 'in' | 'out';
@@ -27,6 +28,7 @@ export type ScreenerState = {
   base: Preset[]; // the base presets as the screener uses them: a preset with variants resolved to its chosen horizon
   raw: Preset[]; // the base preset files as published, variants included (the chip picker reads them)
   variants: Record<string, string>; // preset id -> chosen variant id
+  pickers: Record<string, Record<string, string>>; // preset id -> picker id -> chosen option id
   repoOwn: Preset[]; // user-data/presets of the repo, the starting state
   browserOwn: Preset[]; // own presets saved in this browser (they win over the repo copies)
   lastExported: Record<string, string>; // id -> presetKey of the last export or import
@@ -54,6 +56,8 @@ export type ScreenerUiHost = {
   presetsUrl: string;
   ownPresetsUrl: string;
   peersUrl: string;
+  /** an HTML line under the head row (the ETFs hub: the market state line of SPY and QQQ), rendered with the panel; empty hides it */
+  headNote?: () => string;
   /** false hides the Peers button and the peer group editor (an app without peer groups, the ETFs hub); default true */
   peers?: boolean;
   /** keeps only the base presets this app can match (Stocks: presets that apply to stocks, the ETFs hub: to ETFs); default every preset */
@@ -109,9 +113,9 @@ export function numberOrNull(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-/** The localStorage keys of a panel: the screener choice and the horizons are settings (the host's Clear resets them), own presets and peers are data */
-export function screenerStorageKeys(prefix: string): { screener: string; variants: string; own: string; peers: string } {
-  return { screener: `${prefix}-screener`, variants: `${prefix}-screener-variants`, own: `${prefix}-own-presets`, peers: `${prefix}-peers` };
+/** The localStorage keys of a panel: the screener choice, the horizons and the chip pickers are settings (the host's Clear resets them), own presets and peers are data */
+export function screenerStorageKeys(prefix: string): { screener: string; variants: string; pickers: string; own: string; peers: string } {
+  return { screener: `${prefix}-screener`, variants: `${prefix}-screener-variants`, pickers: `${prefix}-screener-pickers`, own: `${prefix}-own-presets`, peers: `${prefix}-peers` };
 }
 
 export function createScreenerUi(host: ScreenerUiHost) {
@@ -121,12 +125,13 @@ export function createScreenerUi(host: ScreenerUiHost) {
   const keys = screenerStorageKeys(host.storagePrefix);
   const SCREENER_KEY = keys.screener; // chosen preset chips, edits, the universe type (a setting: Clear resets it)
   const SCREENER_VARIANTS_KEY = keys.variants; // chosen horizon per preset with variants (a setting: Clear resets it)
+  const SCREENER_PICKERS_KEY = keys.pickers; // chosen option per chip picker (a setting: Clear resets it)
   const OWN_PRESETS_KEY = keys.own; // own presets of this browser (data: Clear keeps them)
   const PEERS_KEY = keys.peers; // peer groups changed in this browser over the committed peers.json (data: Clear keeps them)
   const TYPE_FILTERS = host.types;
   const peersShown = host.peers !== false;
   const scr: ScreenerState = {
-    type: TYPE_FILTERS[0], any: false, chips: {}, drafts: {}, expanded: null, base: [], raw: [], variants: {}, repoOwn: [], browserOwn: [], lastExported: {}, peers: {},
+    type: TYPE_FILTERS[0], any: false, chips: {}, drafts: {}, expanded: null, base: [], raw: [], variants: {}, pickers: {}, repoOwn: [], browserOwn: [], lastExported: {}, peers: {},
     peersRepo: {}, peersOverlay: {}, peersExported: '', peersOpen: false, peersMessage: '',
     status: 'loading', error: '', message: '', version: 0,
   };
@@ -234,9 +239,25 @@ export function createScreenerUi(host: ScreenerUiHost) {
     lsSet(SCREENER_KEY, JSON.stringify({ type: scr.type, any: scr.any, chips: scr.chips, drafts: scr.drafts, expanded: scr.expanded }));
   }
 
-  /** The base presets with each preset of variants resolved to its chosen horizon (the default when none is chosen) */
+  /** The base presets with each preset of variants resolved to its chosen horizon and each preset of pickers to its chosen options (defaults when none is chosen) */
   function resolvedBase(): Preset[] {
-    return scr.raw.map(p => withVariant(p, scr.variants[p.id]));
+    return scr.raw.map(p => withPickers(withVariant(p, scr.variants[p.id]), scr.pickers[p.id]));
+  }
+
+  function persistPickers(): void {
+    lsSet(SCREENER_PICKERS_KEY, JSON.stringify(scr.pickers));
+  }
+
+  /** A new option on a chip picker: the chip's edits belonged to the old choice and are dropped */
+  function setPicker(id: string, picker: string, option: string): void {
+    const raw = scr.raw.filter(p => p.id === id)[0];
+    const def = raw && Array.isArray(raw.pickers) ? raw.pickers.filter(p => p.id === picker)[0] : undefined;
+    if (!def || !def.options.some(o => o.id === option)) return;
+    scr.pickers[id] = { ...(scr.pickers[id] || {}), [picker]: option };
+    delete scr.drafts[id];
+    scr.base = resolvedBase();
+    persistPickers();
+    screenerChanged();
   }
 
   function persistVariants(): void {
@@ -257,6 +278,14 @@ export function createScreenerUi(host: ScreenerUiHost) {
   function restoreScreener(): void {
     const variants = lsGetJson(SCREENER_VARIANTS_KEY, null);
     if (variants && typeof variants === 'object' && !Array.isArray(variants)) Object.keys(variants).forEach(id => { if (typeof variants[id] === 'string') scr.variants[id] = variants[id]; });
+    const pickers = lsGetJson(SCREENER_PICKERS_KEY, null);
+    if (pickers && typeof pickers === 'object' && !Array.isArray(pickers)) Object.keys(pickers).forEach(id => {
+      const chosen = pickers[id];
+      if (!chosen || typeof chosen !== 'object' || Array.isArray(chosen)) return;
+      const out: Record<string, string> = {};
+      Object.keys(chosen).forEach(k => { if (typeof chosen[k] === 'string') out[k] = chosen[k]; });
+      scr.pickers[id] = out;
+    });
     const saved = lsGetJson(SCREENER_KEY, null);
     if (saved && typeof saved === 'object') {
       if (TYPE_FILTERS.indexOf(saved.type) >= 0) scr.type = saved.type;
@@ -551,7 +580,7 @@ export function createScreenerUi(host: ScreenerUiHost) {
       <td><input type="text" list="scr-metric-list" class="scr-input scr-metric" data-field="metric" data-ci="${i}" value="${escapeHtml(c.metric)}" placeholder="${escapeHtml(t('screener.metricSearch'))}" aria-label="${escapeHtml(t('screener.metric'))}" title="${escapeHtml(def ? `${pick(def.name)}: ${pick(def.short)}` : c.metric)}" /><div class="scr-metric-name">${escapeHtml(def ? pick(def.name) : c.metric)}</div></td>
       <td><select class="scr-input" data-field="op" data-ci="${i}" aria-label="${escapeHtml(t('screener.op'))}">${opsFor(c.metric).map(op => optionHtml(op, opLabel(op), op === c.op)).join('')}</select></td>
       <td>${valueCellHtml(c, i)}</td>
-      <td><select class="scr-input" data-field="scope" data-ci="${i}" aria-label="${escapeHtml(t('screener.scope'))}">${scopesFor(c.metric).map(scope => optionHtml(scope, t(`scope.${scope}`), scope === (c.scope || 'absolute'))).join('')}</select></td>
+      <td><select class="scr-input" data-field="scope" data-ci="${i}" aria-label="${escapeHtml(t('screener.scope'))}">${scopesFor(c.metric).map(scope => optionHtml(scope, t(`scope.${scope}`), scope === (c.scope || 'absolute'))).join('')}</select>${c.scope === 'benchmark' ? `<input type="text" class="scr-input scr-bench" data-field="benchmark" data-ci="${i}" value="${escapeHtml(c.benchmark || '')}" placeholder="SPY" title="${escapeHtml(t('screener.benchmark.tip'))}" aria-label="${escapeHtml(t('screener.benchmark'))}" />` : ''}</td>
       <td><select class="scr-input" data-field="missing" data-ci="${i}" aria-label="${escapeHtml(t('screener.missing'))}">${MISSING_MODES.map(mode => optionHtml(mode, t(`missing.${mode}`), mode === (c.missing || 'fail'))).join('')}</select></td>
       <td class="scr-funnel" data-funnel="${i}" title="${escapeHtml(t('screener.funnel.tip'))}">${funnel}</td>
       <td><button type="button" class="scr-x" data-act="delete-cond" data-ci="${i}" title="${escapeHtml(t('screener.delete'))}" aria-label="${escapeHtml(t('screener.delete'))}">✕</button></td>
@@ -594,16 +623,29 @@ export function createScreenerUi(host: ScreenerUiHost) {
     const title = pick(p.title);
     const tip = t('screener.chip.tip', { title, count: count === null ? DASH : count.toLocaleString('en-US') });
     const open = scr.expanded === p.id;
-    return `<span class="scr-chip${mode === 'in' ? ' is-in' : mode === 'out' ? ' is-out' : ''}${open ? ' is-open' : ''}${p.refine ? ' is-refine' : ''}" data-chip="${escapeHtml(p.id)}">`
+    const raw = scr.raw.filter(r => r.id === p.id)[0];
+    const pickerCount = raw && Array.isArray(raw.pickers) ? raw.pickers.length : 0;
+    return `<span class="scr-chip${mode === 'in' ? ' is-in' : mode === 'out' ? ' is-out' : ''}${open ? ' is-open' : ''}${p.refine ? ' is-refine' : ''}${pickerCount ? ` has-pickers-${Math.min(pickerCount, 3)}` : ''}" data-chip="${escapeHtml(p.id)}">`
       + `<button type="button" class="scr-chip-main" data-act="chip" data-id="${escapeHtml(p.id)}" aria-pressed="${mode === 'in'}" title="${escapeHtml(tip)}"><span class="scr-chip-title">${p.refine ? `<span class="scr-chip-and" title="${escapeHtml(t('screener.refine.tip'))}">${escapeHtml(t('screener.refine'))}</span> ` : ''}${mode === 'out' ? '¬ ' : ''}${escapeHtml(title)}</span>${scr.drafts[p.id] ? `<span class="scr-edited" title="${escapeHtml(t('screener.chip.changed'))}">*</span>` : ''}${count === null ? '' : `<span class="scr-count">${count.toLocaleString('en-US')}</span>`}${own && !own.exported ? `<span class="scr-dot" title="${escapeHtml(t('screener.notExported.tip'))}"></span>` : ''}</button>`
       + variantPicker(p)
       + `<button type="button" class="scr-chip-btn" data-act="not" data-id="${escapeHtml(p.id)}" aria-pressed="${mode === 'out'}" title="${escapeHtml(t('screener.chip.exclude'))}" aria-label="${escapeHtml(`${t('screener.chip.exclude')}: ${title}`)}">¬</button>`
       + `<button type="button" class="scr-chip-btn" data-act="expand" data-id="${escapeHtml(p.id)}" aria-expanded="${open}" title="${escapeHtml(t('screener.chip.edit'))}" aria-label="${escapeHtml(`${t('screener.chip.edit')}: ${title}`)}">▾</button></span>`;
   }
 
-  /** The horizon picker of a base preset with variants (Stable growth: 1Y, 3Y, 5Y, 10Y), empty for every other chip */
+  /**
+   * The horizon picker of a base preset with variants (Stable growth: 1Y, 3Y, 5Y, 10Y), or one select per picker of a base preset with
+   * pickers (benchmark plan 4.2: Benchmark, Horizon, Return ...), in picker order; empty for every other chip
+   */
   function variantPicker(p: Preset): string {
     const raw = scr.raw.filter(r => r.id === p.id)[0];
+    if (raw && Array.isArray(raw.pickers) && raw.pickers.length) {
+      const picked = p.picked || {};
+      return raw.pickers.map(picker => {
+        const label = `${pick(p.title)}: ${pick(picker.title)}`;
+        return `<select class="scr-chip-variant scr-chip-picker" data-picker-of="${escapeHtml(p.id)}" data-picker="${escapeHtml(picker.id)}" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}">`
+          + picker.options.map(o => `<option value="${escapeHtml(o.id)}"${o.id === picked[picker.id] ? ' selected' : ''}>${escapeHtml(pick(o.title))}</option>`).join('') + `</select>`;
+      }).join('');
+    }
     if (!raw || !Array.isArray(raw.variants) || !raw.variants.length) return '';
     const chosen = p.variant || '';
     const label = t('screener.variant.tip', { title: pick(p.title) });
@@ -648,6 +690,7 @@ export function createScreenerUi(host: ScreenerUiHost) {
     const own = owns.map(entry => chipHtml(scr.drafts[entry.preset.id] || entry.preset, results, entry)).join('');
     const loading = scr.status === 'failed' ? `<span class="scr-error">${escapeHtml(t('screener.unavailablePresets', { error: scr.error }))}</span>` : '';
     const chosen = Object.keys(scr.chips).length;
+    const note = host.headNote ? host.headNote() : '';
     // language-stable layout (owner 2026-11-14): a head row of fixed-width controls, then the chips in grids of equal cells, so EN and RU wrap the same.
     // Head row (owner 2026-11-15): the buttons left, the title in the middle of the row with the status right after it, the tools right;
     // both sides are equally wide so the title stays in the center whatever the status says (below 1280 px the title line wraps under the buttons)
@@ -660,6 +703,7 @@ export function createScreenerUi(host: ScreenerUiHost) {
         <label class="dd-act scr-import" title="${escapeHtml(t('screener.import.tip'))}">${escapeHtml(t('screener.import'))}<input type="file" id="scr-import-input" accept=".json,application/json" multiple hidden /></label>
       </span>
     </div>
+    ${note ? `<div class="scr-note" id="scr-note">${note}</div>` : ''}
     <div class="scr-chips">${loading}${main}</div>
     ${refine ? `<div class="scr-chips scr-chips-refine">${refine}</div>` : ''}
     ${own ? `<div class="scr-chips scr-chips-sep"><span class="scr-sep" title="${escapeHtml(t('screener.own'))}">${escapeHtml(t('screener.own'))}</span>${own}</div>` : ''}
@@ -672,10 +716,11 @@ export function createScreenerUi(host: ScreenerUiHost) {
   function conditionForMetric(c: ScreenerCondition, metric: string): ScreenerCondition {
     const kind = metricKind(metric);
     const next: ScreenerCondition = { ...c, metric };
-    if (kind === 'flag') { next.op = '='; next.value = true; next.scope = 'absolute'; }
-    else if (kind === 'category') { next.op = 'in'; next.value = []; next.scope = 'absolute'; }
+    if (kind === 'flag') { next.op = '='; next.value = true; next.scope = 'absolute'; delete next.benchmark; }
+    else if (kind === 'category') { next.op = 'in'; next.value = []; next.scope = 'absolute'; delete next.benchmark; }
     else {
       if (opsFor(metric).indexOf(next.op) < 0 || typeof next.value === 'boolean' || (next.op !== 'in' && next.op !== 'range' && typeof next.value !== 'number')) { next.op = '>'; next.value = 0; }
+      if (next.scope === 'benchmark' && (next.op === '=' || next.op === 'in')) next.op = '>';
       if (scopesFor(metric).indexOf(next.scope || 'absolute') < 0) next.scope = 'absolute';
     }
     return next;
@@ -695,6 +740,7 @@ export function createScreenerUi(host: ScreenerUiHost) {
     if (target.id === 'scr-import-input') { void importFiles(target.files).finally(() => { target.value = ''; }); return; }
     if (target.id === 'scr-peers-import') { void importPeersFiles(target.files).finally(() => { target.value = ''; }); return; }
     if (target.dataset.variantOf) { setVariant(String(target.dataset.variantOf), String(target.value || '')); return; }
+    if (target.dataset.pickerOf) { setPicker(String(target.dataset.pickerOf), String(target.dataset.picker || ''), String(target.value || '')); return; }
     const id = scr.expanded;
     const field = target.dataset.field;
     if (!id || !field || field === 'list-add') return; // a list value is added by Enter or by leaving the input
@@ -721,7 +767,12 @@ export function createScreenerUi(host: ScreenerUiHost) {
         c.value = pair;
       } else if (field === 'flag') c.value = value === 'true';
       else if (field === 'text') c.value = value.trim();
-      else if (field === 'scope') { const scope = SCOPES.filter(item => item === value)[0]; if (scope) c.scope = scope; }
+      else if (field === 'scope') {
+        const scope = SCOPES.filter(item => item === value)[0];
+        if (scope) c.scope = scope;
+        if (scope === 'benchmark' && !c.benchmark) c.benchmark = 'SPY';
+        if (scope && scope !== 'benchmark') delete c.benchmark;
+      } else if (field === 'benchmark') { const ticker = value.trim().toUpperCase(); if (ticker) c.benchmark = ticker; }
       else if (field === 'missing') c.missing = value === 'skip' ? 'skip' : 'fail';
     });
   }
@@ -925,7 +976,15 @@ export function createScreenerUi(host: ScreenerUiHost) {
       console.warn(`Base presets unavailable: ${scr.error}`);
     }
     if (!host.ownPresetsUrl) return;
-    try { scr.repoOwn = (await fetchPresetFolder(host.ownPresetsUrl)).map(p => withVariant(p)); } catch (error) { console.warn(`${host.ownPresetsUrl.replace(/^\.\//, '').replace(/\/$/, '')} unavailable:`, error); }
+    try { scr.repoOwn = (await fetchPresetFolder(host.ownPresetsUrl)).map(p => withPickers(withVariant(p))); } catch (error) { console.warn(`${host.ownPresetsUrl.replace(/^\.\//, '').replace(/\/$/, '')} unavailable:`, error); }
+  }
+
+  /** Clear of the chip pickers: every preset with pickers back to its defaults */
+  function resetPickers(): void {
+    scr.pickers = {};
+    scr.base = resolvedBase();
+    scr.version += 1;
+    renderScreener();
   }
 
   /** Clear of the horizons: every preset with variants back to its default */
@@ -950,7 +1009,7 @@ export function createScreenerUi(host: ScreenerUiHost) {
   }
 
   return {
-    scr, render: renderScreener, renderStatus: renderScreenerStatus, bindPanel, languageChanged, restore: restoreScreener, restorePeers, reset: resetScreener, resetVariants,
+    scr, render: renderScreener, renderStatus: renderScreenerStatus, bindPanel, languageChanged, restore: restoreScreener, restorePeers, reset: resetScreener, resetVariants, resetPickers,
     changed: screenerChanged, loadPresets, loadRepoPeers, applyHashPreset, sig: screenerSig, presetResults, screenMask, passedPresets, presetCountArray, presetBadgesHtml,
     effectivePreset, takenIds, persistOwn, applyPeers, exportPreset, importPresetText, presetShareUrl, exportPeers, importPeersText, optionHtml,
   };

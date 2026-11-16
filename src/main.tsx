@@ -62,7 +62,7 @@ const COLUMN_TYPES_KEY = 'stocks-column-types';
 const SHOW_FILTERS_KEY = 'stocks-show-filters';
 const STICKY_RANK_KEY = 'stocks-sticky-rank';
 const SCREENER_STORAGE_PREFIX = 'stocks';
-// stocks-screener (chosen chips and edits: Clear resets it), stocks-screener-variants (horizons: Clear resets it),
+// stocks-screener (chosen chips and edits: Clear resets it), stocks-screener-variants (horizons) and stocks-screener-pickers (chip choices: Clear resets them),
 // stocks-own-presets and stocks-peers (data: Clear keeps them); written by the screener panel of src/core/screener-ui
 const SCREENER_KEYS = screenerStorageKeys(SCREENER_STORAGE_PREFIX);
 const SIMILAR_KEY = 'stocks-similar'; // the metric group and own set of Similar to X (a convenience: Clear keeps it)
@@ -3839,6 +3839,7 @@ const RESET_ITEMS: ResetItem[] = [
   { id: 'blacklist', label: 'Blacklist', keys: [BLACKLIST_KEY], reset: () => { state.blacklist.clear(); blacklistVersion += 1; } },
   { id: 'screener', label: 'Screener: chosen presets and edits (own presets are kept)', keys: [SCREENER_KEYS.screener], reset: () => screener.reset() },
   { id: 'screener-variants', label: 'Screener horizons (Stable growth 1Y to 10Y)', keys: [SCREENER_KEYS.variants], reset: () => screener.resetVariants() },
+  { id: 'screener-pickers', label: 'Screener chip choices (benchmark, horizon, level)', keys: [SCREENER_KEYS.pickers], reset: () => screener.resetPickers() },
 ];
 
 /** The three items that live in one saved key: removing the key for one of them would also forget the others. */

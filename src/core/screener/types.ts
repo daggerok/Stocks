@@ -19,9 +19,15 @@ export type ScreenerRow = {
 export type Op = '>' | '>=' | '<' | '<=' | '=' | 'range' | 'in';
 export const OPS: readonly Op[] = ['>', '>=', '<', '<=', '=', 'range', 'in'];
 
-/** absolute compares the value itself; market, sector, industry and peers compare its percentile (0-100) in the group; history reads the updater's own-history metrics */
-export type Scope = 'absolute' | 'market' | 'sector' | 'industry' | 'peers' | 'history';
-export const SCOPES: readonly Scope[] = ['absolute', 'market', 'sector', 'industry', 'peers', 'history'];
+/**
+ * absolute compares the value itself; market, sector, industry and peers compare its percentile (0-100) in the group; history reads
+ * the updater's own-history metrics; benchmark compares the row's value minus the value of the named ticker (`benchmark`) of the same
+ * metric, in the metric's own unit (benchmark plan 4.1)
+ */
+export type Scope = 'absolute' | 'market' | 'sector' | 'industry' | 'peers' | 'history' | 'benchmark';
+export const SCOPES: readonly Scope[] = ['absolute', 'market', 'sector', 'industry', 'peers', 'history', 'benchmark'];
+/** The ticker a benchmark condition names: SPY, BRK-B, BRK.B */
+export const BENCHMARK_TICKER = /^[A-Z0-9][A-Z0-9.-]{0,9}$/;
 export const RELATIVE_SCOPES: readonly Scope[] = ['market', 'sector', 'industry', 'peers'];
 /** The only metrics scope history accepts: percentiles and ratios to the own history the updater computes */
 export const HISTORY_METRICS: readonly string[] = ['pePct5y', 'pFcfPct5y', 'yieldVsAvg5y'];
@@ -37,6 +43,8 @@ export type Condition = {
   /** a number, string or boolean for comparisons, [min, max] for range (null = open bound), a list for in */
   value: ConditionValue;
   scope?: Scope;
+  /** the ticker of scope benchmark (SPY, QQQ, any row of the universe) */
+  benchmark?: string;
   missing?: Missing;
   /** false switches the condition off without deleting it (editor toggle) */
   enabled?: boolean;
@@ -63,7 +71,18 @@ export type Preset = {
   defaultVariant?: string;
   /** the variant a resolved preset was built from (a plain preset made by withVariant) */
   variant?: string;
+  /**
+   * Selects on the chip (benchmark plan 4.2: benchmark, horizon, yield level, ...): each picked option adds its `vars` and conditions;
+   * withPickers() turns such a preset into a plain one (no `pickers`, `picked` set). A preset has `variants` or `pickers`, never both
+   */
+  pickers?: PresetPicker[];
+  /** picker id -> option id of a resolved preset (a plain preset made by withPickers) */
+  picked?: Record<string, string>;
 };
+
+/** One option of a picker: `{name}` tokens in the conditions (metric, benchmark, a value or list item that is exactly "{name}") take its vars */
+export type PickerOption = { id: string; title: Text; vars?: Record<string, string | number>; conditions?: Condition[] };
+export type PresetPicker = { id: string; title: Text; default: string; options: PickerOption[] };
 
 export type PresetVariant = { id: string; title: Text; conditions: Condition[] };
 

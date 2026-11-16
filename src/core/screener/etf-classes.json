@@ -1,0 +1,359 @@
+{
+  "schemaVersion": 1,
+  "note": "ETF classes of the screener row adapter (benchmark plan sections 5 and 6.3): regex sources, case-insensitive, first match wins; a wrong class is fixed here (tickers lists), no feed change",
+  "geared": {
+    "name": [
+      "\\b(UltraPro|UltraShort|Ultra(?![- ]?Short)|Inverse|Leveraged|Boosted|[1-4](\\.\\d)?x)\\b",
+      "^(ProShares )?Short\\b(?![ -]?(Term|Duration|Maturity))"
+    ],
+    "tickers": [],
+    "notTickers": [
+      "RDIV",
+      "LVLN"
+    ]
+  },
+  "family": {
+    "sp500": {
+      "name": "S&P ?500|S&P 100|Select Sector",
+      "tickers": [
+        "SPY",
+        "SPYM",
+        "IVV",
+        "VOO",
+        "JEPI",
+        "OEF",
+        "XLB",
+        "XLC",
+        "XLE",
+        "XLF",
+        "XLI",
+        "XLK",
+        "XLP",
+        "XLRE",
+        "XLU",
+        "XLV",
+        "XLY"
+      ]
+    },
+    "nasdaq100": {
+      "name": "Nasdaq[- ]?100|\\bQQQ\\b",
+      "tickers": [
+        "QQQ",
+        "QQQM",
+        "JEPQ"
+      ]
+    }
+  },
+  "variants": [
+    [
+      "hedged",
+      "Buffer|Collar|Tail Risk|Hedged|Risk Managed|Downside|Autocallable|Dual Directional|Dynamic"
+    ],
+    [
+      "income",
+      "Covered Call|BuyWrite|Premium Income|High Income|Income Advantage|Income Edge|Target Income|Dividend Multiplier"
+    ],
+    [
+      "equal-weight",
+      "Equal Weight"
+    ],
+    [
+      "sector",
+      "Select Sector|Sector|Technology|Energy|Financials|Health Care|Utilities|Staples|Discretionary|Industrials|Materials|Real Estate|Communication|\\bEx-"
+    ],
+    [
+      "dividend",
+      "Dividend|Aristocrats"
+    ],
+    [
+      "screened",
+      "ESG|Scored|Screened|Catholic|Christian|Sharia|Fossil"
+    ],
+    [
+      "factor",
+      "Momentum|Quality|Low Volatility|Minimum Variance|Value|Growth|GARP|High Beta|Revenue|Top \\d+|Free Cash|FCF|Moat|Multi-factor|QVM"
+    ]
+  ],
+  "sectorExclude": {
+    "name": "Bond|Treasury|Municipal|Corporate|Credit|Loan|Debt|High Yield|Prefer|Covered Call|Premium Income|Target Income|Buffer|\\bEx-",
+    "category": "Commodit",
+    "tickers": []
+  },
+  "sectors": [
+    {
+      "id": "semiconductors",
+      "title": {
+        "en": "Semiconductors",
+        "ru": "Полупроводники"
+      },
+      "name": "Semiconductor",
+      "tickers": []
+    },
+    {
+      "id": "cybersecurity",
+      "title": {
+        "en": "Cybersecurity",
+        "ru": "Кибербезопасность"
+      },
+      "name": "Cyber",
+      "tickers": []
+    },
+    {
+      "id": "ai-robotics",
+      "title": {
+        "en": "AI and robotics",
+        "ru": "ИИ и роботы"
+      },
+      "name": "Artificial Intelligence|\\bAI\\b|Robotic|Automation",
+      "tickers": []
+    },
+    {
+      "id": "uranium-nuclear",
+      "title": {
+        "en": "Uranium and nuclear",
+        "ru": "Уран и атомная энергия"
+      },
+      "name": "Uranium|Nuclear",
+      "tickers": []
+    },
+    {
+      "id": "miners",
+      "title": {
+        "en": "Miners",
+        "ru": "Добытчики металлов"
+      },
+      "name": "Miners|Metals? (&|and) Mining|Gold Explorers",
+      "tickers": []
+    },
+    {
+      "id": "clean-energy",
+      "title": {
+        "en": "Clean energy",
+        "ru": "Чистая энергия"
+      },
+      "name": "Clean Energy|Green Energy|Solar|Wind Energy|Renewable|Lithium|Battery|Hydrogen",
+      "tickers": []
+    },
+    {
+      "id": "biotech",
+      "title": {
+        "en": "Biotech",
+        "ru": "Биотехнологии"
+      },
+      "name": "Biotech|Genomic",
+      "tickers": []
+    },
+    {
+      "id": "banks",
+      "title": {
+        "en": "Banks",
+        "ru": "Банки"
+      },
+      "name": "\\bBanks?\\b|Banking",
+      "tickers": []
+    },
+    {
+      "id": "aerospace-defense",
+      "title": {
+        "en": "Aerospace and defense",
+        "ru": "Авиакосмос и оборона"
+      },
+      "name": "Aerospace|Defen[cs]e",
+      "tickers": []
+    },
+    {
+      "id": "homebuilders",
+      "title": {
+        "en": "Homebuilders",
+        "ru": "Домостроители"
+      },
+      "name": "Homebuild|Home Construction",
+      "tickers": []
+    },
+    {
+      "id": "internet-cloud",
+      "title": {
+        "en": "Internet and cloud",
+        "ru": "Интернет и облака"
+      },
+      "name": "Internet|Cloud|Software|Fintech|E-commerce|Social Media",
+      "tickers": []
+    },
+    {
+      "id": "infrastructure",
+      "title": {
+        "en": "Infrastructure",
+        "ru": "Инфраструктура"
+      },
+      "name": "Infrastructure",
+      "tickers": []
+    },
+    {
+      "id": "mlp-midstream",
+      "title": {
+        "en": "MLP and midstream",
+        "ru": "MLP и трубопроводы"
+      },
+      "name": "MLP|Midstream|Pipeline",
+      "tickers": []
+    },
+    {
+      "id": "technology",
+      "title": {
+        "en": "Technology",
+        "ru": "Технологии"
+      },
+      "name": "Technology|\\bTech\\b",
+      "tickers": []
+    },
+    {
+      "id": "energy",
+      "title": {
+        "en": "Energy",
+        "ru": "Энергетика"
+      },
+      "name": "Energy|Oil|\\bGas\\b|Natural Resources",
+      "tickers": []
+    },
+    {
+      "id": "utilities",
+      "title": {
+        "en": "Utilities",
+        "ru": "Коммунальные услуги"
+      },
+      "name": "Utilit",
+      "tickers": []
+    },
+    {
+      "id": "health-care",
+      "title": {
+        "en": "Health care",
+        "ru": "Здравоохранение"
+      },
+      "name": "Health ?care|Medical|Pharma",
+      "tickers": []
+    },
+    {
+      "id": "financials",
+      "title": {
+        "en": "Financials",
+        "ru": "Финансы"
+      },
+      "name": "Financ|Insurance|Capital Markets|Broker",
+      "tickers": []
+    },
+    {
+      "id": "consumer-staples",
+      "title": {
+        "en": "Consumer staples",
+        "ru": "Товары первой необходимости"
+      },
+      "name": "Staples|Food|Beverage",
+      "tickers": []
+    },
+    {
+      "id": "consumer-discretionary",
+      "title": {
+        "en": "Consumer discretionary",
+        "ru": "Товары не первой необходимости"
+      },
+      "name": "Discretionary|Retail|Leisure",
+      "tickers": []
+    },
+    {
+      "id": "industrials",
+      "title": {
+        "en": "Industrials",
+        "ru": "Промышленность"
+      },
+      "name": "Industrial(?! Average)|Transport|Airlines",
+      "tickers": []
+    },
+    {
+      "id": "materials",
+      "title": {
+        "en": "Materials",
+        "ru": "Материалы"
+      },
+      "name": "Materials|Chemicals|Steel|Timber|Agribusiness",
+      "tickers": []
+    },
+    {
+      "id": "real-estate",
+      "title": {
+        "en": "Real estate",
+        "ru": "Недвижимость"
+      },
+      "name": "Real Estate|REIT",
+      "tickers": []
+    },
+    {
+      "id": "communication",
+      "title": {
+        "en": "Communication",
+        "ru": "Коммуникации"
+      },
+      "name": "Communication|Telecom|\\bMedia\\b",
+      "tickers": []
+    }
+  ],
+  "qdiEstimate": [
+    {
+      "class": "geared",
+      "pct": 0,
+      "geared": true
+    },
+    {
+      "class": "bond-cash",
+      "pct": 0,
+      "name": "Bond|Treasur|Municipal|\\bMuni\\b|Money Market|\\bCash\\b|\\bCLO\\b|Floating Rate|T-Bill|Loan|Aggregate|Mortgage-Backed|\\bMBS\\b|\\bTIPS\\b|Inflation|Corporate|High Yield|Credit|Fixed Income|Income Bond|Duration|SOFR|Ultra Short|Ultra-Short|Short-Term|CMBS|Securitized|Convertible|Investment Grade|Short Maturity|Government|Multisector|Flexible Income",
+      "category": "Fixed Income|Bond|Cash|Money Market"
+    },
+    {
+      "class": "commodity-currency-crypto",
+      "pct": 0,
+      "name": "Bitcoin|Ether(eum)?\\b|Crypto|Futures|Commodit|Physical|Gold Trust|Gold Shares|Silver Trust|\\bVIX\\b|Volatility Index|Currency|Managed Futures",
+      "category": "Commodit|Currency|Crypto|Digital Assets|Volatility|Precious Metals"
+    },
+    {
+      "class": "reit",
+      "pct": 5,
+      "name": "\\bREITs?\\b|Real Estate|Mortgage",
+      "category": "Real Estate"
+    },
+    {
+      "class": "bdc-mlp",
+      "pct": 5,
+      "name": "\\bBDC\\b|Business Development|\\bMLPs?\\b|Midstream|Energy Income|Energy Infrastructure",
+      "category": "MLP"
+    },
+    {
+      "class": "preferred",
+      "pct": 60,
+      "name": "Preferred",
+      "category": "Preferred"
+    },
+    {
+      "class": "option-income",
+      "pct": null,
+      "name": "Covered Call|BuyWrite|Premium Income|High Income|Income Advantage|Target Income|Option|Autocallable|Equity Premium|Buffer|Defined Outcome|Structured Outcome|Floor|Hedged Equity|Dividend Multiplier",
+      "category": "Defined Outcome|Target Outcome|Structured|Income Alternatives|Boosted High Income|Equity High Income|Hedged Equity Income"
+    },
+    {
+      "class": "international",
+      "pct": 60,
+      "name": "International|\\bIntl\\b|Global(?! X\\b)|World|Emerging|Developed|ex-U\\.?S|\\bex US\\b|Europe|Eurozone|Japan|China|India|Asia|Pacific|EAFE|ACWI|Foreign|Canada|Brazil|Korea|Taiwan|Germany|Mexico|Latin|Africa|Frontier|United Kingdom|Australia|Israel|Vietnam|Indonesia|Saudi",
+      "category": "International|Global|Emerging|Intl|Asia"
+    },
+    {
+      "class": "multi-asset",
+      "pct": null,
+      "name": "Allocation|Multi-Asset|Balanced|Target Date|Conservative|Moderate|Aggressive|Income Focus|Income Opportunities|Alternative Income|Closed-End",
+      "category": "Multi-asset|Multi-Asset|Allocation"
+    },
+    {
+      "class": "us-equity",
+      "pct": 95
+    }
+  ]
+}

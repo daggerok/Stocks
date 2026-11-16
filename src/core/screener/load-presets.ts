@@ -3,7 +3,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Preset } from './types';
-import { withVariant } from './variants';
+import { withPickers, withVariant } from './variants';
 
 export const BASE_PRESET_DIR = join(__dirname, 'presets');
 /** The file list the browser fetches (the site has no directory listing): { schemaVersion, files: ["gold.json", ...] } */
@@ -19,7 +19,7 @@ export function loadRawPresets(dir: string = BASE_PRESET_DIR): Preset[] {
   return presetFiles(dir).map((f) => JSON.parse(readFileSync(join(dir, f), 'utf8')) as Preset);
 }
 
-/** Plain presets: a preset with variants resolved to its default variant (tests and the signals job read these) */
+/** Plain presets: a preset with variants or pickers resolved to its defaults (tests and the signals job read these) */
 export function loadPresets(dir: string = BASE_PRESET_DIR): Preset[] {
-  return loadRawPresets(dir).map((p) => withVariant(p));
+  return loadRawPresets(dir).map((p) => withPickers(withVariant(p)));
 }

@@ -1,0 +1,166 @@
+{
+  "schemaVersion": 1,
+  "id": "etf-on-sale",
+  "title": {
+    "en": "ETF on sale",
+    "ru": "ETF со скидкой"
+  },
+  "description": {
+    "en": "Strong long-term funds that are cheap now, to buy the dip: at least 10% below the 52-week high, a total return of 10% a year or more over the horizon (CAGR), not behind SPY or QQQ over it (same dates, dividends included), a maximum drawdown no deeper than 35% over it, at least $1B of assets, no leveraged or inverse funds. 10Y judges a fund on 10 years where it has them and always on 5 years too, so a fund of 5 to 10 years is judged on 5; a fund younger than 5 years does not pass. Add «and Pays a dividend» or «and Dividend growth» for income",
+    "ru": "Сильные на длинном горизонте фонды, которые сейчас подешевели, - чтобы купить просадку: минимум на 10% ниже максимума за 52 недели, полная доходность от 10% в год на горизонте (CAGR), не хуже SPY или QQQ на нём (на тех же датах, с дивидендами), максимальная просадка за горизонт не глубже 35%, активы от $1 млрд, без фондов с плечом и обратных. 10 лет оценивает фонд за 10 лет, где они есть, и всегда ещё за 5 лет, поэтому фонд возрастом от 5 до 10 лет оценивается за 5; фонд моложе 5 лет не проходит. Для дохода добавьте «и Платят дивиденд» или «и Рост дивиденда»"
+  },
+  "appliesTo": [
+    "etf"
+  ],
+  "match": "all",
+  "conditions": [
+    {
+      "metric": "size",
+      "op": ">=",
+      "value": 1000000000,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "isGeared",
+      "op": "=",
+      "value": false,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "pctFrom52wHigh",
+      "op": "<=",
+      "value": -10,
+      "scope": "absolute",
+      "missing": "fail"
+    }
+  ],
+  "pickers": [
+    {
+      "id": "benchmark",
+      "title": {
+        "en": "Benchmark",
+        "ru": "Бенчмарк"
+      },
+      "default": "spy",
+      "options": [
+        {
+          "id": "spy",
+          "title": {
+            "en": "SPY",
+            "ru": "SPY"
+          },
+          "vars": {
+            "B": "Spy",
+            "T": "SPY",
+            "T2": "SPYM"
+          }
+        },
+        {
+          "id": "qqq",
+          "title": {
+            "en": "QQQ",
+            "ru": "QQQ"
+          },
+          "vars": {
+            "B": "Qqq",
+            "T": "QQQ",
+            "T2": "QQQM"
+          }
+        }
+      ]
+    },
+    {
+      "id": "horizon",
+      "title": {
+        "en": "Horizon",
+        "ru": "Горизонт"
+      },
+      "default": "10y",
+      "options": [
+        {
+          "id": "5y",
+          "title": {
+            "en": "5Y",
+            "ru": "5 лет"
+          },
+          "conditions": [
+            {
+              "metric": "cagr5y",
+              "op": ">=",
+              "value": 10,
+              "scope": "absolute",
+              "missing": "fail"
+            },
+            {
+              "metric": "vs{B}5y",
+              "op": ">=",
+              "value": 0,
+              "scope": "absolute",
+              "missing": "fail"
+            },
+            {
+              "metric": "maxDrawdown5y",
+              "op": ">=",
+              "value": -35,
+              "scope": "absolute",
+              "missing": "fail"
+            }
+          ]
+        },
+        {
+          "id": "10y",
+          "title": {
+            "en": "10Y",
+            "ru": "10 лет"
+          },
+          "conditions": [
+            {
+              "metric": "cagr10y",
+              "op": ">=",
+              "value": 10,
+              "scope": "absolute",
+              "missing": "skip"
+            },
+            {
+              "metric": "cagr5y",
+              "op": ">=",
+              "value": 10,
+              "scope": "absolute",
+              "missing": "fail"
+            },
+            {
+              "metric": "vs{B}10y",
+              "op": ">=",
+              "value": 0,
+              "scope": "absolute",
+              "missing": "skip"
+            },
+            {
+              "metric": "vs{B}5y",
+              "op": ">=",
+              "value": 0,
+              "scope": "absolute",
+              "missing": "fail"
+            },
+            {
+              "metric": "maxDrawdown10y",
+              "op": ">=",
+              "value": -35,
+              "scope": "absolute",
+              "missing": "skip"
+            },
+            {
+              "metric": "maxDrawdown5y",
+              "op": ">=",
+              "value": -35,
+              "scope": "absolute",
+              "missing": "fail"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,111 @@
+{
+  "schemaVersion": 1,
+  "id": "rotation-dip",
+  "title": {
+    "en": "Rotation: lagging now",
+    "ru": "Ротация: отстают сейчас"
+  },
+  "description": {
+    "en": "For a market near its high (see the market line above the chips): funds that are behind the benchmark by 5 points or more over 3 months and at least 5% below their own 52-week high, that move on their own (correlation of 0.6 or less), held up better than the benchmark in its last 10% drawdown by 5 points or more, took less than 60% of its falling months, and are still up over 5 years. These tend to be bought when money leaves the index",
+    "ru": "Для рынка у максимума (см. строку рынка над чипами): фонды, которые отстают от бенчмарка на 5 пунктов и больше за 3 месяца и стоят минимум на 5% ниже своего годового максимума, ходят сами по себе (корреляция не выше 0,6), в последней просадке бенчмарка на 10% и больше упали меньше него на 5 пунктов и больше, участвуют меньше чем в 60% его падающих месяцев и выросли за 5 лет. В такие фонды обычно идут деньги, когда они уходят из индекса"
+  },
+  "appliesTo": [
+    "etf"
+  ],
+  "match": "all",
+  "conditions": [
+    {
+      "metric": "size",
+      "op": ">=",
+      "value": 100000000,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "isGeared",
+      "op": "=",
+      "value": false,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "relStrength3m{B}",
+      "op": "<=",
+      "value": -5,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "pctFrom52wHigh",
+      "op": "<=",
+      "value": -5,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "corr1y{B}",
+      "op": "<=",
+      "value": 0.6,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "stressReturn{B}",
+      "op": ">=",
+      "value": 5,
+      "scope": "benchmark",
+      "benchmark": "{T}",
+      "missing": "fail"
+    },
+    {
+      "metric": "downCapture3y{B}",
+      "op": "<=",
+      "value": 60,
+      "scope": "absolute",
+      "missing": "skip"
+    },
+    {
+      "metric": "tr5y",
+      "op": ">",
+      "value": 0,
+      "scope": "absolute",
+      "missing": "fail"
+    }
+  ],
+  "pickers": [
+    {
+      "id": "benchmark",
+      "title": {
+        "en": "Benchmark",
+        "ru": "Бенчмарк"
+      },
+      "default": "spy",
+      "options": [
+        {
+          "id": "spy",
+          "title": {
+            "en": "SPY",
+            "ru": "SPY"
+          },
+          "vars": {
+            "B": "Spy",
+            "T": "SPY",
+            "T2": "SPYM"
+          }
+        },
+        {
+          "id": "qqq",
+          "title": {
+            "en": "QQQ",
+            "ru": "QQQ"
+          },
+          "vars": {
+            "B": "Qqq",
+            "T": "QQQ",
+            "T2": "QQQM"
+          }
+        }
+      ]
+    }
+  ]
+}

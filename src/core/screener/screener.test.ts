@@ -133,9 +133,9 @@ const BY_ID: Record<string, Preset> = {};
 PRESETS.forEach((p) => { BY_ID[p.id] = p; });
 
 describe('presets', () => {
-  test('the 16 base presets (three of them refinements) validate against the registry; a broken preset does not', () => {
-    expect(PRESETS.map((p) => p.id)).toEqual(['cashflow-machines', 'cheap-earnings', 'dividend-growth', 'gold', 'growth-no-profit', 'high-debt', 'mine', 'pays-dividend', 'positive-1y', 'quality-growth', 'quality-on-sale', 'rising-dividend', 'stable-dividend', 'stable-growth', 'undervalued', 'volatile-swings']);
-    expect(PRESETS.filter((p) => p.refine).map((p) => p.id)).toEqual(['pays-dividend', 'positive-1y', 'rising-dividend']);
+  test('the 31 base presets (ten of them refinements) validate against the registry; a broken preset does not', () => {
+    expect(PRESETS.map((p) => p.id)).toEqual(['aum-floor', 'beats-benchmark', 'best-in-sector', 'cashflow-machines', 'cheap-earnings', 'dividend-growth', 'etf-on-sale', 'gold', 'growth-no-profit', 'high-debt', 'high-income', 'index-family', 'low-cost', 'mine', 'monthly-grower', 'monthly-pay', 'pays-dividend', 'positive-1y', 'price-growth', 'pullback', 'qualified-dividends', 'quality-growth', 'quality-on-sale', 'rising-dividend', 'rotation-dip', 'stable-dividend', 'stable-growth', 'steady-income', 'undervalued', 'volatile-swings', 'yield-above-benchmark']);
+    expect(PRESETS.filter((p) => p.refine).map((p) => p.id)).toEqual(['aum-floor', 'index-family', 'low-cost', 'monthly-pay', 'pays-dividend', 'positive-1y', 'pullback', 'qualified-dividends', 'rising-dividend', 'yield-above-benchmark']);
     expect(validatePreset({ ...BY_ID['pays-dividend'], refine: 'yes' } as unknown as Preset)).toEqual(['pays-dividend: refine must be true or false']);
     expect(PRESETS.flatMap((p) => validatePreset(p))).toEqual([]);
     const broken = preset([
@@ -257,11 +257,12 @@ describe('rows', () => {
     expect(stockRow({ ticker: 'O', industry: 'REIT - Retail', metrics: {} }).metrics.isReit).toBe(true); // owner answer N22
     expect(stockRow({ ticker: 'X', industry: 'Real Estate Services', metrics: {} }).metrics.isReit).toBe(false);
     // metrics as published: no tr1y stands in for perf1y (owner answer N2); the fund category is the ETF sector (owner answer N4)
-    expect(etfRow({ ticker: 'GLD', aumValue: 9e10, category: 'Commodity', metrics: { tr1y: 30 } })).toEqual({ ticker: 'GLD', type: 'etf', sector: 'Commodity', industry: null, isMine: false, size: 9e10, metrics: { tr1y: 30 } });
+    // expenseRatio and expenseRatioGross come from the row fields terValue and terGrossValue (benchmark plan 5.2)
+    expect(etfRow({ ticker: 'GLD', aumValue: 9e10, category: 'Commodity', terValue: 0.4, metrics: { tr1y: 30 } })).toEqual({ ticker: 'GLD', type: 'etf', sector: 'Commodity', industry: null, isMine: false, size: 9e10, metrics: { tr1y: 30, expenseRatio: 0.4, expenseRatioGross: null } });
     expect(etfRow({ ticker: 'IAU', category: ' ', metrics: { tr1y: 30, perf1y: 28 } })).toMatchObject({ sector: null, metrics: { tr1y: 30, perf1y: 28 } });
-    expect(etfRow({ ticker: 'IAU', metrics: { tr1y: null } }).metrics).toEqual({ tr1y: null });
+    expect(etfRow({ ticker: 'IAU', metrics: { tr1y: null } }).metrics).toEqual({ tr1y: null, expenseRatio: null, expenseRatioGross: null });
     expect(etfRow({ ticker: 'brk.b' }, new Set(['BRK-B'])).isMine).toBe(true);
-    expect(etfRow({ ticker: 'X', isMine: true, aumValue: null })).toEqual({ ticker: 'X', type: 'etf', sector: null, industry: null, isMine: true, size: null, metrics: {} });
+    expect(etfRow({ ticker: 'X', isMine: true, aumValue: null })).toEqual({ ticker: 'X', type: 'etf', sector: null, industry: null, isMine: true, size: null, metrics: { expenseRatio: null, expenseRatioGross: null } });
     // the Stocks store: stock rows only, the first row of a ticker wins
     const rows = storeRows([{ ticker: 'AAPL', metrics: {} }, { ticker: 'MSFT' }, { ticker: 'AAPL', name: 'again' }, { ticker: '' }], new Set(['MSFT']));
     expect(rows.map((r) => `${r.type}:${r.ticker}:${r.isMine}`)).toEqual(['stock:AAPL:false', 'stock:MSFT:true']);

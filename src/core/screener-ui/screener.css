@@ -143,3 +143,23 @@
 .scr-chip-main .scr-count{margin-left:auto}
 .scr-chip .scr-chip-variant{flex:none;width:4.5rem}
 .scr-hint{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* chip pickers (benchmark plan 4.2): one select per picker, a fixed width per picker id (language-stable); a chip with pickers spans
+   two grid cells, three pickers three cells, so its title keeps room */
+.scr-chip.has-pickers-1,.scr-chip.has-pickers-2{grid-column:span 2}
+.scr-chip.has-pickers-3{grid-column:span 3}
+.scr-chip .scr-chip-picker{width:5.5rem;text-overflow:ellipsis}
+.scr-chip .scr-chip-picker[data-picker="benchmark"],.scr-chip .scr-chip-picker[data-picker="yield"]{width:4rem}
+.scr-chip .scr-chip-picker[data-picker="level"]{width:5rem}
+.scr-chip .scr-chip-picker[data-picker="horizon"]{width:5.75rem}
+.scr-chip .scr-chip-picker[data-picker="return"],.scr-chip .scr-chip-picker[data-picker="risk"]{width:7rem}
+.scr-chip .scr-chip-picker[data-picker="family"],.scr-chip .scr-chip-picker[data-picker="sector"],.scr-chip .scr-chip-picker[data-picker="depth"]{width:8.5rem}
+.scr-bench{width:4.5rem;margin-left:.25rem}
+/* the host's line under the head row (the ETFs hub: market state of SPY and QQQ) */
+.scr-note{margin-top:.4rem;font-size:.75rem;color:#475569;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.scr-note .is-high{color:#15803d;font-weight:600}
+.scr-note .is-pullback{color:#b45309;font-weight:600}
+.scr-note .is-correction,.scr-note .is-bear{color:#be123c;font-weight:600}
+.dark .scr-note{color:#94a3b8}
+.dark .scr-note .is-high{color:#4ade80}
+.dark .scr-note .is-pullback{color:#fbbf24}
+.dark .scr-note .is-correction,.dark .scr-note .is-bear{color:#fb7185}

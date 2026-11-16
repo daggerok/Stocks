@@ -25,6 +25,10 @@ put('dividends', ['dividendYield', 'dividendRate', 'payoutRatio', 'fcfPayout', '
 put('quality', ['epsNiGrowthGap3y']);
 put('safety', ['fcfNegativeYears', 'balanceYoyMaxChange', 'balanceYoyMaxLine']);
 put('dividends', ['dividendStreak', 'dividendCut10y', 'dividendIrregular']);
+// benchmark plan 4.4: the ETF benchmark metrics are price metrics (the etf fallback would take them), the payment and tax keys dividends
+put('price', ['perfSi', 'maxDrawdown1y', 'maxDrawdown3y', 'maxDrawdown5y', 'maxDrawdown10y', 'benchmarkAsOf'].concat(...['Spy', 'Qqq'].map((b) => ['1y', '3y', '5y', '10y'].map((h) => `vs${b}${h}`).concat([`beta1y${b}`, `corr1y${b}`, `upCapture3y${b}`, `downCapture3y${b}`, `relStrength3m${b}`, `stressReturn${b}`, `stressBasis${b}`]))));
+put('dividends', ['paymentsPerYear', 'payFrequency', 'qualifiedDividendPct', 'qualifiedDividendYear', 'qualifiedDividendBasis']);
+put('fields', ['indexFamily', 'indexVariant', 'isGeared']);
 put('growth', ['revenueGrowthVsTam']);
 put('scores', ['scoreCheap', 'scoreQuality', 'scoreSafety', 'scoreDividend', 'scoreEntry', 'statusScore', 'archetype', 'status', 'why', 'flags', 'flagCount']);
 put('fields', ['ticker', 'type', 'sector', 'industry', 'isMine', 'size', 'isAdr', 'country', 'ttmIsAnnual', 'isReit']);
