@@ -118,14 +118,15 @@
 #scr-status{flex:1 1 0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* screener head row (owner 2026-11-15): [Stocks ETFs All][All of Any of] SCREENER <status> [tools]. The title sits in the middle of the row:
    the two sides are equally wide (fixed), the center has an empty pad and the status of the same flexible width around the title, so the
-   title never moves and a long status ends in an ellipsis (full text in its tooltip). Below 1280 px the title line wraps under the buttons */
+   title never moves and a long status ends in an ellipsis (full text in its tooltip). Below 1280 px the title line wraps under the buttons.
+   The side width fits the Stocks head (type switch, Peers); an app with fewer head controls sets --scr-side-width on the panel (the ETFs hub) */
 .scr-side{display:inline-flex;flex-wrap:wrap;align-items:center;gap:.5rem .6rem;flex:none;max-width:100%}
 .scr-center{display:flex;align-items:center;gap:.6rem;min-width:0;flex:1 1 100%;order:3;height:1.75rem}
 .scr-center-pad{flex:1 1 0;min-width:0}
 .scr-tools{flex:none}
 @media (min-width:1280px){
   .scr-bar{flex-wrap:nowrap}
-  .scr-side{width:26.5rem;flex-wrap:nowrap}
+  .scr-side{width:var(--scr-side-width,26.5rem);flex-wrap:nowrap}
   .scr-center{flex:1 1 0;order:0}
   .scr-tools{justify-content:flex-end;margin-left:0}
 }
