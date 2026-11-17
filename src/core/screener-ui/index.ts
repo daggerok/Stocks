@@ -130,6 +130,8 @@ export function createScreenerUi(host: ScreenerUiHost) {
   const SCREENER_PICKERS_KEY = keys.pickers; // chosen option per chip picker (a setting: Clear resets it)
   const SCREENER_COLLAPSED_KEY = keys.collapsed; // the panel shows only its head row (a setting: Clear resets it; owner 2026-11-16)
   let collapsed = lsGetJson(SCREENER_COLLAPSED_KEY, false) === true;
+  const SLIDE_MS = 200; // the body slides up and down (owner 2026-11-17: "lack of animations for screener effects for slide up slide down")
+  let slideToken = 0; // a newer toggle wins over a slide still running
   const OWN_PRESETS_KEY = keys.own; // own presets of this browser (data: Clear keeps them)
   const PEERS_KEY = keys.peers; // peer groups changed in this browser over the committed peers.json (data: Clear keeps them)
   const TYPE_FILTERS = host.types;
@@ -680,12 +682,38 @@ export function createScreenerUi(host: ScreenerUiHost) {
     return collapsed;
   }
 
-  /** Collapses or expands the panel (never changes the filtering), saves the choice and tells the host */
+  /** Collapses or expands the panel (never changes the filtering), saves the choice and tells the host; the body slides up or down (owner 2026-11-17) */
   function setCollapsed(value: boolean): void {
-    collapsed = value === true;
+    const next = value === true;
+    const body = document.getElementById('scr-body');
+    const wasShown = !!body && !body.hidden;
+    collapsed = next;
     lsSet(SCREENER_COLLAPSED_KEY, JSON.stringify(collapsed));
-    renderScreener();
     if (host.onCollapse) host.onCollapse(collapsed);
+    const token = ++slideToken;
+    if (collapsed && wasShown && body && canSlide(body)) {
+      // the head row follows at once, the body slides up and the panel is rendered collapsed when it is gone
+      const head = document.querySelector('#' + host.panelId + ' .scr-collapse');
+      if (head) { head.setAttribute('aria-expanded', 'false'); const chev = head.querySelector('.scr-chev'); if (chev) chev.textContent = '▸'; }
+      slide(body, body.offsetHeight, 0).onfinish = () => { if (token === slideToken) renderScreener(); };
+      return;
+    }
+    renderScreener();
+    const shown = document.getElementById('scr-body');
+    if (!collapsed && !wasShown && shown && canSlide(shown)) slide(shown, 0, shown.offsetHeight);
+  }
+
+  /** The slide of the panel body: off when the user asks for reduced motion or the browser has no Web Animations */
+  function canSlide(node: HTMLElement): boolean {
+    if (typeof node.animate !== 'function') return false;
+    return !(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  }
+
+  function slide(node: HTMLElement, from: number, to: number): Animation {
+    node.style.overflow = 'hidden';
+    const anim = node.animate([{ height: from + 'px', opacity: from ? 1 : 0 }, { height: to + 'px', opacity: to ? 1 : 0 }], { duration: SLIDE_MS, easing: 'ease-in-out' });
+    anim.addEventListener('finish', () => { node.style.overflow = ''; });
+    return anim;
   }
 
   function toggleCollapsed(): void {
