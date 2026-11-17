@@ -111,7 +111,16 @@
 .peer-group .scr-list{max-width:none;flex:1}
 .dark .peer-group{border-top-color:#1e293b}
 /* language-stable widths of the screener head and chips (owner 2026-11-14, see the language-stable block of src/index.css) */
-.scr-label{width:5.5rem;flex:none;text-align:center}
+.scr-label{width:6.75rem;flex:none;text-align:center}
+/* the title is the collapse button (owner 2026-11-16): ▾ open, ▸ collapsed; collapsed, only the head row stays with the active presets in one line */
+.scr-collapse{display:inline-flex;align-items:center;justify-content:center;gap:.3rem;height:1.625rem;padding:0 .35rem;border:0;border-radius:.375rem;background:transparent;cursor:pointer;font-family:inherit}
+.scr-collapse:hover{background:#f1f5f9;color:#334155}
+.scr-collapse:focus-visible{outline:none;box-shadow:0 0 0 3px rgb(59 130 246 / .3)}
+.scr-chev{font-size:.7rem;line-height:1}
+.dark .scr-collapse:hover{background:#1e293b;color:#e2e8f0}
+.scr-on{flex:0 1 auto;min-width:0;max-width:60%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.75rem;font-weight:600;color:#1d4ed8}
+.dark .scr-on{color:#93c5fd}
+.scr-panel.is-collapsed .scr-bar{min-height:0}
 .scr-seg{flex:none}
 .scr-seg button{width:4.5rem;text-align:center}
 .scr-seg-any button{width:5.75rem}
@@ -143,15 +152,17 @@
 .scr-chip-main .scr-count{margin-left:auto}
 .scr-chip .scr-chip-variant{flex:none;width:4.5rem}
 .scr-hint{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-/* chip pickers (benchmark plan 4.2): one select per picker, a fixed width per picker id (language-stable); a chip with pickers spans
-   two grid cells, three pickers three cells, so its title keeps room */
-.scr-chip.has-pickers-1,.scr-chip.has-pickers-2{grid-column:span 2}
-.scr-chip.has-pickers-3{grid-column:span 3}
-.scr-chip .scr-chip-picker{width:5.5rem;text-overflow:ellipsis}
-.scr-chip .scr-chip-picker[data-picker="benchmark"],.scr-chip .scr-chip-picker[data-picker="yield"]{width:4rem}
+/* chip pickers (benchmark plan 4.2, compact since 2026-11-16, owner: "same chips styles" as Stocks): one select per picker, a fixed width
+   per picker id sized for the longer of its EN and RU options (language-stable; a longer option ends in an ellipsis, the full text is in the
+   open list). A chip with one short picker takes one grid cell like Stable growth, a chip with two or three pickers or one wide picker
+   (index family, sector, pullback depth) spans two cells; on a one-column grid (phone) every chip takes one cell */
+.scr-chip.has-pickers-2,.scr-chip.has-pickers-3,.scr-chip.has-pickers-1:has(.scr-chip-picker[data-picker="family"],.scr-chip-picker[data-picker="sector"],.scr-chip-picker[data-picker="depth"]){grid-column:span 2}
+@media (max-width:40rem){.scr-chip[class*="has-pickers"]{grid-column:auto}}
+.scr-chip .scr-chip-picker{width:4.5rem;text-overflow:ellipsis}
+.scr-chip .scr-chip-picker[data-picker="benchmark"],.scr-chip .scr-chip-picker[data-picker="yield"]{width:3.5rem}
+.scr-chip .scr-chip-picker[data-picker="horizon"]{width:4rem}
 .scr-chip .scr-chip-picker[data-picker="level"]{width:5rem}
-.scr-chip .scr-chip-picker[data-picker="horizon"]{width:5.75rem}
-.scr-chip .scr-chip-picker[data-picker="return"],.scr-chip .scr-chip-picker[data-picker="risk"]{width:7rem}
+.scr-chip .scr-chip-picker[data-picker="return"],.scr-chip .scr-chip-picker[data-picker="risk"]{width:5.5rem}
 .scr-chip .scr-chip-picker[data-picker="family"],.scr-chip .scr-chip-picker[data-picker="sector"],.scr-chip .scr-chip-picker[data-picker="depth"]{width:8.5rem}
 .scr-bench{width:4.5rem;margin-left:.25rem}
 /* the host's line under the head row (the ETFs hub: market state of SPY and QQQ) */

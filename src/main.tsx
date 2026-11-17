@@ -3840,6 +3840,7 @@ const RESET_ITEMS: ResetItem[] = [
   { id: 'screener', label: 'Screener: chosen presets and edits (own presets are kept)', keys: [SCREENER_KEYS.screener], reset: () => screener.reset() },
   { id: 'screener-variants', label: 'Screener horizons (Stable growth 1Y to 10Y)', keys: [SCREENER_KEYS.variants], reset: () => screener.resetVariants() },
   { id: 'screener-pickers', label: 'Screener chip choices (benchmark, horizon, level)', keys: [SCREENER_KEYS.pickers], reset: () => screener.resetPickers() },
+  { id: 'screener-collapsed', label: 'Screener panel collapsed (back to shown)', keys: [SCREENER_KEYS.collapsed], reset: () => screener.resetCollapsed() },
 ];
 
 /** The three items that live in one saved key: removing the key for one of them would also forget the others. */
@@ -4510,6 +4511,7 @@ const screener = createScreenerUi({
   statusParts: () => [],
   peersChanging: () => { screenUniverse = null; similarCache = null; },
   peersChanged: () => { if (tickerPage.ticker) renderTickerPage(); },
+  onCollapse: () => syncScreenerToggle(),
 });
 const scr = screener.scr;
 const renderScreener = screener.render;
@@ -5660,6 +5662,7 @@ function switchLanguage(locale: string): void {
   catalogTypeCache = null; // the shown texts of the text columns changed
   applyLanguage();
   renderScreener();
+  syncScreenerToggle();
   renderGuide();
   renderSignals();
   render();
@@ -5903,6 +5906,26 @@ function setupActionsMenu(): void {
 }
 setupActionsMenu();
 
+/**
+ * The 🔍 button right before ☰ (owner 2026-11-16): collapses and expands the screener panel like its SCREENER title; pressed (light blue)
+ * while the panel is shown. Collapsing never changes the filtering: the head row of the panel keeps the status and the active presets
+ */
+function syncScreenerToggle(): void {
+  const button = document.getElementById('screener-toggle-btn');
+  if (!button) return;
+  const open = !screener.isCollapsed();
+  const label = t(open ? 'screener.collapse' : 'screener.expand');
+  button.setAttribute('aria-expanded', String(open));
+  button.setAttribute('aria-label', label);
+  button.setAttribute('title', label);
+}
+function setupScreenerToggle(): void {
+  const button = document.getElementById('screener-toggle-btn');
+  if (button) button.addEventListener('click', () => screener.toggleCollapsed());
+  syncScreenerToggle();
+}
+setupScreenerToggle();
+
 init();
 
 // ---- header summary popover: hover, focus or click on the stock count opens it ----
@@ -5974,7 +5997,7 @@ function metricsWithoutColumn(): string[] {
 }
 Object.assign(window, { state, render, catalogIds, catalogFilterColumns, detectedCatalogType, filterExpressionFor, gridTypeCache, menuColumns, metricsWithoutColumn });
 // screener hooks of stocks-screener-uitest.ts
-Object.assign(window, { scr, exportPreset: screener.exportPreset, importPresetText: screener.importPresetText, presetShareUrl: screener.presetShareUrl, presetResults: screener.presetResults, effectivePreset, switchLanguage, applyClear });
+Object.assign(window, { scr, screener, exportPreset: screener.exportPreset, importPresetText: screener.importPresetText, presetShareUrl: screener.presetShareUrl, presetResults: screener.presetResults, effectivePreset, switchLanguage, applyClear });
 // peers and ticker page hooks (plan stages 6 and 7, stocks-ticker-uitest.ts)
 Object.assign(window, { tickerPage, openTickerPage, closeTickerPage, exportPeers: screener.exportPeers, importPeersText: screener.importPeersText, addSimilarToPeers, makeFilterFromTicker, screenerUniverse });
 Object.assign(window, { renderTickerPage, dcfView, exportResearch, importResearchText, research, metaCache });
