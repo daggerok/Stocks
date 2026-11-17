@@ -121,6 +121,8 @@
 .scr-on{flex:0 1 auto;min-width:0;max-width:60%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.75rem;font-weight:600;color:#1d4ed8}
 .dark .scr-on{color:#93c5fd}
 .scr-panel.is-collapsed .scr-bar{min-height:0}
+/* the body is its own block formatting context, so the slide measures the same height with and without overflow:hidden (no jump at the end) */
+.scr-body:not([hidden]){display:flow-root}
 .scr-seg{flex:none}
 .scr-seg button{width:4.5rem;text-align:center}
 .scr-seg-any button{width:5.75rem}
