@@ -657,6 +657,7 @@ export const ru: Record<string, string> = {
   'ui.yes': 'да',
   'ui.{count} stocks': 'Акций: {count}',
   'ui.{count} stocks from cache': 'акций из кэша: {count}',
+  'ui.{passed} of {total} stocks pass': 'проходят {passed} из {total} акций',
   'ui.{selected} of {total}': '{selected} из {total}',
   'ui.{selected} of {total} selected': 'выбрано {selected} из {total}',
   'ui.{selected} of {total} shown': 'показано {selected} из {total}',

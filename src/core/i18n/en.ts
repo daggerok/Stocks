@@ -657,6 +657,7 @@ export const en: Record<string, string> = {
   'ui.yes': 'yes',
   'ui.{count} stocks': '{count} stocks',
   'ui.{count} stocks from cache': '{count} stocks from cache',
+  'ui.{passed} of {total} stocks pass': '{passed} of {total} stocks pass',
   'ui.{selected} of {total}': '{selected} of {total}',
   'ui.{selected} of {total} selected': '{selected} of {total} selected',
   'ui.{selected} of {total} shown': '{selected} of {total} shown',

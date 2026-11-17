@@ -4508,7 +4508,7 @@ const screener = createScreenerUi({
   knownTickers: () => knownStockTickers(),
   rerender: () => render(),
   typeChosen: () => { /* one type, no switch */ },
-  statusParts: () => [],
+  statusParts: () => screenerStatusParts(),
   peersChanging: () => { screenUniverse = null; similarCache = null; },
   peersChanged: () => { if (tickerPage.ticker) renderTickerPage(); },
   onCollapse: () => syncScreenerToggle(),
@@ -4588,6 +4588,16 @@ function scoresFromSnapshot(rows: any[], config: ScoringConfig): AppliedScores |
 }
 
 /** The screener chips keep this store id */
+/** The status line of the panel next to SCREENER: how many stocks pass the chosen chips (before the exchange, sector, search and column filters), as in the ETFs hub */
+function screenerStatusParts(): string[] {
+  if (!store || !Object.keys(scr.chips).length) return [];
+  const mask = screenMask();
+  if (!mask) return [];
+  let passed = 0;
+  for (let i = 0; i < store.n; i++) passed += mask[i] === 1 ? 1 : 0;
+  return [L('{passed} of {total} stocks pass', { passed: passed.toLocaleString('en-US'), total: store.n.toLocaleString('en-US') })];
+}
+
 function passesScreener(id: number, mask: Uint8Array | null): boolean {
   return !!store && (!mask || mask[id] === 1);
 }
