@@ -520,14 +520,14 @@
    .am-bar is the toolbar, .am-root (☰ and its panel) its last child, .am-row the search. From lg ☰ is pushed to the right end of its row; below lg it sits right of the search
    on the first row: a column toolbar (flex-col, brands) becomes a two-column grid there, a wrapping row toolbar (hub, Stocks) puts the search and ☰ first by order */
 .am-row{display:flex;align-items:center;gap:.5rem;min-width:0}
-.am-bar > .am-root{flex:none}
+.am-bar > .am-root{flex:none;display:inline-flex;align-items:center;gap:.5rem}
 @media (min-width:64rem){.am-bar > .am-root{margin-left:auto}}
 @media (max-width:63.999rem){
 .am-bar.flex-col{display:grid;grid-template-columns:minmax(0,1fr) auto;justify-items:center;align-items:center;column-gap:.5rem}
 .am-bar.flex-col > *{grid-column:1 / -1}
 .am-bar.flex-col > .am-row{grid-column:1;grid-row:1;justify-self:stretch}
 .am-bar.flex-col > .am-root{grid-column:2;grid-row:1}
-.am-bar:not(.flex-col) > .am-row{order:-2;flex:1 1 calc(100% - 3.5rem)}
+.am-bar:not(.flex-col) > .am-row{order:-2;flex:1 1 calc(100% - 6.5rem)}
 .am-bar:not(.flex-col) > .am-root{order:-1}
 }
 .am-row > *{flex:1 1 auto;min-width:0}
@@ -536,6 +536,12 @@
 .dark .am-trigger{background:#0f172a;border-color:#334155;color:#e2e8f0}
 .dark .am-trigger:hover,.dark .am-trigger[aria-expanded="true"]{background:#1e293b;border-color:#475569}
 .am-trigger:focus-visible,.am-item:focus-visible{outline:2px solid #3b82f6;outline-offset:2px}
+/* 🔍 screener toggle (owner 2026-11-16): the square of ☰, light blue while the screener panel is shown */
+.am-trigger.scr-toggle{font-size:1rem}
+.am-trigger.scr-toggle[aria-expanded="true"]{background:#eff6ff;border-color:#bfdbfe;color:#1d4ed8}
+.am-trigger.scr-toggle[aria-expanded="true"]:hover{background:#dbeafe}
+.dark .am-trigger.scr-toggle[aria-expanded="true"]{background:rgb(30 64 175 / .28);border-color:rgb(59 130 246 / .45);color:#93c5fd}
+.dark .am-trigger.scr-toggle[aria-expanded="true"]:hover{background:rgb(30 64 175 / .38)}
 .am-panel{position:fixed;left:0;top:0;z-index:1000;display:flex;flex-direction:column;gap:.125rem;min-width:13rem;max-width:calc(100vw - 1rem);overflow:auto;padding:.375rem;background:#fff;border:1px solid #e2e8f0;border-radius:.75rem;box-shadow:0 12px 30px rgb(15 23 42 / .16),0 2px 6px rgb(15 23 42 / .06);opacity:0;transform:translateY(-4px) scale(.98);transform-origin:top right;transition:opacity .14s ease,transform .14s ease}
 .am-panel[hidden]{display:none}
 .am-panel.is-open{opacity:1;transform:none}

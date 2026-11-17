@@ -108,6 +108,7 @@
           <span id="load-progress" class="empty:hidden text-xs text-slate-500 dark:text-slate-400" aria-live="polite"></span>
           <!-- Actions menu (☰ at the right end of the toolbar, owner 2026-11-15): the action buttons keep their ids and handlers, setupActionsMenu() in main.tsx opens and closes it -->
           <div class="am-root">
+            <button type="button" id="screener-toggle-btn" class="am-trigger scr-toggle" aria-expanded="true" aria-controls="screener-panel" aria-label="Hide the screener" title="Hide the screener">🔍</button>
             <button type="button" id="actions-btn" class="am-trigger" aria-haspopup="menu" aria-expanded="false" aria-controls="actions-panel" aria-label="Actions" data-i18n-aria="Actions" title="Actions: copy tickers, export, clear, blacklist" data-i18n-title="Actions: copy tickers, export, clear, blacklist">☰</button>
             <div id="actions-panel" class="am-panel" role="menu" aria-label="Actions" data-i18n-aria="Actions" hidden>
               <button id="copy-btn" disabled class="am-item am-copy" data-i18n="Copy Tickers" role="menuitem" data-am-keep>Copy Tickers</button>

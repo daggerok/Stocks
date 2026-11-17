@@ -90,6 +90,8 @@ export type ScreenerUiHost = {
   /** peer groups changed: before the panel and table render (drop the scored universe) and after them (dependent views) */
   peersChanging: () => void;
   peersChanged: () => void;
+  /** the panel was collapsed or expanded (by its title or the host's toolbar button): the host updates its toggle button */
+  onCollapse?: (collapsed: boolean) => void;
 };
 
 export type ScreenerUi = ReturnType<typeof createScreenerUi>;
@@ -113,9 +115,9 @@ export function numberOrNull(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-/** The localStorage keys of a panel: the screener choice, the horizons and the chip pickers are settings (the host's Clear resets them), own presets and peers are data */
-export function screenerStorageKeys(prefix: string): { screener: string; variants: string; pickers: string; own: string; peers: string } {
-  return { screener: `${prefix}-screener`, variants: `${prefix}-screener-variants`, pickers: `${prefix}-screener-pickers`, own: `${prefix}-own-presets`, peers: `${prefix}-peers` };
+/** The localStorage keys of a panel: the screener choice, the horizons, the chip pickers and the collapsed panel are settings (the host's Clear resets them), own presets and peers are data */
+export function screenerStorageKeys(prefix: string): { screener: string; variants: string; pickers: string; collapsed: string; own: string; peers: string } {
+  return { screener: `${prefix}-screener`, variants: `${prefix}-screener-variants`, pickers: `${prefix}-screener-pickers`, collapsed: `${prefix}-screener-collapsed`, own: `${prefix}-own-presets`, peers: `${prefix}-peers` };
 }
 
 export function createScreenerUi(host: ScreenerUiHost) {
@@ -126,6 +128,8 @@ export function createScreenerUi(host: ScreenerUiHost) {
   const SCREENER_KEY = keys.screener; // chosen preset chips, edits, the universe type (a setting: Clear resets it)
   const SCREENER_VARIANTS_KEY = keys.variants; // chosen horizon per preset with variants (a setting: Clear resets it)
   const SCREENER_PICKERS_KEY = keys.pickers; // chosen option per chip picker (a setting: Clear resets it)
+  const SCREENER_COLLAPSED_KEY = keys.collapsed; // the panel shows only its head row (a setting: Clear resets it; owner 2026-11-16)
+  let collapsed = lsGetJson(SCREENER_COLLAPSED_KEY, false) === true;
   const OWN_PRESETS_KEY = keys.own; // own presets of this browser (data: Clear keeps them)
   const PEERS_KEY = keys.peers; // peer groups changed in this browser over the committed peers.json (data: Clear keeps them)
   const TYPE_FILTERS = host.types;
@@ -661,9 +665,43 @@ export function createScreenerUi(host: ScreenerUiHost) {
     return parts.join(' · ');
   }
 
+  function activeNoteText(): string {
+    const ids = Object.keys(scr.chips);
+    if (!ids.length) return '';
+    const names = ids.map(id => {
+      const p = effectivePreset(id);
+      const title = p ? pick(p.title) : id;
+      return scr.chips[id] === 'out' ? t('screener.notChip', { title }) : title;
+    });
+    return t('screener.onCount', { count: ids.length, names: names.join(', ') });
+  }
+
+  function isCollapsed(): boolean {
+    return collapsed;
+  }
+
+  /** Collapses or expands the panel (never changes the filtering), saves the choice and tells the host */
+  function setCollapsed(value: boolean): void {
+    collapsed = value === true;
+    lsSet(SCREENER_COLLAPSED_KEY, JSON.stringify(collapsed));
+    renderScreener();
+    if (host.onCollapse) host.onCollapse(collapsed);
+  }
+
+  function toggleCollapsed(): void {
+    setCollapsed(!collapsed);
+  }
+
+  /** Clear of the collapsed panel: expanded again */
+  function resetCollapsed(): void {
+    setCollapsed(false);
+  }
+
   function renderScreenerStatus(): void {
     const node = document.getElementById('scr-status');
     if (node) { node.textContent = screenerStatusText(); node.setAttribute('title', node.textContent); }
+    const on = document.getElementById('scr-on');
+    if (on) { on.textContent = activeNoteText(); on.setAttribute('title', on.textContent); }
   }
 
   function metricDatalistHtml(): string {
@@ -691,25 +729,29 @@ export function createScreenerUi(host: ScreenerUiHost) {
     const loading = scr.status === 'failed' ? `<span class="scr-error">${escapeHtml(t('screener.unavailablePresets', { error: scr.error }))}</span>` : '';
     const chosen = Object.keys(scr.chips).length;
     const note = host.headNote ? host.headNote() : '';
+    const activeNote = activeNoteText();
     // language-stable layout (owner 2026-11-14): a head row of fixed-width controls, then the chips in grids of equal cells, so EN and RU wrap the same.
     // Head row (owner 2026-11-15): the buttons left, the title in the middle of the row with the status right after it, the tools right;
     // both sides are equally wide so the title stays in the center whatever the status says (below 1280 px the title line wraps under the buttons)
     panel.innerHTML = `<div class="scr-bar">
       <span class="scr-side scr-side-left">${typeSeg}${combineSeg}</span>
-      <span class="scr-center"><span class="scr-center-pad"></span><span class="scr-label">${escapeHtml(t('screener.title'))}</span><span id="scr-status" class="scr-muted" aria-live="polite" title="${escapeHtml(screenerStatusText())}">${escapeHtml(screenerStatusText())}</span></span>
+      <span class="scr-center"><span class="scr-center-pad"></span><button type="button" class="scr-label scr-collapse" data-act="collapse" aria-expanded="${!collapsed}" aria-controls="scr-body" title="${escapeHtml(t(collapsed ? 'screener.expand' : 'screener.collapse'))}"><span class="scr-label-text">${escapeHtml(t('screener.title'))}</span><span class="scr-chev" aria-hidden="true">${collapsed ? '▸' : '▾'}</span></button>${collapsed && activeNote ? `<span id="scr-on" class="scr-on" title="${escapeHtml(activeNote)}">${escapeHtml(activeNote)}</span>` : ''}<span id="scr-status" class="scr-muted" aria-live="polite" title="${escapeHtml(screenerStatusText())}">${escapeHtml(screenerStatusText())}</span></span>
       <span class="scr-side scr-tools">
         ${chosen ? `<button type="button" class="dd-act" data-act="clear" title="${escapeHtml(t('screener.clear.tip'))}">${escapeHtml(t('screener.clear'))}</button>` : ''}
         ${peersShown ? `<button type="button" class="dd-act" data-act="peers" aria-expanded="${scr.peersOpen}" title="${escapeHtml(t('peers.button.tip'))}">${escapeHtml(t('peers.button'))} (${Object.keys(scr.peers).length})${peersAreExported() ? '' : '<span class="scr-dot"></span>'}</button>` : ''}
         <label class="dd-act scr-import" title="${escapeHtml(t('screener.import.tip'))}">${escapeHtml(t('screener.import'))}<input type="file" id="scr-import-input" accept=".json,application/json" multiple hidden /></label>
       </span>
     </div>
+    <div id="scr-body" class="scr-body"${collapsed ? ' hidden' : ''}>
     ${note ? `<div class="scr-note" id="scr-note">${note}</div>` : ''}
     <div class="scr-chips">${loading}${main}</div>
     ${refine ? `<div class="scr-chips scr-chips-refine">${refine}</div>` : ''}
     ${own ? `<div class="scr-chips scr-chips-sep"><span class="scr-sep" title="${escapeHtml(t('screener.own'))}">${escapeHtml(t('screener.own'))}</span>${own}</div>` : ''}
     ${!chosen && !scr.expanded && scr.status === 'ready' ? `<p class="scr-hint" title="${escapeHtml(t('screener.none'))}">${escapeHtml(t('screener.none'))}</p>` : ''}
     ${peersShown && scr.peersOpen ? peersPanelHtml() : ''}
-    ${scr.expanded && effectivePreset(scr.expanded) ? editorHtml(scr.expanded) + metricDatalistHtml() : ''}`;
+    ${scr.expanded && effectivePreset(scr.expanded) ? editorHtml(scr.expanded) + metricDatalistHtml() : ''}
+    </div>`;
+    panel.classList.toggle('is-collapsed', collapsed);
   }
 
   /** A condition for a newly picked metric: keeps what still fits, else a sensible default for its kind */
@@ -818,6 +860,7 @@ export function createScreenerUi(host: ScreenerUiHost) {
     const editing = scr.expanded;
     if (act === 'type') setType(TYPE_FILTERS.filter(type => type === button.dataset.value)[0] || TYPE_FILTERS[0]);
     else if (act === 'any') { scr.any = button.dataset.value === 'true'; screenerChanged(); }
+    else if (act === 'collapse') toggleCollapsed();
     else if (act === 'chip') toggleChip(id, 'in');
     else if (act === 'not') toggleChip(id, 'out');
     else if (act === 'expand') { scr.expanded = scr.expanded === id ? null : id; screenerChanged(); }
@@ -1010,6 +1053,7 @@ export function createScreenerUi(host: ScreenerUiHost) {
 
   return {
     scr, render: renderScreener, renderStatus: renderScreenerStatus, bindPanel, languageChanged, restore: restoreScreener, restorePeers, reset: resetScreener, resetVariants, resetPickers,
+    isCollapsed, setCollapsed, toggleCollapsed, resetCollapsed,
     changed: screenerChanged, loadPresets, loadRepoPeers, applyHashPreset, sig: screenerSig, presetResults, screenMask, passedPresets, presetCountArray, presetBadgesHtml,
     effectivePreset, takenIds, persistOwn, applyPeers, exportPreset, importPresetText, presetShareUrl, exportPeers, importPeersText, optionHtml,
   };
