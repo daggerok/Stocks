@@ -500,10 +500,30 @@
 #filters-btn{width:10.25rem}
 #rank-btn{width:8.25rem}
 #clear-filters-btn{width:8.5rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#stale-control{width:15.5rem;flex:none}
+/* Hide stale as one 38px toolbar control like the ETFs hub (owner 2026-11-17: "hidestale is also not in the same style"): custom blue checkbox, label, underlined days, d; light blue while on */
+#stale-control.stale-group{display:inline-flex;align-items:center;gap:.4rem;height:2.375rem;padding:0 .75rem;border:1px solid #e2e8f0;border-radius:.5rem;background:#fff;color:#334155;font-size:.875rem;line-height:1.25rem;font-weight:500;cursor:pointer;transition:background-color .15s,border-color .15s,box-shadow .15s,color .15s}
+#stale-control.stale-group:hover{background:#f8fafc;border-color:#cbd5e1}
+#stale-control.stale-group:focus-within{border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.2)}
+#stale-control.stale-group:has(.stale-check:checked){background:#eff6ff;border-color:#bfdbfe;color:#1d4ed8}
+#stale-control .dd-label{color:#64748b;font-weight:400}
+#stale-control.stale-group:has(.stale-check:checked) .dd-label{color:#3b82f6}
+#stale-control .stale-check{appearance:none;-webkit-appearance:none;width:1rem;height:1rem;margin:0;border:1.5px solid #cbd5e1;border-radius:.25rem;background:#fff center / .75rem no-repeat;cursor:pointer;transition:background-color .15s,border-color .15s}
+#stale-control .stale-check:checked{background-color:#2563eb;border-color:#2563eb;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m2.5 6.2 2.4 2.4 4.6-5'/%3E%3C/svg%3E")}
+#stale-control .stale-check:focus{outline:none}
+#stale-control .stale-days{width:2.25rem;height:1.5rem;padding:0;border:0;border-bottom:1px solid #cbd5e1;border-radius:0;background:transparent;color:inherit;font:inherit;font-weight:600;text-align:center}
+#stale-control .stale-days:focus{outline:none;border-bottom-color:#3b82f6}
+.dark #stale-control.stale-group{background:#0f172a;border-color:#334155;color:#e2e8f0}
+.dark #stale-control.stale-group:hover{background:#1e293b;border-color:#475569}
+.dark #stale-control.stale-group:focus-within{box-shadow:0 0 0 3px rgba(59,130,246,.3)}
+.dark #stale-control.stale-group:has(.stale-check:checked){background:rgba(30,64,175,.28);border-color:rgba(59,130,246,.45);color:#93c5fd}
+.dark #stale-control .dd-label{color:#94a3b8}
+.dark #stale-control .stale-check{border-color:#475569;background-color:#0f172a}
+.dark #stale-control .stale-check:checked{background-color:#2563eb;border-color:#2563eb}
+.dark #stale-control .stale-days{border-bottom-color:#475569}
+#stale-control{width:15.25rem;flex:none}
 #stale-control>*{flex:none}
 #stale-control>span:first-of-type{flex:1 1 0;min-width:0;overflow:hidden;text-overflow:ellipsis}
-#stale-control>span:last-of-type{width:1.5rem}
+#stale-control>span:last-of-type{width:1rem}
 #actions-panel{width:15rem}
 /* the search: at least 12.125rem so the placeholder stays readable (the ☰ menu moved to the right end of the toolbar, 2026-11-15; the search keeps its width); the toolbar is one row from about 1700 px, below it Sticky # and Hide stale wrap to a second row */
 @media (min-width:1024px){#toolbar-panel .am-row{flex:1 1 12.125rem;min-width:12.125rem;max-width:24.125rem}}
