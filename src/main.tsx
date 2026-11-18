@@ -3841,6 +3841,7 @@ const RESET_ITEMS: ResetItem[] = [
   { id: 'screener-variants', label: 'Screener horizons (Stable growth 1Y to 10Y)', keys: [SCREENER_KEYS.variants], reset: () => screener.resetVariants() },
   { id: 'screener-pickers', label: 'Screener chip choices (benchmark, horizon, level)', keys: [SCREENER_KEYS.pickers], reset: () => screener.resetPickers() },
   { id: 'screener-collapsed', label: 'Screener panel collapsed (back to shown)', keys: [SCREENER_KEYS.collapsed], reset: () => screener.resetCollapsed() },
+  { id: 'screener-hidden', label: 'Screener panel hidden (back to shown)', keys: [SCREENER_KEYS.hidden], reset: () => screener.resetHidden() },
 ];
 
 /** The three items that live in one saved key: removing the key for one of them would also forget the others. */
@@ -4511,7 +4512,7 @@ const screener = createScreenerUi({
   statusParts: () => screenerStatusParts(),
   peersChanging: () => { screenUniverse = null; similarCache = null; },
   peersChanged: () => { if (tickerPage.ticker) renderTickerPage(); },
-  onCollapse: () => syncScreenerToggle(),
+  onHide: () => syncScreenerToggle(),
 });
 const scr = screener.scr;
 const renderScreener = screener.render;
@@ -5917,21 +5918,22 @@ function setupActionsMenu(): void {
 setupActionsMenu();
 
 /**
- * The 🔍 button right before ☰ (owner 2026-11-16): collapses and expands the screener panel like its SCREENER title; pressed (light blue)
- * while the panel is shown. Collapsing never changes the filtering: the head row of the panel keeps the status and the active presets
+ * The 🔍 button right before ☰ (owner 2026-11-16): hides and shows the whole screener panel with a slide, its SCREENER title only collapses
+ * the panel to the head row (owner 2026-11-17); pressed (light blue) while the panel is shown. Hiding never changes the filtering: while
+ * hidden the button label names the presets that still filter
  */
 function syncScreenerToggle(): void {
   const button = document.getElementById('screener-toggle-btn');
   if (!button) return;
-  const open = !screener.isCollapsed();
-  const label = t(open ? 'screener.collapse' : 'screener.expand');
+  const open = !screener.isHidden();
+  const label = screener.hideLabel();
   button.setAttribute('aria-expanded', String(open));
   button.setAttribute('aria-label', label);
   button.setAttribute('title', label);
 }
 function setupScreenerToggle(): void {
   const button = document.getElementById('screener-toggle-btn');
-  if (button) button.addEventListener('click', () => screener.toggleCollapsed());
+  if (button) button.addEventListener('click', () => screener.toggleHidden());
   syncScreenerToggle();
 }
 setupScreenerToggle();

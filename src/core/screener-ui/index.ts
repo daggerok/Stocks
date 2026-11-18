@@ -92,6 +92,8 @@ export type ScreenerUiHost = {
   peersChanged: () => void;
   /** the panel was collapsed or expanded (by its title or the host's toolbar button): the host updates its toggle button */
   onCollapse?: (collapsed: boolean) => void;
+  /** the whole panel was hidden or shown (by the host's 🔍 toolbar button or Clear): the host updates that button */
+  onHide?: (hidden: boolean) => void;
 };
 
 export type ScreenerUi = ReturnType<typeof createScreenerUi>;
@@ -115,9 +117,9 @@ export function numberOrNull(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-/** The localStorage keys of a panel: the screener choice, the horizons, the chip pickers and the collapsed panel are settings (the host's Clear resets them), own presets and peers are data */
-export function screenerStorageKeys(prefix: string): { screener: string; variants: string; pickers: string; collapsed: string; own: string; peers: string } {
-  return { screener: `${prefix}-screener`, variants: `${prefix}-screener-variants`, pickers: `${prefix}-screener-pickers`, collapsed: `${prefix}-screener-collapsed`, own: `${prefix}-own-presets`, peers: `${prefix}-peers` };
+/** The localStorage keys of a panel: the screener choice, the horizons, the chip pickers, the collapsed and the hidden panel are settings (the host's Clear resets them), own presets and peers are data */
+export function screenerStorageKeys(prefix: string): { screener: string; variants: string; pickers: string; collapsed: string; hidden: string; own: string; peers: string } {
+  return { screener: `${prefix}-screener`, variants: `${prefix}-screener-variants`, pickers: `${prefix}-screener-pickers`, collapsed: `${prefix}-screener-collapsed`, hidden: `${prefix}-screener-hidden`, own: `${prefix}-own-presets`, peers: `${prefix}-peers` };
 }
 
 export function createScreenerUi(host: ScreenerUiHost) {
@@ -132,6 +134,12 @@ export function createScreenerUi(host: ScreenerUiHost) {
   let collapsed = lsGetJson(SCREENER_COLLAPSED_KEY, false) === true;
   const SLIDE_MS = 200; // the body slides up and down (owner 2026-11-17: "lack of animations for screener effects for slide up slide down")
   let slideToken = 0; // a newer toggle wins over a slide still running
+  // the whole panel hidden by the host's 🔍 button, the title only collapses it (owner 2026-11-17: "hide panel for screener in full as we
+  // click on loop icon, and if I click on screener word (panel header) it should collapse/expand slideup and slide down"); a setting
+  let panelHidden = lsGetJson(keys.hidden, false) === true;
+  let hideToken = 0;
+  let panelSliding = false;
+  { const panel = document.getElementById(host.panelId); if (panel) panel.hidden = panelHidden; } // no flash of a hidden panel before the first render
   const OWN_PRESETS_KEY = keys.own; // own presets of this browser (data: Clear keeps them)
   const PEERS_KEY = keys.peers; // peer groups changed in this browser over the committed peers.json (data: Clear keeps them)
   const TYPE_FILTERS = host.types;
@@ -716,6 +724,57 @@ export function createScreenerUi(host: ScreenerUiHost) {
     return anim;
   }
 
+  function isHidden(): boolean {
+    return panelHidden;
+  }
+
+  /** Hides or shows the whole panel (never changes the filtering), saves the choice and tells the host; the panel slides up or down */
+  function setHidden(value: boolean): void {
+    const next = value === true;
+    const panel = document.getElementById(host.panelId);
+    panelHidden = next;
+    lsSet(keys.hidden, JSON.stringify(panelHidden));
+    if (host.onHide) host.onHide(panelHidden);
+    const token = ++hideToken;
+    if (!panel) return;
+    const wasShown = !panel.hidden;
+    panelSliding = false;
+    panel.hidden = false;
+    if (next === wasShown && canSlide(panel)) {
+      panelSliding = true;
+      const anim = slidePanel(panel, next);
+      anim.onfinish = () => { if (token !== hideToken) return; panelSliding = false; panel.hidden = panelHidden; };
+      return;
+    }
+    panel.hidden = panelHidden;
+  }
+
+  /** The slide of the whole panel: height, paddings, borders and its margins in the page go to 0 and back, so the page below follows smoothly */
+  function slidePanel(panel: HTMLElement, hide: boolean): Animation {
+    const cs = getComputedStyle(panel);
+    const full = { height: panel.offsetHeight + 'px', paddingTop: cs.paddingTop, paddingBottom: cs.paddingBottom, borderTopWidth: cs.borderTopWidth, borderBottomWidth: cs.borderBottomWidth, marginTop: cs.marginTop, marginBottom: cs.marginBottom, opacity: '1' };
+    const none = { height: '0px', paddingTop: '0px', paddingBottom: '0px', borderTopWidth: '0px', borderBottomWidth: '0px', marginTop: '0px', marginBottom: '0px', opacity: '0' };
+    panel.style.overflow = 'hidden';
+    const anim = panel.animate(hide ? [full, none] : [none, full], { duration: SLIDE_MS, easing: 'ease-in-out' });
+    anim.addEventListener('finish', () => { panel.style.overflow = ''; });
+    return anim;
+  }
+
+  function toggleHidden(): void {
+    setHidden(!panelHidden);
+  }
+
+  /** Clear of the hidden panel: shown again */
+  function resetHidden(): void {
+    setHidden(false);
+  }
+
+  /** The label of the host's 🔍 button: hide or show, and while hidden the presets that still filter the table */
+  function hideLabel(): string {
+    const note = panelHidden ? activeNoteText() : '';
+    return t(panelHidden ? 'screener.show' : 'screener.hide') + (note ? ' - ' + note : '');
+  }
+
   function toggleCollapsed(): void {
     setCollapsed(!collapsed);
   }
@@ -780,6 +839,8 @@ export function createScreenerUi(host: ScreenerUiHost) {
     ${scr.expanded && effectivePreset(scr.expanded) ? editorHtml(scr.expanded) + metricDatalistHtml() : ''}
     </div>`;
     panel.classList.toggle('is-collapsed', collapsed);
+    if (!panelSliding) panel.hidden = panelHidden;
+    if (panelHidden && host.onHide) host.onHide(true); // the 🔍 label names the presets that still filter
   }
 
   /** A condition for a newly picked metric: keeps what still fits, else a sensible default for its kind */
@@ -1081,7 +1142,7 @@ export function createScreenerUi(host: ScreenerUiHost) {
 
   return {
     scr, render: renderScreener, renderStatus: renderScreenerStatus, bindPanel, languageChanged, restore: restoreScreener, restorePeers, reset: resetScreener, resetVariants, resetPickers,
-    isCollapsed, setCollapsed, toggleCollapsed, resetCollapsed,
+    isCollapsed, setCollapsed, toggleCollapsed, resetCollapsed, isHidden, setHidden, toggleHidden, resetHidden, hideLabel,
     changed: screenerChanged, loadPresets, loadRepoPeers, applyHashPreset, sig: screenerSig, presetResults, screenMask, passedPresets, presetCountArray, presetBadgesHtml,
     effectivePreset, takenIds, persistOwn, applyPeers, exportPreset, importPresetText, presetShareUrl, exportPeers, importPeersText, optionHtml,
   };
