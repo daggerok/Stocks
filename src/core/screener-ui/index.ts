@@ -139,7 +139,8 @@ export function createScreenerUi(host: ScreenerUiHost) {
   let panelHidden = lsGetJson(keys.hidden, false) === true;
   let hideToken = 0;
   let panelSliding = false;
-  { const panel = document.getElementById(host.panelId); if (panel) panel.hidden = panelHidden; } // no flash of a hidden panel before the first render
+  // a class, not the hidden attribute: the host hides the panel on its own (the hub on Watchlist and detail tabs)
+  { const panel = document.getElementById(host.panelId); if (panel) panel.classList.toggle('is-hidden', panelHidden); } // no flash before the first render
   const OWN_PRESETS_KEY = keys.own; // own presets of this browser (data: Clear keeps them)
   const PEERS_KEY = keys.peers; // peer groups changed in this browser over the committed peers.json (data: Clear keeps them)
   const TYPE_FILTERS = host.types;
@@ -737,16 +738,16 @@ export function createScreenerUi(host: ScreenerUiHost) {
     if (host.onHide) host.onHide(panelHidden);
     const token = ++hideToken;
     if (!panel) return;
-    const wasShown = !panel.hidden;
+    const wasShown = !panel.classList.contains('is-hidden');
     panelSliding = false;
-    panel.hidden = false;
-    if (next === wasShown && canSlide(panel)) {
+    panel.classList.remove('is-hidden');
+    if (next === wasShown && !panel.hidden && canSlide(panel)) {
       panelSliding = true;
       const anim = slidePanel(panel, next);
-      anim.onfinish = () => { if (token !== hideToken) return; panelSliding = false; panel.hidden = panelHidden; };
+      anim.onfinish = () => { if (token !== hideToken) return; panelSliding = false; panel.classList.toggle('is-hidden', panelHidden); };
       return;
     }
-    panel.hidden = panelHidden;
+    panel.classList.toggle('is-hidden', panelHidden);
   }
 
   /** The slide of the whole panel: height, paddings, borders and its margins in the page go to 0 and back, so the page below follows smoothly */
@@ -839,7 +840,7 @@ export function createScreenerUi(host: ScreenerUiHost) {
     ${scr.expanded && effectivePreset(scr.expanded) ? editorHtml(scr.expanded) + metricDatalistHtml() : ''}
     </div>`;
     panel.classList.toggle('is-collapsed', collapsed);
-    if (!panelSliding) panel.hidden = panelHidden;
+    if (!panelSliding) panel.classList.toggle('is-hidden', panelHidden);
     if (panelHidden && host.onHide) host.onHide(true); // the 🔍 label names the presets that still filter
   }
 
