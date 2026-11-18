@@ -3841,7 +3841,7 @@ const RESET_ITEMS: ResetItem[] = [
   { id: 'screener-variants', label: 'Screener horizons (Stable growth 1Y to 10Y)', keys: [SCREENER_KEYS.variants], reset: () => screener.resetVariants() },
   { id: 'screener-pickers', label: 'Screener chip choices (benchmark, horizon, level)', keys: [SCREENER_KEYS.pickers], reset: () => screener.resetPickers() },
   { id: 'screener-collapsed', label: 'Screener panel collapsed (back to shown)', keys: [SCREENER_KEYS.collapsed], reset: () => screener.resetCollapsed() },
-  { id: 'screener-hidden', label: 'Screener panel hidden (back to shown)', keys: [SCREENER_KEYS.hidden], reset: () => screener.resetHidden() },
+  { id: 'screener-shown', label: 'Screener panel shown (back to hidden)', keys: [SCREENER_KEYS.shown], reset: () => screener.resetHidden() },
 ];
 
 /** The three items that live in one saved key: removing the key for one of them would also forget the others. */

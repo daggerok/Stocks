@@ -565,7 +565,7 @@ export const ru: Record<string, string> = {
   'ui.Screener horizons (Stable growth 1Y to 10Y)': 'Горизонты скринера («Стабильный рост» от 1 до 10 лет)',
   'ui.Screener chip choices (benchmark, horizon, level)': 'Выбор на чипах скринера (бенчмарк, горизонт, уровень)',
   'ui.Screener panel collapsed (back to shown)': 'Свёрнутая панель скринера (снова показать)',
-  'ui.Screener panel hidden (back to shown)': 'Скрытая панель скринера (снова показать)',
+  'ui.Screener panel shown (back to hidden)': 'Показанная панель скринера (снова скрыть)',
   'ui.Scroll or click to load more rows…': 'Прокрутите или щёлкните, чтобы загрузить ещё строки…',
   'ui.Scroll positions (remembered table views)': 'Позиции прокрутки (запомненные виды таблиц)',
   'ui.Search by ticker, company, sector or exchange:nyse': 'Поиск по тикеру, компании, сектору или exchange:nyse',

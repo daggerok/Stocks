@@ -565,7 +565,7 @@ export const en: Record<string, string> = {
   'ui.Screener horizons (Stable growth 1Y to 10Y)': 'Screener horizons (Stable growth 1Y to 10Y)',
   'ui.Screener chip choices (benchmark, horizon, level)': 'Screener chip choices (benchmark, horizon, level)',
   'ui.Screener panel collapsed (back to shown)': 'Screener panel collapsed (back to shown)',
-  'ui.Screener panel hidden (back to shown)': 'Screener panel hidden (back to shown)',
+  'ui.Screener panel shown (back to hidden)': 'Screener panel shown (back to hidden)',
   'ui.Scroll or click to load more rows…': 'Scroll or click to load more rows…',
   'ui.Scroll positions (remembered table views)': 'Scroll positions (remembered table views)',
   'ui.Search by ticker, company, sector or exchange:nyse': 'Search by ticker, company, sector or exchange:nyse',

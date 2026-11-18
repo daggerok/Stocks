@@ -117,9 +117,9 @@ export function numberOrNull(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-/** The localStorage keys of a panel: the screener choice, the horizons, the chip pickers, the collapsed and the hidden panel are settings (the host's Clear resets them), own presets and peers are data */
-export function screenerStorageKeys(prefix: string): { screener: string; variants: string; pickers: string; collapsed: string; hidden: string; own: string; peers: string } {
-  return { screener: `${prefix}-screener`, variants: `${prefix}-screener-variants`, pickers: `${prefix}-screener-pickers`, collapsed: `${prefix}-screener-collapsed`, hidden: `${prefix}-screener-hidden`, own: `${prefix}-own-presets`, peers: `${prefix}-peers` };
+/** The localStorage keys of a panel: the screener choice, the horizons, the chip pickers, the collapsed and the shown panel are settings (the host's Clear resets them), own presets and peers are data */
+export function screenerStorageKeys(prefix: string): { screener: string; variants: string; pickers: string; collapsed: string; shown: string; own: string; peers: string } {
+  return { screener: `${prefix}-screener`, variants: `${prefix}-screener-variants`, pickers: `${prefix}-screener-pickers`, collapsed: `${prefix}-screener-collapsed`, shown: `${prefix}-screener-shown`, own: `${prefix}-own-presets`, peers: `${prefix}-peers` };
 }
 
 export function createScreenerUi(host: ScreenerUiHost) {
@@ -135,8 +135,8 @@ export function createScreenerUi(host: ScreenerUiHost) {
   const SLIDE_MS = 200; // the body slides up and down (owner 2026-11-17: "lack of animations for screener effects for slide up slide down")
   let slideToken = 0; // a newer toggle wins over a slide still running
   // the whole panel hidden by the host's 🔍 button, the title only collapses it (owner 2026-11-17: "hide panel for screener in full as we
-  // click on loop icon, and if I click on screener word (panel header) it should collapse/expand slideup and slide down"); a setting
-  let panelHidden = lsGetJson(keys.hidden, false) === true;
+  // click on loop icon, and if I click on screener word (panel header) it should collapse/expand slideup and slide down"); a setting, hidden by default
+  let panelHidden = lsGetJson(keys.shown, false) !== true; // hidden by default (owner 2026-11-17)
   let hideToken = 0;
   let panelSliding = false;
   // a class, not the hidden attribute: the host hides the panel on its own (the hub on Watchlist and detail tabs)
@@ -729,25 +729,44 @@ export function createScreenerUi(host: ScreenerUiHost) {
     return panelHidden;
   }
 
-  /** Hides or shows the whole panel (never changes the filtering), saves the choice and tells the host; the panel slides up or down */
+  /**
+   * Hides or shows the whole panel (never changes the filtering), saves the choice and tells the host (owner 2026-11-17: "it must not be visible
+   * by default, only if I click on loop it must appear and expand", "disappearing must collapse and then disappear"): showing slides the head
+   * row in and then the body down, hiding slides the body up and then the head row away
+   */
   function setHidden(value: boolean): void {
     const next = value === true;
     const panel = document.getElementById(host.panelId);
     panelHidden = next;
-    lsSet(keys.hidden, JSON.stringify(panelHidden));
+    lsSet(keys.shown, JSON.stringify(!panelHidden));
     if (host.onHide) host.onHide(panelHidden);
     const token = ++hideToken;
     if (!panel) return;
-    const wasShown = !panel.classList.contains('is-hidden');
-    panelSliding = false;
-    panel.classList.remove('is-hidden');
-    if (next === wasShown && !panel.hidden && canSlide(panel)) {
+    const animated = !panel.hidden && canSlide(panel);
+    if (next) {
+      const body = document.getElementById('scr-body');
+      const bodyOpen = !!body && !body.hidden;
+      if (!animated || panel.classList.contains('is-hidden')) { panelSliding = false; panel.classList.add('is-hidden'); return; }
       panelSliding = true;
-      const anim = slidePanel(panel, next);
-      anim.onfinish = () => { if (token !== hideToken) return; panelSliding = false; panel.classList.toggle('is-hidden', panelHidden); };
+      const away = () => {
+        if (token !== hideToken) return;
+        slidePanel(panel, true).onfinish = () => { if (token !== hideToken) return; panelSliding = false; panel.classList.add('is-hidden'); };
+      };
+      if (bodyOpen) { setCollapsed(true); window.setTimeout(away, SLIDE_MS + 20); } else away();
       return;
     }
-    panel.classList.toggle('is-hidden', panelHidden);
+    panelSliding = false;
+    const wasHidden = panel.classList.contains('is-hidden');
+    if (wasHidden && animated) {
+      // the head row slides in first (rendered collapsed), then the body slides down
+      collapsed = true;
+      renderScreener();
+      panel.classList.remove('is-hidden');
+      slidePanel(panel, false).onfinish = () => { if (token === hideToken) setCollapsed(false); };
+      return;
+    }
+    panel.classList.remove('is-hidden');
+    setCollapsed(false);
   }
 
   /** The slide of the whole panel: height, paddings, borders and its margins in the page go to 0 and back, so the page below follows smoothly */
@@ -765,9 +784,9 @@ export function createScreenerUi(host: ScreenerUiHost) {
     setHidden(!panelHidden);
   }
 
-  /** Clear of the hidden panel: shown again */
+  /** Clear of the shown panel: hidden again, as by default */
   function resetHidden(): void {
-    setHidden(false);
+    setHidden(true);
   }
 
   /** The label of the host's 🔍 button: hide or show, and while hidden the presets that still filter the table */
