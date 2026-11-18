@@ -124,7 +124,7 @@
 /* the body is its own block formatting context, so the slide measures the same height with and without overflow:hidden (no jump at the end) */
 .scr-body:not([hidden]){display:flow-root}
 /* the whole panel hidden by the host's 🔍 button (owner 2026-11-17) */
-.scr-panel[hidden]{display:none!important}
+.scr-panel.is-hidden{display:none!important}
 .scr-seg{flex:none}
 .scr-seg button{width:4.5rem;text-align:center}
 .scr-seg-any button{width:5.75rem}
