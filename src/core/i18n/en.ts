@@ -63,6 +63,7 @@ export const en: Record<string, string> = {
   'screener.chip.tip': '{title}: {count} rows match. Click to use it, ¬ to exclude it (NOT), ▾ to show and edit its conditions',
   'screener.chip.exclude': 'Exclude (NOT)',
   'screener.chip.edit': 'Show and edit the conditions',
+  'screener.chip.hideEdit': 'Hide the conditions',
   'screener.chip.changed': 'edited',
   'screener.clear': 'Clear chips',
   'screener.clear.tip': 'Unselect every preset chip (edits are kept)',

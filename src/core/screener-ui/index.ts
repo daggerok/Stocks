@@ -644,7 +644,7 @@ export function createScreenerUi(host: ScreenerUiHost) {
       + `<button type="button" class="scr-chip-main" data-act="chip" data-id="${escapeHtml(p.id)}" aria-pressed="${mode === 'in'}" title="${escapeHtml(tip)}"><span class="scr-chip-title">${p.refine ? `<span class="scr-chip-and" title="${escapeHtml(t('screener.refine.tip'))}">${escapeHtml(t('screener.refine'))}</span> ` : ''}${mode === 'out' ? '¬ ' : ''}${escapeHtml(title)}</span>${scr.drafts[p.id] ? `<span class="scr-edited" title="${escapeHtml(t('screener.chip.changed'))}">*</span>` : ''}${count === null ? '' : `<span class="scr-count">${count.toLocaleString('en-US')}</span>`}${own && !own.exported ? `<span class="scr-dot" title="${escapeHtml(t('screener.notExported.tip'))}"></span>` : ''}</button>`
       + variantPicker(p)
       + `<button type="button" class="scr-chip-btn" data-act="not" data-id="${escapeHtml(p.id)}" aria-pressed="${mode === 'out'}" title="${escapeHtml(t('screener.chip.exclude'))}" aria-label="${escapeHtml(`${t('screener.chip.exclude')}: ${title}`)}">¬</button>`
-      + `<button type="button" class="scr-chip-btn" data-act="expand" data-id="${escapeHtml(p.id)}" aria-expanded="${open}" title="${escapeHtml(t('screener.chip.edit'))}" aria-label="${escapeHtml(`${t('screener.chip.edit')}: ${title}`)}">▾</button></span>`;
+      + `<button type="button" class="scr-chip-btn" data-act="expand" data-id="${escapeHtml(p.id)}" aria-expanded="${open}" title="${escapeHtml(t(open ? 'screener.chip.hideEdit' : 'screener.chip.edit'))}" aria-label="${escapeHtml(`${t(open ? 'screener.chip.hideEdit' : 'screener.chip.edit')}: ${title}`)}">${open ? '▴' : '▾'}</button></span>`;
   }
 
   /**
@@ -750,7 +750,7 @@ export function createScreenerUi(host: ScreenerUiHost) {
       panelSliding = true;
       const away = () => {
         if (token !== hideToken) return;
-        slidePanel(panel, true).onfinish = () => { if (token !== hideToken) return; panelSliding = false; panel.classList.add('is-hidden'); };
+        slideBox(panel, true).onfinish = () => { if (token !== hideToken) return; panelSliding = false; panel.classList.add('is-hidden'); };
       };
       if (bodyOpen) { setCollapsed(true); window.setTimeout(away, SLIDE_MS + 20); } else away();
       return;
@@ -762,15 +762,15 @@ export function createScreenerUi(host: ScreenerUiHost) {
       collapsed = true;
       renderScreener();
       panel.classList.remove('is-hidden');
-      slidePanel(panel, false).onfinish = () => { if (token === hideToken) setCollapsed(false); };
+      slideBox(panel, false).onfinish = () => { if (token === hideToken) setCollapsed(false); };
       return;
     }
     panel.classList.remove('is-hidden');
     setCollapsed(false);
   }
 
-  /** The slide of the whole panel: height, paddings, borders and its margins in the page go to 0 and back, so the page below follows smoothly */
-  function slidePanel(panel: HTMLElement, hide: boolean): Animation {
+  /** The slide of a whole box (the panel, the condition editor): height, paddings, borders and margins go to 0 and back, so the page below follows smoothly */
+  function slideBox(panel: HTMLElement, hide: boolean): Animation {
     const cs = getComputedStyle(panel);
     const full = { height: panel.offsetHeight + 'px', paddingTop: cs.paddingTop, paddingBottom: cs.paddingBottom, borderTopWidth: cs.borderTopWidth, borderBottomWidth: cs.borderBottomWidth, marginTop: cs.marginTop, marginBottom: cs.marginBottom, opacity: '1' };
     const none = { height: '0px', paddingTop: '0px', paddingBottom: '0px', borderTopWidth: '0px', borderBottomWidth: '0px', marginTop: '0px', marginBottom: '0px', opacity: '0' };
@@ -793,6 +793,30 @@ export function createScreenerUi(host: ScreenerUiHost) {
   function hideLabel(): string {
     const note = panelHidden ? activeNoteText() : '';
     return t(panelHidden ? 'screener.show' : 'screener.hide') + (note ? ' - ' + note : '');
+  }
+
+  /**
+   * ▾ on a chip opens its condition editor with a slide down, ▴ closes it with a slide up (owner 2026-11-19: "show and edit the conditions should
+   * be also expandable and collapsable when I click on arrow down/up"); ▾ on another chip while one is open switches the editor without a slide
+   */
+  function toggleEditor(id: string): void {
+    const current = document.querySelector('#' + host.panelId + ' .scr-editor[data-editor]');
+    if (scr.expanded === id) {
+      if (current instanceof HTMLElement && canSlide(current)) {
+        const button = document.querySelector('#' + host.panelId + ' .scr-chip[data-chip="' + id + '"] [data-act="expand"]');
+        if (button) { button.textContent = '▾'; button.setAttribute('aria-expanded', 'false'); }
+        slideBox(current, true).onfinish = () => { if (scr.expanded === id) { scr.expanded = null; screenerChanged(); } };
+        return;
+      }
+      scr.expanded = null;
+      screenerChanged();
+      return;
+    }
+    const wasOpen = !!current;
+    scr.expanded = id;
+    screenerChanged();
+    const next = document.querySelector('#' + host.panelId + ' .scr-editor[data-editor]');
+    if (!wasOpen && next instanceof HTMLElement && canSlide(next)) slideBox(next, false);
   }
 
   function toggleCollapsed(): void {
@@ -972,7 +996,7 @@ export function createScreenerUi(host: ScreenerUiHost) {
     else if (act === 'collapse') toggleCollapsed();
     else if (act === 'chip') toggleChip(id, 'in');
     else if (act === 'not') toggleChip(id, 'out');
-    else if (act === 'expand') { scr.expanded = scr.expanded === id ? null : id; screenerChanged(); }
+    else if (act === 'expand') toggleEditor(id);
     else if (act === 'clear') { scr.chips = {}; screenerChanged(); }
     else if (act === 'peers') { scr.peersOpen = !scr.peersOpen; scr.peersMessage = ''; renderScreener(); }
     else if (act === 'peer-close') { scr.peersOpen = false; renderScreener(); }
