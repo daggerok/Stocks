@@ -63,6 +63,7 @@ export const ru: Record<string, string> = {
   'screener.chip.tip': '{title}: подходят {count}. Клик - применить, ¬ - исключить (НЕ), ▾ - показать и изменить условия',
   'screener.chip.exclude': 'Исключить (НЕ)',
   'screener.chip.edit': 'Показать и изменить условия',
+  'screener.chip.hideEdit': 'Скрыть условия',
   'screener.chip.changed': 'изменён',
   'screener.clear': 'Снять выбор',
   'screener.clear.tip': 'Снять выбор со всех пресетов (правки сохраняются)',
