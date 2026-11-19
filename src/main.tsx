@@ -199,7 +199,7 @@ function buildColumns(): Col[] {
   [['revenueTtm', 'money'], ['netIncomeTtm', 'money'], ['fcfTtm', 'money'], ['peg', 'x'], ['pegHist', 'x'], ['pegGrowthSource', 'text'], ['forwardToTtmPe', 'x'],
     ['epsGrowthNextYearEst', 'pct'], ['epsGrowth5yEst', 'pct'], ['epsRevision30d', 'pct'], ['pePct5y', 'pct'], ['pFcfPct5y', 'pct']].forEach(([key, fmt]) => reg(key, 'Valuation', fmt as CellFormat));
   [['operatingMargin', 'pct'], ['marginNote', 'text'], ['grossMarginSlope3y', 'pp'], ['operatingMarginSlope3y', 'pp'], ['cfoToNi', 'x'], ['fcfToNi', 'x'], ['niVolatility5y', 'pp'], ['fcfVolatility5y', 'pp'],
-    ['capexToCfo', 'pct'], ['capexToRevenue', 'pct'], ['capexToRevenueDelta3y', 'pp'], ['epsNiGrowthGap3y', 'pp'], ['ffoApprox', 'money']].forEach(([key, fmt]) => reg(key, 'Quality', fmt as CellFormat));
+    ['capexToCfo', 'pct'], ['capexToRevenue', 'pct'], ['capexToRevenueDelta3y', 'pp'], ['epsNiGrowthGap3y', 'pp'], ['sharesChange3y', 'pct'], ['sharesChange5y', 'pct'], ['ffoApprox', 'money']].forEach(([key, fmt]) => reg(key, 'Quality', fmt as CellFormat));
   [['interestCoverage', 'x'], ['interestCoverageNote', 'text'], ['cashRunwayMonths', 'int'], ['altmanZ', 'x'], ['altmanVariant', 'text'], ['piotroskiF', 'int'], ['fcfNegativeYears', 'int'],
     ['balanceYoyMaxChange', 'pct'], ['balanceYoyMaxLine', 'text']].forEach(([key, fmt]) => reg(key, 'Safety', fmt as CellFormat));
   [['dividendRate', 'price'], ['ffoPayoutApprox', 'pct'], ['yieldVsAvg5y', 'x'], ['dividendStreak', 'int'], ['dividendCut10y', 'text'], ['dividendIrregular', 'text'], ['paymentsPerYear', 'int'], ['payFrequency', 'text']].forEach(([key, fmt]) => reg(key, 'Dividends', fmt as CellFormat));
