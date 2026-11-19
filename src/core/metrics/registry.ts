@@ -1116,6 +1116,45 @@ const FOREIGN: MetricDef[] = [
     },
   }),
   def({
+    id: 'businessType', name: { en: 'Business type', ru: 'Тип бизнеса' }, formula: 'from the Yahoo industry: REIT - ... -> reit, Utilities - Regulated ... or Diversified -> utility, Banks - ... -> bank, Insurance - ... -> insurer, Oil & Gas Midstream -> midstream, else regular (set by the screener row adapter)',
+    unit: 'category', basis: 'meta', source: 'computed', direction: 'neutral',
+    short: { en: 'REIT, regulated utility, bank, insurer, midstream or a regular company', ru: 'REIT, регулируемая коммунальная, банк, страховщик, мидстрим или обычная компания' },
+    guide: {
+      en: 'Some businesses look bad on the generic metrics by design: a REIT pays out 90% and grows with new shares, a regulated utility spends more than its operating cash on capex, a bank lives on debt. For such a type a condition on a metric that does not apply (P/E of a REIT, free cash flow of a utility, debt of a bank) is skipped instead of failed, and its table cell is grey with the reason in the tooltip. BDCs are not told apart yet (no SIC code in the feed). See the Guide section Sectors: what to use and what to ignore',
+      ru: 'Некоторые бизнесы плохо выглядят на общих метриках по своей природе: REIT раздаёт 90% и растёт на новые акции, регулируемая коммунальная компания тратит на капзатраты больше операционного потока, банк живёт на долг. Для такого типа условие на неприменимую метрику (P/E у REIT, свободный поток у коммунальной, долг у банка) пропускается, а не проваливается, и ячейка в таблице серая, причина в подсказке. BDC пока не выделяются (в фиде нет кода SIC). См. раздел Guide «Отрасли: что смотреть и что не смотреть»',
+    },
+  }),
+  def({
+    id: 'dilutionOkStrict', name: { en: 'No dilution: strict', ru: 'Без размывания: строго' }, formula: 'true when the share count did not grow (change 0 or below)',
+    unit: 'flag', basis: 'fy', source: 'computed', direction: 'neutral',
+    nullWhen: { en: 'sharesChange5y and sharesChange3y are both empty', ru: 'sharesChange5y и sharesChange3y оба пусты' },
+    short: { en: 'No dilution: strict: the share count change is acceptable', ru: 'Без размывания: строго: изменение числа акций допустимо' },
+    guide: {
+      en: 'true when the share count did not grow (change 0 or below). The share count change is sharesChange5y, else sharesChange3y; per-share growth is epsGrowth or dividendGrowth of the same horizon. The No dilution refinement picks one of the three flags. See the Guide section Sectors: what to use and what to ignore',
+      ru: 'true, когда число акций не выросло (изменение 0 или ниже). Изменение числа акций - sharesChange5y, иначе sharesChange3y; рост на акцию - epsGrowth или dividendGrowth того же горизонта. Уточнение «Без размывания» выбирает один из трёх флагов. См. раздел Guide «Отрасли: что смотреть и что не смотреть»',
+    },
+  }),
+  def({
+    id: 'dilutionOkPerShare', name: { en: 'No dilution: per share', ru: 'Без размывания: на акцию' }, formula: 'true when the share count did not grow, or EPS or dividend per share grew faster than it',
+    unit: 'flag', basis: 'fy', source: 'computed', direction: 'neutral',
+    nullWhen: { en: 'sharesChange5y and sharesChange3y are both empty', ru: 'sharesChange5y и sharesChange3y оба пусты' },
+    short: { en: 'No dilution: per share: the share count change is acceptable', ru: 'Без размывания: на акцию: изменение числа акций допустимо' },
+    guide: {
+      en: 'true when the share count did not grow, or EPS or dividend per share grew faster than it. The share count change is sharesChange5y, else sharesChange3y; per-share growth is epsGrowth or dividendGrowth of the same horizon. The No dilution refinement picks one of the three flags. See the Guide section Sectors: what to use and what to ignore',
+      ru: 'true, когда число акций не выросло или EPS либо дивиденд на акцию росли быстрее него. Изменение числа акций - sharesChange5y, иначе sharesChange3y; рост на акцию - epsGrowth или dividendGrowth того же горизонта. Уточнение «Без размывания» выбирает один из трёх флагов. См. раздел Guide «Отрасли: что смотреть и что не смотреть»',
+    },
+  }),
+  def({
+    id: 'dilutionOkSector', name: { en: 'No dilution: by sector', ru: 'Без размывания: по отрасли' }, formula: 'true when the share count grew at most 1% a year, or at most the limit of the business type (REIT 4, regulated utility 3, midstream 2) while EPS or dividend per share grew faster',
+    unit: 'flag', basis: 'fy', source: 'computed', direction: 'neutral',
+    nullWhen: { en: 'sharesChange5y and sharesChange3y are both empty', ru: 'sharesChange5y и sharesChange3y оба пусты' },
+    short: { en: 'No dilution: by sector: the share count change is acceptable', ru: 'Без размывания: по отрасли: изменение числа акций допустимо' },
+    guide: {
+      en: 'true when the share count grew at most 1% a year, or at most the limit of the business type (REIT 4, regulated utility 3, midstream 2) while EPS or dividend per share grew faster. The share count change is sharesChange5y, else sharesChange3y; per-share growth is epsGrowth or dividendGrowth of the same horizon. The No dilution refinement picks one of the three flags. See the Guide section Sectors: what to use and what to ignore',
+      ru: 'true, когда число акций росло не больше 1% в год или не больше предела типа бизнеса (REIT 4, регулируемая коммунальная 3, мидстрим 2), а EPS или дивиденд на акцию росли быстрее. Изменение числа акций - sharesChange5y, иначе sharesChange3y; рост на акцию - epsGrowth или dividendGrowth того же горизонта. Уточнение «Без размывания» выбирает один из трёх флагов. См. раздел Guide «Отрасли: что смотреть и что не смотреть»',
+    },
+  }),
+  def({
     id: 'isReit', name: { en: 'REIT', ru: 'REIT' }, formula: 'the Yahoo industry starts with REIT (set by the screener row adapter)',
     unit: 'flag', basis: 'meta', source: 'feed', direction: 'neutral',
     short: { en: 'Real estate investment trust by its Yahoo industry', ru: 'Инвестиционный фонд недвижимости по отрасли Yahoo' },

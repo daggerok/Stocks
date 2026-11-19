@@ -11,6 +11,7 @@
  * compiled classes (etfClasses() over etf-classes.json and qdi.json, benchmark plan sections 5 and 6) isGeared, indexFamily,
  * indexVariant, the normalized sector or theme as industry and the qualified dividend keys
  */
+import { businessType, dilutionFlags } from './business';
 import type { Text } from '../metrics/types';
 import type { ScreenerRow } from './types';
 
@@ -36,6 +37,10 @@ export function stockRow(company: Feed, mineList?: ReadonlySet<string> | readonl
   const ticker = normalizeTicker(company.ticker);
   const industry = text(company.industry);
   const metrics: Record<string, unknown> = { ...metricsOf(company), isReit: isReitIndustry(industry) }; // the archetype rules judge REITs by FFO growth (owner answer N22)
+  // the business type skips the conditions that do not apply to it and sets the limits of the dilution flags (business.ts)
+  const business = businessType(industry);
+  metrics.businessType = business;
+  Object.assign(metrics, dilutionFlags(metrics, business));
   return { ticker, type: 'stock', sector: text(company.sector), industry, isMine: mine(company, ticker, mineList), size: num(metrics.marketCap), metrics };
 }
 

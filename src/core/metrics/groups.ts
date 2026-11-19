@@ -22,7 +22,7 @@ put('valuation', ['marketCap', 'enterpriseValue', 'revenueTtm', 'netIncomeTtm', 
 put('quality', ['roic', 'fcfToEbitda', 'operatingMargin', 'marginNote', 'grossMarginSlope3y', 'operatingMarginSlope3y', 'cfoToNi', 'fcfToNi', 'niVolatility5y', 'fcfVolatility5y', 'capexToCfo', 'capexToRevenue', 'capexToRevenueDelta3y', 'ffoApprox']);
 put('safety', ['currentRatio', 'quickRatio', 'debtToEquity', 'netDebtToEbitda', 'interestCoverage', 'interestCoverageNote', 'cashRunwayMonths', 'altmanZ', 'altmanVariant', 'piotroskiF', 'beta']);
 put('dividends', ['dividendYield', 'dividendRate', 'payoutRatio', 'fcfPayout', 'ffoPayoutApprox', 'yieldVsAvg5y']);
-put('quality', ['epsNiGrowthGap3y', 'sharesChange3y', 'sharesChange5y']);
+put('quality', ['epsNiGrowthGap3y', 'sharesChange3y', 'sharesChange5y', 'dilutionOkStrict', 'dilutionOkPerShare', 'dilutionOkSector']);
 put('safety', ['fcfNegativeYears', 'balanceYoyMaxChange', 'balanceYoyMaxLine']);
 put('dividends', ['dividendStreak', 'dividendCut10y', 'dividendIrregular']);
 // benchmark plan 4.4: the ETF benchmark metrics are price metrics (the etf fallback would take them), the payment and tax keys dividends
@@ -31,7 +31,7 @@ put('dividends', ['paymentsPerYear', 'payFrequency', 'qualifiedDividendPct', 'qu
 put('fields', ['indexFamily', 'indexVariant', 'isGeared']);
 put('growth', ['revenueGrowthVsTam']);
 put('scores', ['scoreCheap', 'scoreQuality', 'scoreSafety', 'scoreDividend', 'scoreEntry', 'statusScore', 'archetype', 'status', 'why', 'flags', 'flagCount']);
-put('fields', ['ticker', 'type', 'sector', 'industry', 'isMine', 'size', 'isAdr', 'country', 'ttmIsAnnual', 'isReit']);
+put('fields', ['ticker', 'type', 'sector', 'industry', 'isMine', 'size', 'isAdr', 'country', 'ttmIsAnnual', 'isReit', 'businessType']);
 
 export function metricGroup(def: MetricDef): MetricGroup {
   const listed = LISTS[def.id];
