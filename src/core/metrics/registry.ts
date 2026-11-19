@@ -1349,6 +1349,28 @@ const SCORE_INPUTS: MetricDef[] = [
     },
   }),
   def({
+    id: 'sharesChange3y', name: { en: 'Share count change 3Y', ru: 'Изменение числа акций за 3 лет' }, formula: 'CAGR of diluted weighted shares over 3 fiscal years, % (SEC 10-K, split restated; a year more than 25% off net income / diluted EPS takes that implied count)',
+    unit: 'percent', basis: 'fy', source: 'sec', direction: 'lower-is-better', thresholds: { good: 0, bad: 3 },
+    sectorNotes: { en: 'REITs, BDCs and regulated utilities issue shares by design (REITs 2-5% a year, utilities 1-3%); judge them by per-share growth. See the Guide section Sectors: what to use and what to ignore', ru: 'REIT, BDC и регулируемые коммунальные компании выпускают акции по своей природе (REIT 2-5% в год, коммунальные 1-3%); оценивайте их по росту на акцию. См. раздел Guide «Отрасли: что смотреть и что не смотреть»' },
+    nullWhen: { en: 'a fiscal year of the 3 is missing, or the count moves more than 2x in one year without net income and EPS to confirm it', ru: 'нет одного из 3 финансовых лет или число акций меняется больше чем в 2 раза за год, а прибыль и EPS этого не подтверждают' },
+    short: { en: 'Yearly change of the share count: above 0 dilution, below 0 buybacks', ru: 'Годовое изменение числа акций: выше 0 - размытие, ниже 0 - выкуп' },
+    guide: {
+      en: 'How fast the number of shares changed a year over 3 fiscal years. Above 0 the company issued more shares than it bought back (stock pay, capital raises, stock-paid deals): your slice of the company shrinks by that much a year. Below 0 it bought shares back and every remaining share owns more. For a regular company 0 or below is good and above 1-2% a year is a warning; REITs, BDCs and regulated utilities fund growth with new shares, so judge them by whether EPS and dividend per share grow faster than the share count',
+      ru: 'Насколько быстро менялось число акций в год за 3 финансовых лет. Выше 0 - компания выпустила больше акций, чем выкупила (выплаты сотрудникам акциями, допэмиссии, сделки за акции): ваша доля в компании каждый год уменьшается на столько. Ниже 0 - компания выкупала акции, и каждая оставшаяся акция владеет большей частью. Для обычной компании хорошо 0 и ниже, выше 1-2% в год - тревожный знак; REIT, BDC и регулируемые коммунальные компании финансируют рост новыми акциями, поэтому оценивайте их по тому, растут ли EPS и дивиденд на акцию быстрее числа акций',
+    },
+  }),
+  def({
+    id: 'sharesChange5y', name: { en: 'Share count change 5Y', ru: 'Изменение числа акций за 5 лет' }, formula: 'CAGR of diluted weighted shares over 5 fiscal years, % (SEC 10-K, split restated; a year more than 25% off net income / diluted EPS takes that implied count)',
+    unit: 'percent', basis: 'fy', source: 'sec', direction: 'lower-is-better', thresholds: { good: 0, bad: 3 },
+    sectorNotes: { en: 'REITs, BDCs and regulated utilities issue shares by design (REITs 2-5% a year, utilities 1-3%); judge them by per-share growth. See the Guide section Sectors: what to use and what to ignore', ru: 'REIT, BDC и регулируемые коммунальные компании выпускают акции по своей природе (REIT 2-5% в год, коммунальные 1-3%); оценивайте их по росту на акцию. См. раздел Guide «Отрасли: что смотреть и что не смотреть»' },
+    nullWhen: { en: 'a fiscal year of the 5 is missing, or the count moves more than 2x in one year without net income and EPS to confirm it', ru: 'нет одного из 5 финансовых лет или число акций меняется больше чем в 2 раза за год, а прибыль и EPS этого не подтверждают' },
+    short: { en: 'Yearly change of the share count: above 0 dilution, below 0 buybacks', ru: 'Годовое изменение числа акций: выше 0 - размытие, ниже 0 - выкуп' },
+    guide: {
+      en: 'How fast the number of shares changed a year over 5 fiscal years. Above 0 the company issued more shares than it bought back (stock pay, capital raises, stock-paid deals): your slice of the company shrinks by that much a year. Below 0 it bought shares back and every remaining share owns more. For a regular company 0 or below is good and above 1-2% a year is a warning; REITs, BDCs and regulated utilities fund growth with new shares, so judge them by whether EPS and dividend per share grow faster than the share count',
+      ru: 'Насколько быстро менялось число акций в год за 5 финансовых лет. Выше 0 - компания выпустила больше акций, чем выкупила (выплаты сотрудникам акциями, допэмиссии, сделки за акции): ваша доля в компании каждый год уменьшается на столько. Ниже 0 - компания выкупала акции, и каждая оставшаяся акция владеет большей частью. Для обычной компании хорошо 0 и ниже, выше 1-2% в год - тревожный знак; REIT, BDC и регулируемые коммунальные компании финансируют рост новыми акциями, поэтому оценивайте их по тому, растут ли EPS и дивиденд на акцию быстрее числа акций',
+    },
+  }),
+  def({
     id: 'balanceYoyMaxChange', name: { en: 'Largest balance line change YoY', ru: 'Крупнейшее изменение строки баланса за год' }, formula: 'largest by absolute value of (line FY0 / line FY-1 - 1) × 100 over cash, receivables, current assets, assets, current liabilities, liabilities, debt, equity; a line counts when FY-1 is at least 10% of FY-1 assets',
     unit: 'percent', basis: 'fy', source: 'sec', direction: 'neutral',
     nullWhen: { en: 'fewer than two fiscal years or no material line', ru: 'меньше двух финансовых лет или нет существенной строки' },

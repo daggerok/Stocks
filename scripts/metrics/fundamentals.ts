@@ -21,6 +21,8 @@ export const FUNDAMENTAL_METRIC_KEYS = [
   'capexToRevenueDelta3y', 'niGrowth3y', 'niGrowth5y', 'ffoApprox', 'ffoPayoutApprox', 'ffoGrowth3y',
   // inputs of the stage 5 stop factors and flags (src/core/scoring)
   'fcfNegativeYears', 'cfoGrowth3y', 'epsNiGrowthGap3y', 'balanceYoyMaxChange', 'balanceYoyMaxLine',
+  // share count change per year (owner 2026-11-19: dilution filter)
+  'sharesChange3y', 'sharesChange5y',
   // why the revenue-based ratios are empty (withRevenueSanity)
   'marginNote',
 ] as const;
@@ -129,6 +131,52 @@ function cagr(v: View, key: string, back: number): Num {
   const now = v.fy(key, 0);
   const then = v.fy(key, back);
   return pos(now) && pos(then) ? r2((Math.pow(now / then, 1 / back) - 1) * 100) : null;
+}
+
+/**
+ * Diluted weighted shares of a fiscal year (split restated by the SEC layer), checked against net income / diluted EPS (both in the
+ * filing currency): a count more than 25% off the implied one (a filing in thousands or millions, a split the layer missed) is
+ * replaced by the implied count; the check needs |EPS| >= 0.1 so a rounded small EPS does not distort it
+ */
+export function sharesOfYear(v: View, back: number): Num {
+  const shares = v.fy('sharesDiluted', back);
+  const ni = v.fy('netIncome', back);
+  const eps = v.fy('epsDiluted', back);
+  const implied = fin(ni) && fin(eps) && Math.abs(eps) >= 0.1 && ni / eps > 0 ? ni / eps : null;
+  if (pos(shares)) return implied !== null && Math.abs(shares / implied - 1) > 0.25 ? implied : shares;
+  return implied;
+}
+
+/** Split ratios a share count jump is read as (forward and reverse), when the jump is within 3% of one */
+const SPLIT_RATIOS = [2, 3, 4, 5, 6, 8, 10, 15, 20, 25, 30, 40, 50];
+function splitRatio(step: number): number | null {
+  for (const r of SPLIT_RATIOS) {
+    if (Math.abs(step / r - 1) <= 0.03) return r;
+    if (Math.abs(step * r - 1) <= 0.03) return 1 / r;
+  }
+  return null;
+}
+
+/**
+ * Yearly change of the share count over `back` fiscal years in %: positive = dilution (new shares), negative = buybacks; null when a
+ * year is missing or one year moves more than 2x either way without an explanation. A jump within 3% of a split ratio (2, 3, 4, 5,
+ * 10, 20 ...; older filings the SEC layer did not restate, e.g. AVGO 10:1 in 2024) restates the older years by that ratio
+ */
+export function sharesChange(v: View, back: number): Num {
+  const counts: number[] = [];
+  for (let b = 0; b <= back; b += 1) {
+    const x = sharesOfYear(v, b);
+    if (!pos(x)) return null;
+    counts.push(x);
+  }
+  for (let i = 0; i < back; i += 1) {
+    const step = counts[i] / counts[i + 1];
+    if (step <= 2 && step >= 0.5) continue;
+    const r = splitRatio(step);
+    if (r === null) return null;
+    for (let j = i + 1; j <= back; j += 1) counts[j] *= r;
+  }
+  return r2((Math.pow(counts[0] / counts[back], 1 / back) - 1) * 100);
 }
 
 /** Slope of a margin over the latest 4 fiscal years, percentage points per year */
@@ -299,6 +347,8 @@ export function fundamentalMetrics(sec: SecFundamentals | null, ctx: Fundamental
   out.cfoGrowth3y = cagr(v, 'cfo', 3);
   const epsCagr = cagr(v, 'epsDiluted', 3);
   out.epsNiGrowthGap3y = epsCagr !== null && out.niGrowth3y !== null ? r2(epsCagr - (out.niGrowth3y as number)) : null;
+  out.sharesChange3y = sharesChange(v, 3);
+  out.sharesChange5y = sharesChange(v, 5);
   const jump = balanceJump(v);
   out.balanceYoyMaxChange = jump ? jump.change : null;
   out.balanceYoyMaxLine = jump ? jump.line : null;

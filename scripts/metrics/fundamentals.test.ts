@@ -105,6 +105,25 @@ describe('stop factor and flag inputs', () => {
     expect([m.niGrowth3y, m.cfoGrowth3y, m.epsNiGrowthGap3y]).toEqual([10, 0, 10]);
   });
 
+  test('share count change per year: dilution positive, buybacks negative, unit errors fixed, unexplained jumps empty', () => {
+    // 100 -> 110 diluted shares over 3 years, NI / EPS confirms every year: +3.23% a year
+    const grow: Row[] = [110, 106, 103, 100].map((s) => ({ sharesDiluted: s, netIncome: s * 2, epsDiluted: 2 }));
+    expect(fundamentalMetrics(sec(grow, {}), CTX).sharesChange3y).toBe(3.23);
+    expect(fundamentalMetrics(sec(grow, {}), CTX).sharesChange5y).toBeNull(); // only 4 years
+    // one year filed in millions (0.000106 of the real count): NI / EPS gives 106 back
+    const unit: Row[] = grow.map((r, i) => (i === 1 ? { ...r, sharesDiluted: 0.000106 } : r));
+    expect(fundamentalMetrics(sec(unit, {}), CTX).sharesChange3y).toBe(3.23);
+    // buybacks 100 -> 90 without EPS: -3.45% a year
+    const buy: Row[] = [90, 94, 97, 100].map((s) => ({ sharesDiluted: s }));
+    expect(fundamentalMetrics(sec(buy, {}), CTX).sharesChange3y).toBe(-3.45);
+    // a 3x jump nothing can confirm stays empty, never a guess
+    const jump: Row[] = [270, 100, 100, 100].map((s) => ({ sharesDiluted: s }));
+    expect(fundamentalMetrics(sec(jump, {}), CTX).sharesChange3y).toBeNull();
+    // a 10:1 split the older filings were not restated for (AVGO 2024): 4232 after, 429 and 421 before -> read as 4290 and 4210
+    const split: Row[] = [4232, 429, 421, 419].map((s) => ({ sharesDiluted: s }));
+    expect(fundamentalMetrics(sec(split, {}), CTX).sharesChange3y).toBe(0.33);
+  });
+
   test('the largest material year-over-year balance change and its line', () => {
     const prev: Row = { assets: 1000, cash: 50, receivables: 200, debt: 300, equity: 400 };
     // cash +300% is below 10% of the assets of the year before, so the debt jump (+100%) wins
