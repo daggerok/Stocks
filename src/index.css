@@ -584,3 +584,7 @@
 @media (prefers-reduced-motion:reduce){.am-panel{transition:none}}
 .am-upload.dz-active{border-color:#3b82f6;background:#eff6ff}
 .dark .am-upload.dz-active{background:#1e293b}
+
+/* a metric that does not apply to the business type of the row (src/core/screener/business.ts): grey, reason in the tooltip */
+#table-scroll td.cell-na{color:#94a3b8;font-style:italic}
+.dark #table-scroll td.cell-na{color:#64748b}

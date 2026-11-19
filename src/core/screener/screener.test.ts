@@ -133,9 +133,9 @@ const BY_ID: Record<string, Preset> = {};
 PRESETS.forEach((p) => { BY_ID[p.id] = p; });
 
 describe('presets', () => {
-  test('the 31 base presets (ten of them refinements) validate against the registry; a broken preset does not', () => {
-    expect(PRESETS.map((p) => p.id)).toEqual(['aum-floor', 'beats-benchmark', 'best-in-sector', 'cashflow-machines', 'cheap-earnings', 'dividend-growth', 'etf-on-sale', 'gold', 'growth-no-profit', 'high-debt', 'high-income', 'index-family', 'low-cost', 'mine', 'monthly-grower', 'monthly-pay', 'pays-dividend', 'positive-1y', 'price-growth', 'pullback', 'qualified-dividends', 'quality-growth', 'quality-on-sale', 'rising-dividend', 'rotation-dip', 'stable-dividend', 'stable-growth', 'steady-income', 'undervalued', 'volatile-swings', 'yield-above-benchmark']);
-    expect(PRESETS.filter((p) => p.refine).map((p) => p.id)).toEqual(['aum-floor', 'index-family', 'low-cost', 'monthly-pay', 'pays-dividend', 'positive-1y', 'pullback', 'qualified-dividends', 'rising-dividend', 'yield-above-benchmark']);
+  test('the 32 base presets (eleven of them refinements) validate against the registry; a broken preset does not', () => {
+    expect(PRESETS.map((p) => p.id)).toEqual(['aum-floor', 'beats-benchmark', 'best-in-sector', 'cashflow-machines', 'cheap-earnings', 'dividend-growth', 'etf-on-sale', 'gold', 'growth-no-profit', 'high-debt', 'high-income', 'index-family', 'low-cost', 'mine', 'monthly-grower', 'monthly-pay', 'no-dilution', 'pays-dividend', 'positive-1y', 'price-growth', 'pullback', 'qualified-dividends', 'quality-growth', 'quality-on-sale', 'rising-dividend', 'rotation-dip', 'stable-dividend', 'stable-growth', 'steady-income', 'undervalued', 'volatile-swings', 'yield-above-benchmark']);
+    expect(PRESETS.filter((p) => p.refine).map((p) => p.id)).toEqual(['aum-floor', 'index-family', 'low-cost', 'monthly-pay', 'no-dilution', 'pays-dividend', 'positive-1y', 'pullback', 'qualified-dividends', 'rising-dividend', 'yield-above-benchmark']);
     expect(validatePreset({ ...BY_ID['pays-dividend'], refine: 'yes' } as unknown as Preset)).toEqual(['pays-dividend: refine must be true or false']);
     expect(PRESETS.flatMap((p) => validatePreset(p))).toEqual([]);
     const broken = preset([
@@ -253,7 +253,7 @@ describe('expressions and intersections', () => {
 
 describe('rows', () => {
   test('stock and ETF rows: size from marketCap or aumValue, isMine from the row flag or the owner list, no metrics -> empty', () => {
-    expect(stockRow({ ticker: 'brk.b', sector: 'Financial Services', industry: '', metrics: { marketCap: 1e12, pe: 20 } }, ['BRK-B'])).toEqual({ ticker: 'BRK-B', type: 'stock', sector: 'Financial Services', industry: null, isMine: true, size: 1e12, metrics: { marketCap: 1e12, pe: 20, isReit: false } });
+    expect(stockRow({ ticker: 'brk.b', sector: 'Financial Services', industry: '', metrics: { marketCap: 1e12, pe: 20 } }, ['BRK-B'])).toEqual({ ticker: 'BRK-B', type: 'stock', sector: 'Financial Services', industry: null, isMine: true, size: 1e12, metrics: { marketCap: 1e12, pe: 20, isReit: false, businessType: 'regular', dilutionOkStrict: null, dilutionOkPerShare: null, dilutionOkSector: null } });
     expect(stockRow({ ticker: 'O', industry: 'REIT - Retail', metrics: {} }).metrics.isReit).toBe(true); // owner answer N22
     expect(stockRow({ ticker: 'X', industry: 'Real Estate Services', metrics: {} }).metrics.isReit).toBe(false);
     // metrics as published: no tr1y stands in for perf1y (owner answer N2); the fund category is the ETF sector (owner answer N4)

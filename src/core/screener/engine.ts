@@ -8,6 +8,7 @@
  * the peers scope of a ticker without a peer group compares it with its industry (plan stage 6); the benchmark scope compares a
  * row's value minus the value of a named ticker of the universe (benchmark plan 4.1)
  */
+import { isNotApplicable } from './business';
 import { createRegistry, isNumericMetric, Registry } from '../metrics';
 import { Condition, Expression, HISTORY_METRICS, PeerGroups, Preset, RELATIVE_SCOPES, ScreenerRow, Scope } from './types';
 
@@ -187,6 +188,7 @@ export function evaluateCondition(universe: Universe, condition: Condition): Con
   let passed = 0;
   for (let i = 0; i < rows.length; i += 1) {
     if (def && def.appliesTo.indexOf(rows[i].type) < 0) { states[i] = SKIP; continue; }
+    if (isNotApplicable(rows[i].metrics.businessType as string, condition.metric)) { states[i] = SKIP; continue; } // FCF of a bank, P/E of a REIT (business.ts)
     if (status !== 'ok') { states[i] = onMissing; continue; }
     const own = table ? table[i] : fieldValue(rows[i], condition.metric);
     if (isMissing(own)) { states[i] = onMissing; continue; }

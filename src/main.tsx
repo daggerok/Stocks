@@ -2,7 +2,7 @@
 import { format, getLocale, Params, pick, setLocale, t } from './core/i18n';
 import { groupMetrics, isNumericMetric, MetricDef, REGISTRY } from './core/metrics';
 import {
-  createUniverse, normalizeTicker, isReitIndustry, stockRow, Universe, feedMineSet,
+  createUniverse, normalizeTicker, isReitIndustry, stockRow, Universe, feedMineSet, businessType, dilutionFlags, isNotApplicable, notApplicableReason, BUSINESS_RULES,
   cleanTickers, groupName, groupsOf, peersKey, setGroup,
 } from './core/screener';
 import { createScreenerUi, numberInput, numberOrNull, screenerStorageKeys } from './core/screener-ui';
@@ -199,7 +199,7 @@ function buildColumns(): Col[] {
   [['revenueTtm', 'money'], ['netIncomeTtm', 'money'], ['fcfTtm', 'money'], ['peg', 'x'], ['pegHist', 'x'], ['pegGrowthSource', 'text'], ['forwardToTtmPe', 'x'],
     ['epsGrowthNextYearEst', 'pct'], ['epsGrowth5yEst', 'pct'], ['epsRevision30d', 'pct'], ['pePct5y', 'pct'], ['pFcfPct5y', 'pct']].forEach(([key, fmt]) => reg(key, 'Valuation', fmt as CellFormat));
   [['operatingMargin', 'pct'], ['marginNote', 'text'], ['grossMarginSlope3y', 'pp'], ['operatingMarginSlope3y', 'pp'], ['cfoToNi', 'x'], ['fcfToNi', 'x'], ['niVolatility5y', 'pp'], ['fcfVolatility5y', 'pp'],
-    ['capexToCfo', 'pct'], ['capexToRevenue', 'pct'], ['capexToRevenueDelta3y', 'pp'], ['epsNiGrowthGap3y', 'pp'], ['sharesChange3y', 'pct'], ['sharesChange5y', 'pct'], ['ffoApprox', 'money']].forEach(([key, fmt]) => reg(key, 'Quality', fmt as CellFormat));
+    ['capexToCfo', 'pct'], ['capexToRevenue', 'pct'], ['capexToRevenueDelta3y', 'pp'], ['epsNiGrowthGap3y', 'pp'], ['sharesChange3y', 'pct'], ['sharesChange5y', 'pct'], ['dilutionOkSector', 'text'], ['dilutionOkPerShare', 'text'], ['dilutionOkStrict', 'text'], ['ffoApprox', 'money']].forEach(([key, fmt]) => reg(key, 'Quality', fmt as CellFormat));
   [['interestCoverage', 'x'], ['interestCoverageNote', 'text'], ['cashRunwayMonths', 'int'], ['altmanZ', 'x'], ['altmanVariant', 'text'], ['piotroskiF', 'int'], ['fcfNegativeYears', 'int'],
     ['balanceYoyMaxChange', 'pct'], ['balanceYoyMaxLine', 'text']].forEach(([key, fmt]) => reg(key, 'Safety', fmt as CellFormat));
   [['dividendRate', 'price'], ['ffoPayoutApprox', 'pct'], ['yieldVsAvg5y', 'x'], ['dividendStreak', 'int'], ['dividendCut10y', 'text'], ['dividendIrregular', 'text'], ['paymentsPerYear', 'int'], ['payFrequency', 'text']].forEach(([key, fmt]) => reg(key, 'Dividends', fmt as CellFormat));
@@ -207,7 +207,7 @@ function buildColumns(): Col[] {
   reg('athDateTs', 'Swings', 'date', 'athDate');
   reg('athBasis', 'Swings', 'text');
   reg('flagCount', 'Scores', 'int');
-  [['isMine', 'text'], ['isAdr', 'text'], ['country', 'text'], ['isReit', 'text'], ['ttmIsAnnual', 'text'], ['returnsBasis', 'text']].forEach(([key, fmt]) => reg(key, 'Data', fmt as CellFormat));
+  [['isMine', 'text'], ['isAdr', 'text'], ['country', 'text'], ['isReit', 'text'], ['businessType', 'text'], ['ttmIsAnnual', 'text'], ['returnsBasis', 'text']].forEach(([key, fmt]) => reg(key, 'Data', fmt as CellFormat));
   add('basisCls', 'Source', 'Data', 'basis', 'Source of the fundamentals: SEC = EDGAR XBRL annual filings; SEC+Y = SEC with gaps filled from Yahoo; Yahoo = Yahoo annual statements only. Hover a badge for the full text.');
   add('fyTs', 'FY As Of', 'Data', 'date', 'fundamentalsAsOf - the end of the latest fiscal year the fundamentals describe.');
   add('ttmTs', 'TTM As Of', 'Data', 'date', 'ttmAsOf - the end of the latest quarter of the trailing twelve months (the last fiscal year end when the issuer files no quarters).');
@@ -225,6 +225,12 @@ const DATE_KEYS = COLS.filter(col => col.fmt === 'date').map(col => col.key);
 const TEXT_KEYS = COLS.filter(col => col.fmt === 'text').map(col => col.key);
 /** The text a text column shows: booleans as Yes and No, row fields for isMine and isReit */
 function textColumnValue(key: string, row: any, metrics: any): string {
+  const industry = typeof row.industry === 'string' ? row.industry : null;
+  if (key === 'businessType') return BUSINESS_RULES[businessType(industry)].title.en; // shown through L() like the other texts
+  if (key === 'dilutionOkSector' || key === 'dilutionOkPerShare' || key === 'dilutionOkStrict') {
+    const flag = dilutionFlags(metrics, businessType(industry))[key];
+    return flag === null ? '' : flag ? 'Yes' : 'No';
+  }
   const value = key === 'isMine' ? row.isMine : key === 'isReit' ? (metrics.isReit ?? isReitIndustry(typeof row.industry === 'string' ? row.industry : null)) : metrics[key];
   if (typeof value === 'boolean') return value ? 'Yes' : 'No';
   return typeof value === 'string' || typeof value === 'number' ? String(value) : '';
@@ -2914,6 +2920,12 @@ function cellHtml(col: Col, id: number): string {
   }
   if (col.key === 'statusScore') { const tip = scoringTexts().tips.statusScore[id] || ''; return `<td class="${numCls}"${tip ? ` title="${escapeHtml(tip)}"` : ''}>${scoreBadgeHtml(s.num[col.key][id])}</td>`; }
   if (SCORE_COLUMN_KEYS.includes(col.key)) return `<td class="${numCls}">${scoreBadgeHtml(s.num[col.key][id])}</td>`;
+  // a metric that does not apply to the business type (FCF of a bank, P/E of a REIT): grey, the reason in the tooltip (owner 2026-11-19)
+  const naType = businessType(s.industryText[id] || null);
+  if (isNotApplicable(naType, col.key)) {
+    const reason = notApplicableReason(naType, col.key);
+    return `<td class="${numCls} cell-na" title="${escapeHtml(reason ? pick(reason) : '')}">${formatByFmt(col.fmt, s.num[col.key][id])}</td>`;
+  }
   return `<td class="${numCls}">${formatByFmt(col.fmt, s.num[col.key][id])}</td>`;
 }
 

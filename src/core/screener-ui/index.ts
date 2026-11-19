@@ -15,6 +15,7 @@ import {
   evaluatePreset, evaluatePresets, Expression, FunnelStep, groupName, HISTORY_METRICS, importGroups, mergeOwnPresets, mergePeers, Missing, Op, ownCopy, OwnEntry,
   parsePeersText, parsePresetText, PeerGroups, PEERS_FILE_NAME, peersExported, peersFileText, peersKey, PeersOverlay, Preset, PRESET_SCHEMA_VERSION, presetFileName,
   presetFileText, presetKey, PresetResult, RELATIVE_SCOPES, samePreset, Scope, SCOPES, setGroup, uniqueId, Universe, validatePreset, withPickers, withVariant,
+  BUSINESS_RULES, BUSINESS_TYPES, isNotApplicable,
 } from '../screener';
 
 export type ChipMode = 'in' | 'out';
@@ -590,6 +591,9 @@ export function createScreenerUi(host: ScreenerUiHost) {
       const funnel = off ? `<span class="scr-muted">${escapeHtml(t('screener.funnel.off'))}</span>`
         : !step ? DASH
           : `${step.status === 'unavailable' ? `<span class="scr-warn">${escapeHtml(t('screener.notInFeed'))}</span> ` : ''}<span class="scr-left${step.left === 0 ? ' is-empty' : ''}">${escapeHtml(t('screener.funnel.left', { count: step.left.toLocaleString('en-US') }))}${emptyAt === step ? ` · ${escapeHtml(t('screener.funnel.empty'))}` : ''}</span>`;
+      // a metric that does not apply to some business types (FCF of a bank): those rows skip the condition, the note says so (owner 2026-11-19)
+      const skippedFor = BUSINESS_TYPES.filter(type => isNotApplicable(type, c.metric)).map(type => pick(BUSINESS_RULES[type].title));
+      const skipNote = skippedFor.length ? ` <span class="scr-muted scr-na" title="${escapeHtml(t('screener.skippedFor.tip'))}">${escapeHtml(t('screener.skippedFor', { types: skippedFor.join(', ') }))}</span>` : '';
       return `<tr class="scr-cond${changed[i] ? ' is-changed' : ''}${off ? ' is-off' : ''}" data-ci="${i}">
       <td><input type="checkbox" data-field="enabled" data-ci="${i}" ${off ? '' : 'checked'} title="${escapeHtml(t('screener.enabled.tip'))}" aria-label="${escapeHtml(t('screener.enabled'))}" /></td>
       <td><input type="text" list="scr-metric-list" class="scr-input scr-metric" data-field="metric" data-ci="${i}" value="${escapeHtml(c.metric)}" placeholder="${escapeHtml(t('screener.metricSearch'))}" aria-label="${escapeHtml(t('screener.metric'))}" title="${escapeHtml(def ? `${pick(def.name)}: ${pick(def.short)}` : c.metric)}" /><div class="scr-metric-name">${escapeHtml(def ? pick(def.name) : c.metric)}</div></td>
@@ -597,7 +601,7 @@ export function createScreenerUi(host: ScreenerUiHost) {
       <td>${valueCellHtml(c, i)}</td>
       <td><select class="scr-input" data-field="scope" data-ci="${i}" aria-label="${escapeHtml(t('screener.scope'))}">${scopesFor(c.metric).map(scope => optionHtml(scope, t(`scope.${scope}`), scope === (c.scope || 'absolute'))).join('')}</select>${c.scope === 'benchmark' ? `<input type="text" class="scr-input scr-bench" data-field="benchmark" data-ci="${i}" value="${escapeHtml(c.benchmark || '')}" placeholder="SPY" title="${escapeHtml(t('screener.benchmark.tip'))}" aria-label="${escapeHtml(t('screener.benchmark'))}" />` : ''}</td>
       <td><select class="scr-input" data-field="missing" data-ci="${i}" aria-label="${escapeHtml(t('screener.missing'))}">${MISSING_MODES.map(mode => optionHtml(mode, t(`missing.${mode}`), mode === (c.missing || 'fail'))).join('')}</select></td>
-      <td class="scr-funnel" data-funnel="${i}" title="${escapeHtml(t('screener.funnel.tip'))}">${funnel}</td>
+      <td class="scr-funnel" data-funnel="${i}" title="${escapeHtml(t('screener.funnel.tip'))}">${funnel}${skipNote}</td>
       <td><button type="button" class="scr-x" data-act="delete-cond" data-ci="${i}" title="${escapeHtml(t('screener.delete'))}" aria-label="${escapeHtml(t('screener.delete'))}">✕</button></td>
     </tr>`;
     }).join('');
