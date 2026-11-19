@@ -107,6 +107,7 @@ const MARKET: MetricDef[] = [
   def({
     id: 'sharesOutstanding', name: { en: 'Shares outstanding', ru: 'Акций в обращении' }, formula: 'Yahoo defaultKeyStatistics.sharesOutstanding',
     unit: 'count', basis: 'snapshot', source: 'yahoo-summary', direction: 'neutral',
+    sectorNotes: { en: 'REITs, BDCs and regulated utilities issue shares by design (REITs 2-5% a year, utilities 1-3%); judge them by per-share growth. See the Guide section Sectors: what to use and what to ignore', ru: 'REIT, BDC и регулируемые коммунальные компании выпускают акции по своей природе (REIT 2-5% в год, коммунальные 1-3%); оценивайте их по росту на акцию. См. раздел Guide «Отрасли: что смотреть и что не смотреть»' },
     short: { en: 'Number of shares in circulation', ru: 'Число акций в обращении' },
     guide: {
       en: 'The number of shares in circulation from the Yahoo snapshot. On its own it is a scale figure; its change over time matters more: a falling count means buybacks that lift EPS, a rising one means dilution from stock compensation or issuance',
@@ -876,6 +877,7 @@ const SEC_DERIVED: MetricDef[] = [
   ttm({
     id: 'capexToCfo', name: { en: 'CapEx to operating cash flow', ru: 'Капзатраты к операционному потоку' }, formula: 'capital expenditures / operating cash flow × 100, TTM',
     unit: 'percent', basis: 'ttm', source: 'sec', direction: 'lower-is-better', thresholds: { good: 30, bad: 80 },
+    sectorNotes: { en: 'Regulated utilities and pipelines spend over 100% of their operating cash by design: the regulator pays a return on that capex. See the Guide section Sectors: what to use and what to ignore', ru: 'Регулируемые коммунальные компании и трубопроводы тратят больше 100% операционного потока по своей природе: регулятор платит доходность на эти вложения. См. раздел Guide «Отрасли: что смотреть и что не смотреть»' },
     nullWhen: { en: 'operating cash flow is zero or negative or capex is not tagged', ru: 'операционный поток нулевой или отрицательный либо капзатраты не размечены' },
     short: { en: 'Share of operating cash reinvested in fixed assets', ru: 'Доля операционных денег, вложенная в основные средства' },
     guide: {
@@ -1338,6 +1340,7 @@ const SCORE_INPUTS: MetricDef[] = [
   def({
     id: 'epsNiGrowthGap3y', name: { en: 'EPS over net income growth 3Y', ru: 'Опережение EPS над прибылью за 3 года' }, formula: 'CAGR of diluted EPS over 3 fiscal years - niGrowth3y, percentage points (SEC 10-K, split restated)',
     unit: 'pp', basis: 'fy', source: 'sec', direction: 'neutral',
+    sectorNotes: { en: 'A negative gap is dilution: normal in moderation for REITs, BDCs and regulated utilities (they fund growth with new shares), a warning for regular companies. See the Guide section Sectors: what to use and what to ignore', ru: 'Отрицательный разрыв - это размытие: в меру нормально для REIT, BDC и регулируемых коммунальных компаний (они финансируют рост новыми акциями), тревожно для обычных компаний. См. раздел Guide «Отрасли: что смотреть и что не смотреть»' },
     nullWhen: { en: 'one of the two CAGRs is empty (an endpoint not positive)', ru: 'один из двух CAGR пуст (точка не положительна)' },
     short: { en: 'How much faster EPS grows than net income', ru: 'Насколько EPS растёт быстрее чистой прибыли' },
     guide: {

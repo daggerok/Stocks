@@ -4466,7 +4466,7 @@ function bindEvents(): void {
 // Stocks screens stocks only: ETFs are screened in the ETFs hub over its own brand feeds (owner 2026-11-16, hub plan H4)
 // =========================================================================
 
-const GUIDE_SECTIONS = ['presets', 'scopes', 'missing', 'swings', 'scores', 'archetypes', 'flags', 'thresholds', 'own', 'peers', 'similar', 'dcf', 'tenk', 'method', 'owndata'];
+const GUIDE_SECTIONS = ['presets', 'scopes', 'missing', 'swings', 'scores', 'archetypes', 'sectors', 'flags', 'thresholds', 'own', 'peers', 'similar', 'dcf', 'tenk', 'method', 'owndata'];
 
 let stockCompanies: any[] = []; // rows of api/stocks/index.json
 let mineTickers: string[] | null = null; // the owner's list as the feed publishes it (index.json mineTickers), null before the feed has it
