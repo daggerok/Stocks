@@ -8,17 +8,22 @@
  */
 import type { Text } from '../metrics/types';
 
-export type BusinessType = 'reit' | 'utility' | 'bank' | 'insurer' | 'midstream' | 'regular';
-export const BUSINESS_TYPES: BusinessType[] = ['reit', 'utility', 'bank', 'insurer', 'midstream', 'regular'];
+export type BusinessType = 'reit' | 'utility' | 'bank' | 'insurer' | 'bdc' | 'midstream' | 'regular';
+export const BUSINESS_TYPES: BusinessType[] = ['reit', 'utility', 'bank', 'insurer', 'bdc', 'midstream', 'regular'];
 
-/** The business type of a Yahoo industry: REIT - ..., Utilities - Regulated ... or Diversified, Banks - ..., Insurance - ... (not brokers), Oil & Gas Midstream */
-export function businessType(industry: string | null | undefined): BusinessType {
+/**
+ * The business type of a Yahoo industry: REIT - ..., Utilities - Regulated ... or Diversified, Banks - ..., Insurance - ... (not brokers),
+ * Oil & Gas Midstream. A business development company has no industry of its own (Yahoo files ARCC under Asset Management, the SEC gives
+ * BDCs no SIC code): it is the only filer of the rest that tags its net asset value per share, so `metrics.navPerShare` marks it
+ */
+export function businessType(industry: string | null | undefined, metrics?: Record<string, unknown> | null): BusinessType {
   const s = industry ?? '';
   if (/^REIT\b/.test(s)) return 'reit';
   if (/^Utilities - (Regulated|Diversified)\b/.test(s)) return 'utility';
   if (/\bBanks\b/.test(s)) return 'bank';
   if (/^Insurance - /.test(s)) return 'insurer';
   if (/^Oil & Gas Midstream$/.test(s)) return 'midstream';
+  if (metrics && typeof metrics.navPerShare === 'number' && metrics.navPerShare > 0) return 'bdc';
   return 'regular';
 }
 
@@ -53,14 +58,21 @@ export const BUSINESS_RULES: Record<BusinessType, BusinessRule> = {
   bank: {
     title: { en: 'Bank', ru: 'Банк' },
     notApplicable: FINANCIAL_KEYS,
-    reason: { en: 'Bank: deposits are liabilities and debt is the raw material, there is no free cash flow in the usual sense; judge it by P/B, ROE, ROA and EPS growth', ru: 'Банк: вклады - это обязательства, долг - сырьё бизнеса, свободного потока в обычном смысле нет; оценивайте по P/B, ROE, ROA и росту EPS' },
+    reason: { en: 'Bank: deposits are liabilities and debt is the raw material, there is no free cash flow in the usual sense; judge it by pTbv (price to tangible book), roe, roa and EPS growth', ru: 'Банк: вклады - это обязательства, долг - сырьё бизнеса, свободного потока в обычном смысле нет; оценивайте по pTbv (цена к материальному капиталу), roe, roa и росту EPS' },
     dilutionLimit: 1,
   },
   insurer: {
     title: { en: 'Insurer', ru: 'Страховщик' },
     notApplicable: FINANCIAL_KEYS,
-    reason: { en: 'Insurer: premiums arrive before claims are paid (the float), so debt and cash flow ratios mislead; judge it by P/B, ROE and book value growth', ru: 'Страховщик: премии приходят раньше выплат (float), поэтому долговые и денежные коэффициенты вводят в заблуждение; оценивайте по P/B, ROE и росту балансовой стоимости' },
+    reason: { en: 'Insurer: premiums arrive before claims are paid (the float), so debt and cash flow ratios mislead; judge it by pb, pTbv, roe and book value growth', ru: 'Страховщик: премии приходят раньше выплат (float), поэтому долговые и денежные коэффициенты вводят в заблуждение; оценивайте по pb, pTbv, roe и росту балансовой стоимости' },
     dilutionLimit: 1,
+  },
+  bdc: {
+    title: { en: 'BDC', ru: 'BDC' },
+    notApplicable: FCF_KEYS.concat(['netDebtToEbitda', 'evEbitda', 'ebitdaMargin', 'ebitdaMarginDelta', 'ebitdaMarginDelta3y', 'grossMargin', 'grossMarginDelta', 'grossMarginDelta3y',
+      'currentRatio', 'quickRatio', 'altmanZ', 'piotroskiF', 'capexToCfo', 'capexToRevenue', 'capexToRevenueDelta3y', 'cashRunwayMonths', 'payoutRatio', 'epsNiGrowthGap3y']),
+    reason: { en: 'BDC (business development company): it lends to private companies and must pay out 90% of its taxable income; loans pass through the operating cash flow and the GAAP profit swings with unrealized gains, so free cash flow, EBITDA and the payout over net income mislead; judge it by pNav (price to NAV), navPerShare over the years, debtToEquity (the law caps it near 2) and the dividend coverage by net investment income (10-K)', ru: 'BDC (компания развития бизнеса): кредитует частные компании и обязана раздавать 90% налогооблагаемого дохода; кредиты проходят через операционный поток, а прибыль по GAAP скачет вместе с переоценкой, поэтому свободный поток, EBITDA и выплаты от чистой прибыли вводят в заблуждение; оценивайте по pNav (цена к NAV), динамике navPerShare, debtToEquity (закон ограничивает около 2) и покрытию дивиденда чистым инвестиционным доходом (10-K)' },
+    dilutionLimit: 5,
   },
   midstream: {
     title: { en: 'Midstream', ru: 'Мидстрим' },
@@ -96,7 +108,7 @@ export type DilutionFlags = { dilutionOkStrict: boolean | null; dilutionOkPerSha
 /**
  * Three readings of the share count change (sharesChange5y, else sharesChange3y), null without it (owner 2026-11-19, a chip picker):
  * strict - the count did not grow; per share - it did not grow, or EPS or dividend per share grew faster over the same horizon; sector -
- * up to 1% a year for anyone, up to the type's limit (REIT 4, utility 3, midstream 2) when per-share growth beats the count
+ * up to 1% a year for anyone, up to the type's limit (BDC 5, REIT 4, utility 3, midstream 2) when per-share growth beats the count
  */
 export function dilutionFlags(metrics: Record<string, unknown>, type: BusinessType): DilutionFlags {
   const five = num(metrics.sharesChange5y);

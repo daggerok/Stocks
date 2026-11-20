@@ -8,7 +8,15 @@ import { stockRow } from './rows';
 describe('business types', () => {
   test('the type comes from the Yahoo industry', () => {
     expect(['REIT - Retail', 'Utilities - Regulated Gas', 'Utilities - Diversified', 'Utilities - Renewable', 'Banks - Regional', 'Insurance - Life', 'Insurance Brokers', 'Oil & Gas Midstream', 'Software - Application', null]
-      .map(businessType)).toEqual(['reit', 'utility', 'utility', 'regular', 'bank', 'insurer', 'regular', 'midstream', 'regular', 'regular']);
+      .map((industry) => businessType(industry))).toEqual(['reit', 'utility', 'utility', 'regular', 'bank', 'insurer', 'regular', 'midstream', 'regular', 'regular']);
+  });
+
+  test('a BDC is told apart by its NAV per share, whatever its industry says', () => {
+    expect(businessType('Asset Management', { navPerShare: 19.31 })).toBe('bdc'); // ARCC
+    expect(businessType('Asset Management', { navPerShare: null })).toBe('regular'); // BLK tags no NAV per share
+    expect(businessType('Banks - Regional', { navPerShare: 10 })).toBe('bank'); // the industry types come first
+    const arcc = stockRow({ ticker: 'ARCC', industry: 'Asset Management', metrics: { navPerShare: 19.31, sharesChange5y: 4.5, epsGrowth5y: 6 } });
+    expect([arcc.metrics.businessType, arcc.metrics.dilutionOkSector, isNotApplicable('bdc', 'pFcf'), isNotApplicable('bdc', 'pNav')]).toEqual(['bdc', true, true, false]);
   });
 
   test('every not-applicable metric is a registry metric of stocks', () => {

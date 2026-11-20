@@ -197,7 +197,7 @@ class FieldReader {
   quarter(fy: FiscalYear, n: number): Value | null {
     const q = fy.quarters[n];
     if (!q) return null;
-    if (this.d.kind === 'instant') return this.d.series.inst.get(q.end) ?? null;
+    if (this.d.kind === 'instant' || this.d.kind === 'perShareInstant') return this.d.series.inst.get(q.end) ?? null;
     const own = this.direct(q);
     if (own || this.d.kind !== 'flow') return own;
     const a = this.cumAt(fy, n);
@@ -206,7 +206,7 @@ class FieldReader {
   }
   year(fy: FiscalYear): Value | null {
     if (!fy.end) return null;
-    if (this.d.kind === 'instant') return this.d.series.inst.get(fy.end) ?? null;
+    if (this.d.kind === 'instant' || this.d.kind === 'perShareInstant') return this.d.series.inst.get(fy.end) ?? null;
     return pick(this.d.ends.get(fy.end), (start) => near(start, fy.s, 3) && days(start, fy.end as string) >= ANNUAL.min && days(start, fy.end as string) <= ANNUAL.max);
   }
 }
@@ -266,7 +266,7 @@ function fiscalYears(fields: FieldData[]): FiscalYear[] {
   return years;
 }
 
-const round = (v: number, kind: FieldKind) => (kind === 'perShare' ? Math.round(v * 1e4) / 1e4 : Math.round(v));
+const round = (v: number, kind: FieldKind) => (kind === 'perShare' || kind === 'perShareInstant' ? Math.round(v * 1e4) / 1e4 : Math.round(v));
 
 function checkPct(a: number | null, b: number | null, tolerancePct = 1): CheckResult {
   if (a === null || b === null || !Number.isFinite(a) || !Number.isFinite(b) || (a === 0 && b === 0)) return null;
@@ -366,6 +366,7 @@ export function parseCompanyFacts(facts: Json, options: ParseOptions = {}): SecF
       const equityTotal = h('equityTotal') ?? (values.equity === null ? null : values.equity + (values.minorityInterest ?? 0));
       if (equityTotal !== null) values.liabilities = (h('liabilitiesAndEquity') as number) - equityTotal;
     }
+    if (values.intangibles === null && (h('intangiblesFinite') !== null || h('intangiblesIndefinite') !== null)) values.intangibles = (h('intangiblesFinite') ?? 0) + (h('intangiblesIndefinite') ?? 0);
     const combined = h('debtCombined');
     const nonCurrent = h('debtNoncurrent');
     const fallback = h('debtTotalFallback');
@@ -436,7 +437,7 @@ export function parseCompanyFacts(facts: Json, options: ParseOptions = {}): SecF
     const prevLinked = prev && prev.end && near(addDays(prev.end, 1), y.s, 7) ? prev : null;
     const p = period((r) => {
       if (n === 4) return r.year(y);
-      if (r.kind === 'instant' || r.kind === 'shares') return r.quarter(y, n) ?? r.cumFact(y, (y.quarters[n] as Quarter).end);
+      if (r.kind === 'instant' || r.kind === 'perShareInstant' || r.kind === 'shares') return r.quarter(y, n) ?? r.cumFact(y, (y.quarters[n] as Quarter).end);
       if (!prevLinked) return null;
       const full = r.year(prevLinked);
       const ytd = r.cumAt(y, n);

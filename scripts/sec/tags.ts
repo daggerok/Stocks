@@ -6,13 +6,13 @@
  * fundamentals repo): a filer that moved from US GAAP to IFRS (Toyota from FY2021) joins both into one series
  */
 
-/** flow: duration in the reporting currency (income and cash flow statements); instant: balance sheet; perShare: currency/shares; shares: share counts */
-export type FieldKind = 'flow' | 'instant' | 'perShare' | 'shares';
+/** flow: duration in the reporting currency (income and cash flow statements); instant: balance sheet; perShare: currency/shares; perShareInstant: currency/shares at a balance date (NAV per share); shares: share counts */
+export type FieldKind = 'flow' | 'instant' | 'perShare' | 'perShareInstant' | 'shares';
 export type FieldDef = { kind: FieldKind; tags: string[]; ifrs?: string[]; abs?: boolean };
 
 /** The SEC unit of each kind in the reporting currency: values are stored in that unit with scale 1 (no thousands or millions) */
 export function kindUnit(kind: FieldKind, currency = 'USD'): string {
-  return kind === 'shares' ? 'shares' : kind === 'perShare' ? `${currency}/shares` : currency;
+  return kind === 'shares' ? 'shares' : kind === 'perShare' || kind === 'perShareInstant' ? `${currency}/shares` : currency;
 }
 
 // lists shared with the annual rows of update-data.ts (buildAnnualRows): same tags, same order
@@ -88,7 +88,12 @@ export const SEC_FIELDS: Record<string, FieldDef> = {
   retainedEarnings: { kind: 'instant', tags: ['RetainedEarningsAccumulatedDeficit'], ifrs: ['RetainedEarnings'] },
   equity: { kind: 'instant', tags: TAGS.equity, ifrs: ['EquityAttributableToOwnersOfParent', 'Equity'] },
   minorityInterest: { kind: 'instant', tags: ['MinorityInterest'], ifrs: ['NoncontrollingInterests'] },
-  preferredStock: { kind: 'instant', tags: ['PreferredStockValue', 'PreferredStockValueOutstanding'] },
+  preferredStock: { kind: 'instant', tags: ['PreferredStockValue', 'PreferredStockValueOutstanding', 'PreferredStockIncludingAdditionalPaidInCapitalNetOfDiscount', 'PreferredStockIncludingAdditionalPaidInCapital'] }, // JPM tags the last two
+  // tangible book value of banks and insurers (owner 2026-11-20): equity - preferred - goodwill - other intangibles
+  goodwill: { kind: 'instant', tags: ['Goodwill'], ifrs: ['Goodwill'] },
+  intangibles: { kind: 'instant', tags: ['IntangibleAssetsNetExcludingGoodwill'], ifrs: ['IntangibleAssetsOtherThanGoodwill'] }, // else finite + indefinite lived
+  // net asset value per share: tagged by business development companies (ARCC, MAIN, OBDC), not by asset managers (BLK, KKR)
+  navPerShare: { kind: 'perShareInstant', tags: ['NetAssetValuePerShare'] },
 };
 
 /** Tags read only to build or check a stored field (us-gaap) */
@@ -107,6 +112,9 @@ export const HELPER_TAGS = {
   notesPayable: ['NotesPayable', 'SeniorNotes', 'UnsecuredDebt'],
   securedDebt: ['SecuredDebt'],
   lineOfCredit: ['LineOfCredit'],
+  // intangibles for a period without IntangibleAssetsNetExcludingGoodwill (JPM tags the two parts)
+  intangiblesFinite: ['FiniteLivedIntangibleAssetsNet'],
+  intangiblesIndefinite: ['IndefiniteLivedIntangibleAssetsExcludingGoodwill'],
 };
 
 /** Helper keys whose facts are debt lines: a filer with no nonzero fact of them (nor of longTermDebt) is debt-free, see DEBT_PRESENCE_TAGS */

@@ -124,6 +124,20 @@ describe('stop factor and flag inputs', () => {
     expect(fundamentalMetrics(sec(split, {}), CTX).sharesChange3y).toBe(0.33);
   });
 
+  test('ROE, ROA, price to tangible book and NAV of banks and BDCs', () => {
+    // a bank: NI 12, equity 100 (10 preferred, 15 goodwill, 5 intangibles), assets 1000, market cap 90
+    const bank = fundamentalMetrics(sec([{ goodwill: 15, intangibles: 5 }], { netIncome: 12, equity: 100, assets: 1000, preferredStock: 10, goodwill: 15 }), { ...CTX, marketCap: 90 });
+    expect([bank.roe, bank.roa, bank.pTbv, bank.navPerShare, bank.pNav]).toEqual([12, 1.2, 1.29, null, null]); // intangibles of the last fiscal year: 90 / 70
+    // goodwill above equity: no tangible book, never a negative multiple
+    expect(fundamentalMetrics(sec([], { netIncome: 5, equity: 50, assets: 100, goodwill: 80 }), CTX).pTbv).toBeNull();
+    expect(fundamentalMetrics(sec([], { netIncome: 5, equity: -10, assets: 100 }), CTX).roe).toBeNull();
+    // a BDC: NAV per share 20, price 21
+    const bdc = fundamentalMetrics(sec([], { netIncome: 8, equity: 100, assets: 200, navPerShare: 20 }), { ...CTX, price: 21 });
+    expect([bdc.navPerShare, bdc.pNav]).toEqual([20, 1.05]);
+    // a foreign filer: NAV per share in its own currency against a USD price is never compared
+    expect(fundamentalMetrics(sec([], { navPerShare: 20 }), { ...CTX, price: 21, usd: null }).pNav).toBeNull();
+  });
+
   test('the largest material year-over-year balance change and its line', () => {
     const prev: Row = { assets: 1000, cash: 50, receivables: 200, debt: 300, equity: 400 };
     // cash +300% is below 10% of the assets of the year before, so the debt jump (+100%) wins
