@@ -12,7 +12,7 @@ type Num = number | null;
  * cap with amounts (Altman's market cap over liabilities, the approximate FFO amount) read it; every ratio, growth rate and
  * margin reads the layer in its reporting currency (plan 1.3)
  */
-export type FundamentalsContext = { marketCap: Num; sector: string | null; industry: string | null; usd?: SecFundamentals | null };
+export type FundamentalsContext = { marketCap: Num; sector: string | null; industry: string | null; usd?: SecFundamentals | null; price?: Num };
 
 /** Keys this module adds to `metrics`, in the order they are published */
 export const FUNDAMENTAL_METRIC_KEYS = [
@@ -23,6 +23,8 @@ export const FUNDAMENTAL_METRIC_KEYS = [
   'fcfNegativeYears', 'cfoGrowth3y', 'epsNiGrowthGap3y', 'balanceYoyMaxChange', 'balanceYoyMaxLine',
   // share count change per year (owner 2026-11-19: dilution filter)
   'sharesChange3y', 'sharesChange5y',
+  // returns on capital and book multiples for banks, insurers and BDCs (owner 2026-11-20)
+  'roe', 'roa', 'pTbv', 'navPerShare', 'pNav',
   // why the revenue-based ratios are empty (withRevenueSanity)
   'marginNote',
 ] as const;
@@ -349,6 +351,14 @@ export function fundamentalMetrics(sec: SecFundamentals | null, ctx: Fundamental
   out.epsNiGrowthGap3y = epsCagr !== null && out.niGrowth3y !== null ? r2(epsCagr - (out.niGrowth3y as number)) : null;
   out.sharesChange3y = sharesChange(v, 3);
   out.sharesChange5y = sharesChange(v, 5);
+  out.roe = pct(ni, v.ttm('equity'));
+  out.roa = pct(ni, v.ttm('assets'));
+  const tbv = tangibleBook(ctx.usd === undefined ? sec : ctx.usd);
+  out.pTbv = pos(ctx.marketCap) ? r2(ratio(ctx.marketCap, tbv)) : null;
+  // NAV per share and price over it: USD filers only (the price is per share of the listing, the NAV per share of the filing)
+  const nav = ctx.usd === undefined ? v.ttm('navPerShare') : null;
+  out.navPerShare = pos(nav) ? nav : null;
+  out.pNav = pos(nav) && pos(ctx.price ?? null) ? r2((ctx.price as number) / nav) : null;
   const jump = balanceJump(v);
   out.balanceYoyMaxChange = jump ? jump.change : null;
   out.balanceYoyMaxLine = jump ? jump.line : null;
@@ -370,6 +380,21 @@ export function fundamentalMetrics(sec: SecFundamentals | null, ctx: Fundamental
     out.ffoGrowth3y = pos(f0) && pos(f3) ? r2((Math.pow(f0 / f3, 1 / 3) - 1) * 100) : null;
   }
   return out;
+}
+
+/**
+ * Tangible book value at the TTM balance date: equity - preferred stock - goodwill - other intangibles (JPM's definition, without
+ * the deferred tax on intangibles). Goodwill and intangibles fall back to the last fiscal year when the quarter does not tag them
+ * (JPM tags intangibles in the 10-K only), a missing line counts 0; null without equity or when the result is not positive
+ */
+export function tangibleBook(sec: SecFundamentals | null): Num {
+  if (!sec) return null;
+  const v = view(sec);
+  const equity = v.ttm('equity');
+  if (!fin(equity)) return null;
+  const line = (k: string): number => v.ttm(k) ?? v.fy(k, 0) ?? 0;
+  const tbv = equity - (v.ttm('preferredStock') ?? 0) - line('goodwill') - line('intangibles');
+  return tbv > 0 ? tbv : null;
 }
 
 /**

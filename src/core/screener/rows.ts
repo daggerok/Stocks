@@ -38,7 +38,7 @@ export function stockRow(company: Feed, mineList?: ReadonlySet<string> | readonl
   const industry = text(company.industry);
   const metrics: Record<string, unknown> = { ...metricsOf(company), isReit: isReitIndustry(industry) }; // the archetype rules judge REITs by FFO growth (owner answer N22)
   // the business type skips the conditions that do not apply to it and sets the limits of the dilution flags (business.ts)
-  const business = businessType(industry);
+  const business = businessType(industry, metrics);
   metrics.businessType = business;
   Object.assign(metrics, dilutionFlags(metrics, business));
   return { ticker, type: 'stock', sector: text(company.sector), industry, isMine: mine(company, ticker, mineList), size: num(metrics.marketCap), metrics };

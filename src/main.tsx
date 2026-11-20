@@ -197,8 +197,8 @@ function buildColumns(): Col[] {
     add(key, def ? def.name.en : id, group, fmt, def ? `${def.name.en} - ${def.short.en}. ${def.formula}` : id);
   };
   [['revenueTtm', 'money'], ['netIncomeTtm', 'money'], ['fcfTtm', 'money'], ['peg', 'x'], ['pegHist', 'x'], ['pegGrowthSource', 'text'], ['forwardToTtmPe', 'x'],
-    ['epsGrowthNextYearEst', 'pct'], ['epsGrowth5yEst', 'pct'], ['epsRevision30d', 'pct'], ['pePct5y', 'pct'], ['pFcfPct5y', 'pct']].forEach(([key, fmt]) => reg(key, 'Valuation', fmt as CellFormat));
-  [['operatingMargin', 'pct'], ['marginNote', 'text'], ['grossMarginSlope3y', 'pp'], ['operatingMarginSlope3y', 'pp'], ['cfoToNi', 'x'], ['fcfToNi', 'x'], ['niVolatility5y', 'pp'], ['fcfVolatility5y', 'pp'],
+    ['epsGrowthNextYearEst', 'pct'], ['epsGrowth5yEst', 'pct'], ['epsRevision30d', 'pct'], ['pePct5y', 'pct'], ['pFcfPct5y', 'pct'], ['pTbv', 'x'], ['navPerShare', 'price'], ['pNav', 'x']].forEach(([key, fmt]) => reg(key, 'Valuation', fmt as CellFormat));
+  [['roe', 'pct'], ['roa', 'pct'], ['operatingMargin', 'pct'], ['marginNote', 'text'], ['grossMarginSlope3y', 'pp'], ['operatingMarginSlope3y', 'pp'], ['cfoToNi', 'x'], ['fcfToNi', 'x'], ['niVolatility5y', 'pp'], ['fcfVolatility5y', 'pp'],
     ['capexToCfo', 'pct'], ['capexToRevenue', 'pct'], ['capexToRevenueDelta3y', 'pp'], ['epsNiGrowthGap3y', 'pp'], ['sharesChange3y', 'pct'], ['sharesChange5y', 'pct'], ['dilutionOkSector', 'text'], ['dilutionOkPerShare', 'text'], ['dilutionOkStrict', 'text'], ['ffoApprox', 'money']].forEach(([key, fmt]) => reg(key, 'Quality', fmt as CellFormat));
   [['interestCoverage', 'x'], ['interestCoverageNote', 'text'], ['cashRunwayMonths', 'int'], ['altmanZ', 'x'], ['altmanVariant', 'text'], ['piotroskiF', 'int'], ['fcfNegativeYears', 'int'],
     ['balanceYoyMaxChange', 'pct'], ['balanceYoyMaxLine', 'text']].forEach(([key, fmt]) => reg(key, 'Safety', fmt as CellFormat));
@@ -226,9 +226,9 @@ const TEXT_KEYS = COLS.filter(col => col.fmt === 'text').map(col => col.key);
 /** The text a text column shows: booleans as Yes and No, row fields for isMine and isReit */
 function textColumnValue(key: string, row: any, metrics: any): string {
   const industry = typeof row.industry === 'string' ? row.industry : null;
-  if (key === 'businessType') return BUSINESS_RULES[businessType(industry)].title.en; // shown through L() like the other texts
+  if (key === 'businessType') return BUSINESS_RULES[businessType(industry, metrics)].title.en; // shown through L() like the other texts
   if (key === 'dilutionOkSector' || key === 'dilutionOkPerShare' || key === 'dilutionOkStrict') {
-    const flag = dilutionFlags(metrics, businessType(industry))[key];
+    const flag = dilutionFlags(metrics, businessType(industry, metrics))[key];
     return flag === null ? '' : flag ? 'Yes' : 'No';
   }
   const value = key === 'isMine' ? row.isMine : key === 'isReit' ? (metrics.isReit ?? isReitIndustry(typeof row.industry === 'string' ? row.industry : null)) : metrics[key];
@@ -2921,7 +2921,7 @@ function cellHtml(col: Col, id: number): string {
   if (col.key === 'statusScore') { const tip = scoringTexts().tips.statusScore[id] || ''; return `<td class="${numCls}"${tip ? ` title="${escapeHtml(tip)}"` : ''}>${scoreBadgeHtml(s.num[col.key][id])}</td>`; }
   if (SCORE_COLUMN_KEYS.includes(col.key)) return `<td class="${numCls}">${scoreBadgeHtml(s.num[col.key][id])}</td>`;
   // a metric that does not apply to the business type (FCF of a bank, P/E of a REIT): grey, the reason in the tooltip (owner 2026-11-19)
-  const naType = businessType(s.industryText[id] || null);
+  const naType = businessType(s.industryText[id] || null, s.raw[id].metrics);
   if (isNotApplicable(naType, col.key)) {
     const reason = notApplicableReason(naType, col.key);
     return `<td class="${numCls} cell-na" title="${escapeHtml(reason ? pick(reason) : '')}">${formatByFmt(col.fmt, s.num[col.key][id])}</td>`;

@@ -1232,7 +1232,7 @@ export async function processCompany(listing: Listing, config: UpdaterConfig, pr
   // foreign issuer: formulas that mix market cap (USD) with amounts read the USD layer, multiples go over market cap (plan 1.3)
   const foreignLayer = isForeignLayer(secLayer);
   const marketLayer: SecFundamentals | null = !secLayer ? null : secLayer.currency === 'USD' ? secLayer : usd ? usdView(secLayer, usd) : null;
-  const derived = fundamentalMetrics(secLayer, { marketCap, sector: snapshot?.sector ?? prevMeta?.sector ?? null, industry, ...(foreignLayer ? { usd: marketLayer } : {}) });
+  const derived = fundamentalMetrics(secLayer, { marketCap, sector: snapshot?.sector ?? prevMeta?.sector ?? null, industry, price: numberOrNull(market.price), ...(foreignLayer ? { usd: marketLayer } : {}) });
   const multiples: JsonRecord = foreignLayer ? capMultiples(marketLayer, marketCap) : {};
   // an annual-only TTM more than 12 months old: no multiples over it (owner answer N29), also none derived from P/E
   const staleTtm = staleAnnualTtm(secLayer, market.asOfDate ?? null);

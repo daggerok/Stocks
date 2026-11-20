@@ -78,14 +78,14 @@ const convert = (value: unknown, rate: number | null, perShare: boolean): number
   return perShare ? Math.round(value * rate * 1e4) / 1e4 : Math.round(value * rate);
 };
 
-/** One period's values in USD: flows and per-share values at the period average, balance lines at the period-end rate */
+/** One period's values in USD: flows and per-share values at the period average, balance lines and NAV per share at the period-end rate */
 function convertPeriod(get: (key: string) => unknown, rates: FxRates): Record<string, number | null> {
   const out: Record<string, number | null> = {};
   Object.keys(SEC_FIELDS).forEach((key) => {
     const kind = SEC_FIELDS[key].kind;
     const value = get(key);
     if (kind === 'shares') out[key] = typeof value === 'number' ? value : null;
-    else out[key] = convert(value, kind === 'instant' ? rates.balance : rates.flow, kind === 'perShare');
+    else out[key] = convert(value, kind === 'instant' || kind === 'perShareInstant' ? rates.balance : rates.flow, kind === 'perShare' || kind === 'perShareInstant');
   });
   return out;
 }

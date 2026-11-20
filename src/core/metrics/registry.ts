@@ -311,7 +311,7 @@ const BALANCE: MetricDef[] = [
     id: 'roic', name: { en: 'ROIC', ru: 'ROIC' }, formula: 'operating income × (1 - effective tax rate) / average invested capital (debt + equity - cash) of the last two fiscal year ends × 100',
     unit: 'percent', basis: 'fy', source: 'sec', direction: 'higher-is-better', thresholds: { good: 15, bad: 8 },
     nullWhen: { en: 'invested capital is zero or negative or a value is missing; a tax rate outside 0-50% is replaced by 21%', ru: 'инвестированный капитал нулевой или отрицательный либо нет значения; ставка налога вне 0-50% заменяется на 21%' },
-    sectorNotes: { en: 'Not meaningful for banks and insurers, whose debt is raw material', ru: 'Не имеет смысла для банков и страховых, у которых долг - сырьё бизнеса' },
+    sectorNotes: { en: 'Not meaningful for banks and insurers, whose debt is raw material: use roe, roa and pTbv for them', ru: 'Не имеет смысла для банков и страховых, у которых долг - сырьё бизнеса: для них есть roe, roa и pTbv' },
     short: { en: 'After-tax operating return on the capital the business uses', ru: 'Операционная доходность после налога на капитал бизнеса' },
     guide: {
       en: 'Return on invested capital: operating income after tax divided by the average of debt plus equity minus cash over the last two fiscal year ends. It shows how well management turns capital into profit, regardless of how it is financed. Above 15% points to a moat, below 8% is under the usual cost of capital, so growth then destroys value',
@@ -1145,13 +1145,13 @@ const FOREIGN: MetricDef[] = [
     },
   }),
   def({
-    id: 'dilutionOkSector', name: { en: 'No dilution: by sector', ru: 'Без размывания: по отрасли' }, formula: 'true when the share count grew at most 1% a year, or at most the limit of the business type (REIT 4, regulated utility 3, midstream 2) while EPS or dividend per share grew faster',
+    id: 'dilutionOkSector', name: { en: 'No dilution: by sector', ru: 'Без размывания: по отрасли' }, formula: 'true when the share count grew at most 1% a year, or at most the limit of the business type (BDC 5, REIT 4, regulated utility 3, midstream 2) while EPS or dividend per share grew faster',
     unit: 'flag', basis: 'fy', source: 'computed', direction: 'neutral',
     nullWhen: { en: 'sharesChange5y and sharesChange3y are both empty', ru: 'sharesChange5y и sharesChange3y оба пусты' },
     short: { en: 'No dilution: by sector: the share count change is acceptable', ru: 'Без размывания: по отрасли: изменение числа акций допустимо' },
     guide: {
-      en: 'true when the share count grew at most 1% a year, or at most the limit of the business type (REIT 4, regulated utility 3, midstream 2) while EPS or dividend per share grew faster. The share count change is sharesChange5y, else sharesChange3y; per-share growth is epsGrowth or dividendGrowth of the same horizon. The No dilution refinement picks one of the three flags. See the Guide section Sectors: what to use and what to ignore',
-      ru: 'true, когда число акций росло не больше 1% в год или не больше предела типа бизнеса (REIT 4, регулируемая коммунальная 3, мидстрим 2), а EPS или дивиденд на акцию росли быстрее. Изменение числа акций - sharesChange5y, иначе sharesChange3y; рост на акцию - epsGrowth или dividendGrowth того же горизонта. Уточнение «Без размывания» выбирает один из трёх флагов. См. раздел Guide «Отрасли: что смотреть и что не смотреть»',
+      en: 'true when the share count grew at most 1% a year, or at most the limit of the business type (BDC 5, REIT 4, regulated utility 3, midstream 2) while EPS or dividend per share grew faster. The share count change is sharesChange5y, else sharesChange3y; per-share growth is epsGrowth or dividendGrowth of the same horizon. The No dilution refinement picks one of the three flags. See the Guide section Sectors: what to use and what to ignore',
+      ru: 'true, когда число акций росло не больше 1% в год или не больше предела типа бизнеса (BDC 5, REIT 4, регулируемая коммунальная 3, мидстрим 2), а EPS или дивиденд на акцию росли быстрее. Изменение числа акций - sharesChange5y, иначе sharesChange3y; рост на акцию - epsGrowth или dividendGrowth того же горизонта. Уточнение «Без размывания» выбирает один из трёх флагов. См. раздел Guide «Отрасли: что смотреть и что не смотреть»',
     },
   }),
   def({
@@ -1407,6 +1407,61 @@ const SCORE_INPUTS: MetricDef[] = [
     guide: {
       en: 'How fast the number of shares changed a year over 5 fiscal years. Above 0 the company issued more shares than it bought back (stock pay, capital raises, stock-paid deals): your slice of the company shrinks by that much a year. Below 0 it bought shares back and every remaining share owns more. For a regular company 0 or below is good and above 1-2% a year is a warning; REITs, BDCs and regulated utilities fund growth with new shares, so judge them by whether EPS and dividend per share grow faster than the share count',
       ru: 'Насколько быстро менялось число акций в год за 5 финансовых лет. Выше 0 - компания выпустила больше акций, чем выкупила (выплаты сотрудникам акциями, допэмиссии, сделки за акции): ваша доля в компании каждый год уменьшается на столько. Ниже 0 - компания выкупала акции, и каждая оставшаяся акция владеет большей частью. Для обычной компании хорошо 0 и ниже, выше 1-2% в год - тревожный знак; REIT, BDC и регулируемые коммунальные компании финансируют рост новыми акциями, поэтому оценивайте их по тому, растут ли EPS и дивиденд на акцию быстрее числа акций',
+    },
+  }),
+  def({
+    id: 'roe', name: { en: 'ROE', ru: 'ROE' }, formula: 'TTM net income / shareholders\' equity at the TTM balance date × 100 (SEC)',
+    unit: 'percent', basis: 'ttm', source: 'sec', direction: 'higher-is-better', thresholds: { good: 12, bad: 8 },
+    nullWhen: { en: 'equity is zero or negative or a value is missing', ru: 'капитал нулевой или отрицательный либо нет значения' },
+    sectorNotes: { en: 'The main return measure of banks and insurers (above 10-12% is good); a company with buybacks paid by debt shows a high ROE on a thin equity, so check debtToEquity next to it', ru: 'Главная мера доходности банков и страховых (выше 10-12% - хорошо); у компании, выкупающей акции в долг, ROE высокий на тонком капитале, поэтому смотрите рядом debtToEquity' },
+    short: { en: 'Profit on the owners\' capital', ru: 'Прибыль на капитал владельцев' },
+    guide: {
+      en: 'Return on equity: how much net profit a year the company earns on each dollar of the owners\' capital. For banks and insurers it is the key quality measure (an average bank earns 10-12%, a strong one 15% and more) and decides what price to book is fair. Elsewhere a very high ROE can come from a small equity after buybacks or losses',
+      ru: 'Доходность капитала: сколько чистой прибыли в год компания зарабатывает на каждый доллар капитала владельцев. Для банков и страховых это главная мера качества (средний банк зарабатывает 10-12%, сильный 15% и больше), от неё зависит, какая цена к капиталу оправдана. У остальных очень высокий ROE бывает из-за маленького капитала после выкупов или убытков',
+    },
+  }),
+  def({
+    id: 'roa', name: { en: 'ROA', ru: 'ROA' }, formula: 'TTM net income / total assets at the TTM balance date × 100 (SEC)',
+    unit: 'percent', basis: 'ttm', source: 'sec', direction: 'higher-is-better', thresholds: { good: 1.2, bad: 0.7 },
+    nullWhen: { en: 'total assets are missing', ru: 'нет суммы активов' },
+    sectorNotes: { en: 'Thresholds are set for banks (above 1% is good, an average bank earns 1-1.2%); asset-light companies show 10% and more, compare them within their sector', ru: 'Пороги заданы для банков (выше 1% - хорошо, средний банк зарабатывает 1-1,2%); у компаний без тяжёлых активов 10% и больше, сравнивайте их внутри отрасли' },
+    short: { en: 'Profit on all assets', ru: 'Прибыль на все активы' },
+    guide: {
+      en: 'Return on assets: net profit a year on each dollar of everything the company holds, whoever funded it. A bank holds mostly loans paid for with deposits, so its ROA is small: 1% is good, below 0.7% is weak. ROE divided by ROA shows the leverage (a bank with ROE 12% and ROA 1% runs 12 times its equity)',
+      ru: 'Доходность активов: чистая прибыль в год на каждый доллар всего, чем владеет компания, кто бы это ни финансировал. Банк держит в основном кредиты, оплаченные вкладами, поэтому его ROA мал: 1% - хорошо, ниже 0,7% - слабо. ROE, делённый на ROA, показывает плечо (банк с ROE 12% и ROA 1% работает на капитале, увеличенном в 12 раз)',
+    },
+  }),
+  def({
+    id: 'pTbv', name: { en: 'P/TBV', ru: 'P/TBV' }, formula: 'market cap / tangible book value; tangible book = equity - preferred stock - goodwill - other intangibles at the TTM balance date (goodwill and intangibles of the last fiscal year when the quarter does not tag them), SEC, USD',
+    unit: 'ratio', basis: 'ttm', source: 'sec', direction: 'lower-is-better', thresholds: { good: 1.2, bad: 2.5 },
+    nullWhen: { en: 'tangible book value is zero or negative (goodwill larger than equity) or the market cap is missing', ru: 'материальный капитал нулевой или отрицательный (goodwill больше капитала) либо нет капитализации' },
+    sectorNotes: { en: 'Made for banks and insurers: goodwill from acquisitions cannot absorb losses, so investors price banks on tangible book (1-1.5 for an average bank, more is fair with ROE above 15%)', ru: 'Создан для банков и страховых: goodwill от покупок не покрывает убытки, поэтому банки оценивают по материальному капиталу (1-1,5 для среднего банка, выше оправдано при ROE больше 15%)' },
+    short: { en: 'Price over tangible book', ru: 'Цена к материальному капиталу' },
+    guide: {
+      en: 'Price to tangible book value: the market value over the equity left after removing preferred stock, goodwill and other intangibles. For a bank this is what is left to absorb losses, so P/TBV near 1 is cheap, 1-1.5 is the average bank and above 2 needs a high ROE to justify it. Asset managers and software companies carry so much goodwill that the value is often empty',
+      ru: 'Цена к материальному капиталу: рыночная стоимость, делённая на капитал без привилегированных акций, goodwill и прочих нематериальных активов. У банка это то, что покрывает убытки, поэтому P/TBV около 1 - дёшево, 1-1,5 - средний банк, выше 2 нужно подтверждать высоким ROE. У управляющих компаний и разработчиков софта goodwill так велик, что значение часто пустое',
+    },
+  }),
+  def({
+    id: 'navPerShare', name: { en: 'NAV per share', ru: 'NAV на акцию' }, formula: 'net asset value per share as the filer tags it at the TTM balance date (SEC NetAssetValuePerShare), USD filers only',
+    unit: 'usd', basis: 'ttm', source: 'sec', direction: 'higher-is-better',
+    nullWhen: { en: 'the filer does not tag NAV per share (only business development companies do) or reports in another currency', ru: 'компания не отмечает NAV на акцию (это делают только BDC) или отчитывается в другой валюте' },
+    sectorNotes: { en: 'BDCs only: its presence makes the Business type BDC. A NAV per share that falls over the years means bad loans or shares sold below NAV', ru: 'Только BDC: по наличию этого значения тип бизнеса становится BDC. NAV на акцию, падающий год за годом, значит плохие кредиты или продажу акций ниже NAV' },
+    short: { en: 'Net assets per share of a BDC', ru: 'Чистые активы на акцию у BDC' },
+    guide: {
+      en: 'Net asset value per share: the loans and stakes of a business development company at fair value minus its debt, per share. It is the book value of a BDC and the anchor of its price: a good BDC keeps it flat or rising while paying a high dividend',
+      ru: 'Чистая стоимость активов на акцию: кредиты и доли BDC по справедливой стоимости минус долг, на одну акцию. Это балансовая стоимость BDC и ориентир для её цены: хорошая BDC держит её ровной или растущей, выплачивая высокий дивиденд',
+    },
+  }),
+  def({
+    id: 'pNav', name: { en: 'P/NAV', ru: 'P/NAV' }, formula: 'last close / navPerShare',
+    unit: 'ratio', basis: 'price', source: 'computed', direction: 'lower-is-better', thresholds: { good: 1, bad: 1.3 },
+    nullWhen: { en: 'navPerShare or the price is missing', ru: 'нет navPerShare или цены' },
+    sectorNotes: { en: 'BDCs: below 1 the market doubts the loan book or the dividend, 1-1.2 is normal for a solid BDC, the best ones (MAIN) trade far above', ru: 'BDC: ниже 1 рынок сомневается в кредитах или дивиденде, 1-1,2 - норма для надёжной BDC, лучшие (MAIN) торгуются намного выше' },
+    short: { en: 'Price over NAV of a BDC', ru: 'Цена к NAV у BDC' },
+    guide: {
+      en: 'Price over net asset value per share. A BDC above 1 can sell new shares above NAV, which adds value for the owners; below 1 every new share sold destroys it. A deep discount is a value signal only when NAV per share and the dividend coverage hold up',
+      ru: 'Цена к чистой стоимости активов на акцию. BDC выше 1 может продавать новые акции дороже NAV, и это добавляет стоимость владельцам; ниже 1 каждая новая проданная акция её уничтожает. Глубокий дисконт - сигнал недооценки, только если NAV на акцию и покрытие дивиденда держатся',
     },
   }),
   def({
