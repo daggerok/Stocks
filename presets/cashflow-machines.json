@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "id": "cashflow-machines",
+  "title": {
+    "en": "Cash-flow machines",
+    "ru": "Кэшфлоу-машины"
+  },
+  "description": {
+    "en": "Businesses that turn sales into cash: free cash flow margin of 20% or more, FCF growing 8% a year or more over 5 years, at least 60% of EBITDA left as free cash, ROIC of 15% or more and capital spending not growing as a share of revenue over 3 fiscal years",
+    "ru": "Бизнес, который превращает продажи в деньги: маржа свободного денежного потока от 20%, FCF растёт от 8% в год за 5 лет, не меньше 60% EBITDA остаётся свободными деньгами, ROIC от 15%, а доля капзатрат в выручке не выросла за 3 финансовых года"
+  },
+  "appliesTo": [
+    "stock"
+  ],
+  "match": "all",
+  "conditions": [
+    {
+      "metric": "fcfMargin",
+      "op": ">=",
+      "value": 20,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "fcfGrowth5y",
+      "op": ">=",
+      "value": 8,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "fcfToEbitda",
+      "op": ">=",
+      "value": 60,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "roic",
+      "op": ">=",
+      "value": 15,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "capexToRevenueDelta3y",
+      "op": "<=",
+      "value": 0,
+      "scope": "absolute",
+      "missing": "fail"
+    }
+  ]
+}

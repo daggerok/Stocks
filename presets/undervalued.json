@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 1,
+  "id": "undervalued",
+  "title": {
+    "en": "Undervalued",
+    "ru": "Недооценённые"
+  },
+  "description": {
+    "en": "Growth at a fair price: PEG at most 1, earnings expected to grow, P/E in the cheaper half of its own 5 years, ROIC above 10%, improving operating margin, net income and free cash flow that grew over 5 years and stayed steady, cash-backed profits and moderate debt. ROIC, the margin trend, 5-year net income and free cash flow growth and volatility, cash conversion and debt come from the SEC filings, PEG and forward against TTM P/E from the Yahoo estimates, the P/E percentile from the company's own 5-year history",
+    "ru": "Рост по разумной цене: PEG не выше 1, ожидается рост прибыли, P/E в дешёвой половине своей истории за 5 лет, ROIC выше 10%, операционная маржа растёт, чистая прибыль и свободный денежный поток выросли за 5 лет и стабильны, прибыль подкреплена деньгами, долг умеренный. ROIC, тренд маржи, рост и волатильность чистой прибыли и свободного потока за 5 лет, конверсия в деньги и долг считаются по отчётности SEC, PEG и форвардный P/E к P/E TTM - по прогнозам Yahoo, перцентиль P/E - по собственной истории компании за 5 лет"
+  },
+  "appliesTo": [
+    "stock"
+  ],
+  "match": "all",
+  "conditions": [
+    {
+      "metric": "peg",
+      "op": "<=",
+      "value": 1,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "forwardToTtmPe",
+      "op": "<",
+      "value": 1,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "pePct5y",
+      "op": "<=",
+      "value": 50,
+      "scope": "history",
+      "missing": "fail"
+    },
+    {
+      "metric": "roic",
+      "op": ">",
+      "value": 10,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "operatingMarginSlope3y",
+      "op": ">",
+      "value": 0,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "niGrowth5y",
+      "op": ">",
+      "value": 0,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "fcfGrowth5y",
+      "op": ">",
+      "value": 0,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "niVolatility5y",
+      "op": "<=",
+      "value": 25,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "fcfVolatility5y",
+      "op": "<=",
+      "value": 30,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "cfoToNi",
+      "op": "range",
+      "value": [
+        0.8,
+        1.5
+      ],
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "debtToEquity",
+      "op": "<",
+      "value": 2,
+      "scope": "absolute",
+      "missing": "fail"
+    }
+  ]
+}

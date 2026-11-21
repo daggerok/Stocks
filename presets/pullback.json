@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 1,
+  "id": "pullback",
+  "title": {
+    "en": "Pullback",
+    "ru": "Откат"
+  },
+  "description": {
+    "en": "Refinement: below the all-time high by the chosen depth, in the lower half of the 52-week range, at or below the 60-day mean, a 3-year total return still above 0 (the trend is not broken) and an Entry score of 50 or more where the row has one. Deep is for sector and theme funds",
+    "ru": "Уточнение: ниже исторического максимума на выбранную глубину, в нижней половине годового диапазона, не выше средней за 60 дней, полная доходность за 3 года всё ещё выше 0 (тренд не сломан) и оценка входа от 50, если она есть. Глубокий - для секторных и тематических фондов"
+  },
+  "appliesTo": [
+    "etf"
+  ],
+  "match": "all",
+  "refine": true,
+  "conditions": [
+    {
+      "metric": "pctFromAth",
+      "op": "range",
+      "value": [
+        "{lo}",
+        "{hi}"
+      ],
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "range52w",
+      "op": "<=",
+      "value": 50,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "sigmaFromMean60d",
+      "op": "<=",
+      "value": 0,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "tr3y",
+      "op": ">",
+      "value": 0,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "scoreEntry",
+      "op": ">=",
+      "value": 50,
+      "scope": "absolute",
+      "missing": "skip"
+    }
+  ],
+  "pickers": [
+    {
+      "id": "depth",
+      "title": {
+        "en": "Depth",
+        "ru": "Глубина"
+      },
+      "default": "medium",
+      "options": [
+        {
+          "id": "shallow",
+          "title": {
+            "en": "Shallow, 4-10%",
+            "ru": "Мелкий, 4-10%"
+          },
+          "vars": {
+            "lo": -10,
+            "hi": -4
+          }
+        },
+        {
+          "id": "medium",
+          "title": {
+            "en": "Medium, 8-20%",
+            "ru": "Средний, 8-20%"
+          },
+          "vars": {
+            "lo": -20,
+            "hi": -8
+          }
+        },
+        {
+          "id": "deep",
+          "title": {
+            "en": "Deep, 20-40%",
+            "ru": "Глубокий, 20-40%"
+          },
+          "vars": {
+            "lo": -40,
+            "hi": -20
+          }
+        }
+      ]
+    }
+  ]
+}

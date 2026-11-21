@@ -1,0 +1,156 @@
+{
+  "schemaVersion": 1,
+  "id": "stable-growth",
+  "title": {
+    "en": "Stable growth",
+    "ru": "Стабильный рост"
+  },
+  "description": {
+    "en": "Stocks and ETFs that kept growing over the chosen horizon (1Y, 3Y, 5Y or 10Y, picked on the chip, 5Y by default): a positive total return on every horizon up to it (1Y, then 3Y, 5Y, 10Y), a pace of 5% a year or more (the 1-year total return for 1Y, the CAGR of the horizon otherwise) and a calm price (volatility over the last year 35% or less; most ETF feeds do not publish it yet, so an empty volatility is skipped). An empty return fails, so a fund younger than the horizon does not pass. Add «and Pays a dividend» or «and Dividend growth» for income",
+    "ru": "Акции и ETF, которые стабильно росли на выбранном горизонте (1, 3, 5 или 10 лет, выбирается на чипе, по умолчанию 5 лет): полная доходность выше 0 на каждом горизонте до выбранного (1 год, затем 3, 5, 10 лет), темп от 5% в год (для 1 года - доходность за год, иначе среднегодовая доходность CAGR за горизонт) и спокойная цена (волатильность за последний год не выше 35%; большинство фидов ETF её пока не публикуют, поэтому пустая волатильность пропускается). Пустая доходность не проходит, поэтому фонд моложе горизонта не попадает. Для дохода добавьте «и Платят дивиденд» или «и Рост дивиденда»"
+  },
+  "appliesTo": [
+    "stock",
+    "etf"
+  ],
+  "match": "all",
+  "conditions": [
+    {
+      "metric": "volatility1y",
+      "op": "<=",
+      "value": 35,
+      "scope": "absolute",
+      "missing": "skip"
+    }
+  ],
+  "defaultVariant": "5y",
+  "variants": [
+    {
+      "id": "1y",
+      "title": {
+        "en": "1Y",
+        "ru": "1 год"
+      },
+      "conditions": [
+        {
+          "metric": "tr1y",
+          "op": ">=",
+          "value": 5,
+          "scope": "absolute",
+          "missing": "fail"
+        }
+      ]
+    },
+    {
+      "id": "3y",
+      "title": {
+        "en": "3Y",
+        "ru": "3 года"
+      },
+      "conditions": [
+        {
+          "metric": "tr1y",
+          "op": ">",
+          "value": 0,
+          "scope": "absolute",
+          "missing": "fail"
+        },
+        {
+          "metric": "tr3y",
+          "op": ">",
+          "value": 0,
+          "scope": "absolute",
+          "missing": "fail"
+        },
+        {
+          "metric": "cagr3y",
+          "op": ">=",
+          "value": 5,
+          "scope": "absolute",
+          "missing": "fail"
+        }
+      ]
+    },
+    {
+      "id": "5y",
+      "title": {
+        "en": "5Y",
+        "ru": "5 лет"
+      },
+      "conditions": [
+        {
+          "metric": "tr1y",
+          "op": ">",
+          "value": 0,
+          "scope": "absolute",
+          "missing": "fail"
+        },
+        {
+          "metric": "tr3y",
+          "op": ">",
+          "value": 0,
+          "scope": "absolute",
+          "missing": "fail"
+        },
+        {
+          "metric": "tr5y",
+          "op": ">",
+          "value": 0,
+          "scope": "absolute",
+          "missing": "fail"
+        },
+        {
+          "metric": "cagr5y",
+          "op": ">=",
+          "value": 5,
+          "scope": "absolute",
+          "missing": "fail"
+        }
+      ]
+    },
+    {
+      "id": "10y",
+      "title": {
+        "en": "10Y",
+        "ru": "10 лет"
+      },
+      "conditions": [
+        {
+          "metric": "tr1y",
+          "op": ">",
+          "value": 0,
+          "scope": "absolute",
+          "missing": "fail"
+        },
+        {
+          "metric": "tr3y",
+          "op": ">",
+          "value": 0,
+          "scope": "absolute",
+          "missing": "fail"
+        },
+        {
+          "metric": "tr5y",
+          "op": ">",
+          "value": 0,
+          "scope": "absolute",
+          "missing": "fail"
+        },
+        {
+          "metric": "tr10y",
+          "op": ">",
+          "value": 0,
+          "scope": "absolute",
+          "missing": "fail"
+        },
+        {
+          "metric": "cagr10y",
+          "op": ">=",
+          "value": 5,
+          "scope": "absolute",
+          "missing": "fail"
+        }
+      ]
+    }
+  ]
+}

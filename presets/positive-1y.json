@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "id": "positive-1y",
+  "title": {
+    "en": "Up over 1 year",
+    "ru": "Рост за год"
+  },
+  "description": {
+    "en": "A refinement: 1-year total return (tr1y: price change plus reinvested dividends) above 0, combined with AND on top of the chosen presets. Stocks and ETFs both publish tr1y; the price-only return is the separate metric perf1y",
+    "ru": "Уточнение: полная доходность за год (tr1y: изменение цены плюс реинвестированные дивиденды) выше 0, добавляется через И поверх выбранных пресетов. tr1y публикуют и акции, и ETF; доходность только по цене - отдельная метрика perf1y"
+  },
+  "appliesTo": [
+    "stock",
+    "etf"
+  ],
+  "match": "all",
+  "refine": true,
+  "conditions": [
+    {
+      "metric": "tr1y",
+      "op": ">",
+      "value": 0,
+      "scope": "absolute",
+      "missing": "fail"
+    }
+  ]
+}

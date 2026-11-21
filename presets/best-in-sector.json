@@ -1,0 +1,572 @@
+{
+  "schemaVersion": 1,
+  "id": "best-in-sector",
+  "title": {
+    "en": "Best in sector",
+    "ru": "Лучшие в секторе"
+  },
+  "description": {
+    "en": "Sector and theme funds ranked inside their own sector (the Industry column: a normalized sector or theme from the fund name): total return over the horizon in the top 30% of the sector, expense ratio at or below the sector median, size above the smallest 30%, drawdown not among the deepest 30%, and up on every horizon up to the chosen one. Pick one sector on the chip or keep All and filter the Industry column. Sectors with fewer than 5 funds have no ranking",
+    "ru": "Секторные и тематические фонды в сравнении со своим сектором (колонка «Отрасль»: нормализованный сектор или тема по названию фонда): полная доходность за горизонт в верхних 30% сектора, расходы не выше медианы сектора, размер не из 30% самых маленьких, просадка не из 30% самых глубоких, рост на каждом горизонте до выбранного. Выберите сектор на чипе или оставьте «Все» и фильтруйте колонку «Отрасль». В секторах, где меньше 5 фондов, рейтинга нет"
+  },
+  "appliesTo": [
+    "etf"
+  ],
+  "match": "all",
+  "conditions": [
+    {
+      "metric": "size",
+      "op": ">=",
+      "value": 100000000,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "isGeared",
+      "op": "=",
+      "value": false,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "cagr{h}",
+      "op": ">=",
+      "value": 70,
+      "scope": "industry",
+      "missing": "fail"
+    },
+    {
+      "metric": "expenseRatio",
+      "op": "<=",
+      "value": 50,
+      "scope": "industry",
+      "missing": "fail"
+    },
+    {
+      "metric": "size",
+      "op": ">=",
+      "value": 30,
+      "scope": "industry",
+      "missing": "fail"
+    },
+    {
+      "metric": "maxDrawdown{h}",
+      "op": ">=",
+      "value": 30,
+      "scope": "industry",
+      "missing": "fail"
+    }
+  ],
+  "pickers": [
+    {
+      "id": "horizon",
+      "title": {
+        "en": "Horizon",
+        "ru": "Горизонт"
+      },
+      "default": "5y",
+      "options": [
+        {
+          "id": "3y",
+          "title": {
+            "en": "3Y",
+            "ru": "3 года"
+          },
+          "vars": {
+            "h": "3y"
+          },
+          "conditions": [
+            {
+              "metric": "tr1y",
+              "op": ">",
+              "value": 0,
+              "scope": "absolute",
+              "missing": "fail"
+            },
+            {
+              "metric": "tr3y",
+              "op": ">",
+              "value": 0,
+              "scope": "absolute",
+              "missing": "fail"
+            }
+          ]
+        },
+        {
+          "id": "5y",
+          "title": {
+            "en": "5Y",
+            "ru": "5 лет"
+          },
+          "vars": {
+            "h": "5y"
+          },
+          "conditions": [
+            {
+              "metric": "tr1y",
+              "op": ">",
+              "value": 0,
+              "scope": "absolute",
+              "missing": "fail"
+            },
+            {
+              "metric": "tr3y",
+              "op": ">",
+              "value": 0,
+              "scope": "absolute",
+              "missing": "fail"
+            },
+            {
+              "metric": "tr5y",
+              "op": ">",
+              "value": 0,
+              "scope": "absolute",
+              "missing": "fail"
+            }
+          ]
+        },
+        {
+          "id": "10y",
+          "title": {
+            "en": "10Y",
+            "ru": "10 лет"
+          },
+          "vars": {
+            "h": "10y"
+          },
+          "conditions": [
+            {
+              "metric": "tr1y",
+              "op": ">",
+              "value": 0,
+              "scope": "absolute",
+              "missing": "fail"
+            },
+            {
+              "metric": "tr3y",
+              "op": ">",
+              "value": 0,
+              "scope": "absolute",
+              "missing": "fail"
+            },
+            {
+              "metric": "tr5y",
+              "op": ">",
+              "value": 0,
+              "scope": "absolute",
+              "missing": "fail"
+            },
+            {
+              "metric": "tr10y",
+              "op": ">",
+              "value": 0,
+              "scope": "absolute",
+              "missing": "fail"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sector",
+      "title": {
+        "en": "Sector",
+        "ru": "Сектор"
+      },
+      "default": "all",
+      "options": [
+        {
+          "id": "all",
+          "title": {
+            "en": "All sectors",
+            "ru": "Все секторы"
+          }
+        },
+        {
+          "id": "semiconductors",
+          "title": {
+            "en": "Semiconductors",
+            "ru": "Полупроводники"
+          },
+          "conditions": [
+            {
+              "metric": "industry",
+              "op": "=",
+              "value": "semiconductors",
+              "scope": "absolute",
+              "missing": "fail"
+            }
+          ]
+        },
+        {
+          "id": "cybersecurity",
+          "title": {
+            "en": "Cybersecurity",
+            "ru": "Кибербезопасность"
+          },
+          "conditions": [
+            {
+              "metric": "industry",
+              "op": "=",
+              "value": "cybersecurity",
+              "scope": "absolute",
+              "missing": "fail"
+            }
+          ]
+        },
+        {
+          "id": "ai-robotics",
+          "title": {
+            "en": "AI and robotics",
+            "ru": "ИИ и роботы"
+          },
+          "conditions": [
+            {
+              "metric": "industry",
+              "op": "=",
+              "value": "ai-robotics",
+              "scope": "absolute",
+              "missing": "fail"
+            }
+          ]
+        },
+        {
+          "id": "uranium-nuclear",
+          "title": {
+            "en": "Uranium and nuclear",
+            "ru": "Уран и атомная энергия"
+          },
+          "conditions": [
+            {
+              "metric": "industry",
+              "op": "=",
+              "value": "uranium-nuclear",
+              "scope": "absolute",
+              "missing": "fail"
+            }
+          ]
+        },
+        {
+          "id": "miners",
+          "title": {
+            "en": "Miners",
+            "ru": "Добытчики металлов"
+          },
+          "conditions": [
+            {
+              "metric": "industry",
+              "op": "=",
+              "value": "miners",
+              "scope": "absolute",
+              "missing": "fail"
+            }
+          ]
+        },
+        {
+          "id": "clean-energy",
+          "title": {
+            "en": "Clean energy",
+            "ru": "Чистая энергия"
+          },
+          "conditions": [
+            {
+              "metric": "industry",
+              "op": "=",
+              "value": "clean-energy",
+              "scope": "absolute",
+              "missing": "fail"
+            }
+          ]
+        },
+        {
+          "id": "biotech",
+          "title": {
+            "en": "Biotech",
+            "ru": "Биотехнологии"
+          },
+          "conditions": [
+            {
+              "metric": "industry",
+              "op": "=",
+              "value": "biotech",
+              "scope": "absolute",
+              "missing": "fail"
+            }
+          ]
+        },
+        {
+          "id": "banks",
+          "title": {
+            "en": "Banks",
+            "ru": "Банки"
+          },
+          "conditions": [
+            {
+              "metric": "industry",
+              "op": "=",
+              "value": "banks",
+              "scope": "absolute",
+              "missing": "fail"
+            }
+          ]
+        },
+        {
+          "id": "aerospace-defense",
+          "title": {
+            "en": "Aerospace and defense",
+            "ru": "Авиакосмос и оборона"
+          },
+          "conditions": [
+            {
+              "metric": "industry",
+              "op": "=",
+              "value": "aerospace-defense",
+              "scope": "absolute",
+              "missing": "fail"
+            }
+          ]
+        },
+        {
+          "id": "homebuilders",
+          "title": {
+            "en": "Homebuilders",
+            "ru": "Домостроители"
+          },
+          "conditions": [
+            {
+              "metric": "industry",
+              "op": "=",
+              "value": "homebuilders",
+              "scope": "absolute",
+              "missing": "fail"
+            }
+          ]
+        },
+        {
+          "id": "internet-cloud",
+          "title": {
+            "en": "Internet and cloud",
+            "ru": "Интернет и облака"
+          },
+          "conditions": [
+            {
+              "metric": "industry",
+              "op": "=",
+              "value": "internet-cloud",
+              "scope": "absolute",
+              "missing": "fail"
+            }
+          ]
+        },
+        {
+          "id": "infrastructure",
+          "title": {
+            "en": "Infrastructure",
+            "ru": "Инфраструктура"
+          },
+          "conditions": [
+            {
+              "metric": "industry",
+              "op": "=",
+              "value": "infrastructure",
+              "scope": "absolute",
+              "missing": "fail"
+            }
+          ]
+        },
+        {
+          "id": "mlp-midstream",
+          "title": {
+            "en": "MLP and midstream",
+            "ru": "MLP и трубопроводы"
+          },
+          "conditions": [
+            {
+              "metric": "industry",
+              "op": "=",
+              "value": "mlp-midstream",
+              "scope": "absolute",
+              "missing": "fail"
+            }
+          ]
+        },
+        {
+          "id": "technology",
+          "title": {
+            "en": "Technology",
+            "ru": "Технологии"
+          },
+          "conditions": [
+            {
+              "metric": "industry",
+              "op": "=",
+              "value": "technology",
+              "scope": "absolute",
+              "missing": "fail"
+            }
+          ]
+        },
+        {
+          "id": "energy",
+          "title": {
+            "en": "Energy",
+            "ru": "Энергетика"
+          },
+          "conditions": [
+            {
+              "metric": "industry",
+              "op": "=",
+              "value": "energy",
+              "scope": "absolute",
+              "missing": "fail"
+            }
+          ]
+        },
+        {
+          "id": "utilities",
+          "title": {
+            "en": "Utilities",
+            "ru": "Коммунальные услуги"
+          },
+          "conditions": [
+            {
+              "metric": "industry",
+              "op": "=",
+              "value": "utilities",
+              "scope": "absolute",
+              "missing": "fail"
+            }
+          ]
+        },
+        {
+          "id": "health-care",
+          "title": {
+            "en": "Health care",
+            "ru": "Здравоохранение"
+          },
+          "conditions": [
+            {
+              "metric": "industry",
+              "op": "=",
+              "value": "health-care",
+              "scope": "absolute",
+              "missing": "fail"
+            }
+          ]
+        },
+        {
+          "id": "financials",
+          "title": {
+            "en": "Financials",
+            "ru": "Финансы"
+          },
+          "conditions": [
+            {
+              "metric": "industry",
+              "op": "=",
+              "value": "financials",
+              "scope": "absolute",
+              "missing": "fail"
+            }
+          ]
+        },
+        {
+          "id": "consumer-staples",
+          "title": {
+            "en": "Consumer staples",
+            "ru": "Товары первой необходимости"
+          },
+          "conditions": [
+            {
+              "metric": "industry",
+              "op": "=",
+              "value": "consumer-staples",
+              "scope": "absolute",
+              "missing": "fail"
+            }
+          ]
+        },
+        {
+          "id": "consumer-discretionary",
+          "title": {
+            "en": "Consumer discretionary",
+            "ru": "Товары не первой необходимости"
+          },
+          "conditions": [
+            {
+              "metric": "industry",
+              "op": "=",
+              "value": "consumer-discretionary",
+              "scope": "absolute",
+              "missing": "fail"
+            }
+          ]
+        },
+        {
+          "id": "industrials",
+          "title": {
+            "en": "Industrials",
+            "ru": "Промышленность"
+          },
+          "conditions": [
+            {
+              "metric": "industry",
+              "op": "=",
+              "value": "industrials",
+              "scope": "absolute",
+              "missing": "fail"
+            }
+          ]
+        },
+        {
+          "id": "materials",
+          "title": {
+            "en": "Materials",
+            "ru": "Материалы"
+          },
+          "conditions": [
+            {
+              "metric": "industry",
+              "op": "=",
+              "value": "materials",
+              "scope": "absolute",
+              "missing": "fail"
+            }
+          ]
+        },
+        {
+          "id": "real-estate",
+          "title": {
+            "en": "Real estate",
+            "ru": "Недвижимость"
+          },
+          "conditions": [
+            {
+              "metric": "industry",
+              "op": "=",
+              "value": "real-estate",
+              "scope": "absolute",
+              "missing": "fail"
+            }
+          ]
+        },
+        {
+          "id": "communication",
+          "title": {
+            "en": "Communication",
+            "ru": "Коммуникации"
+          },
+          "conditions": [
+            {
+              "metric": "industry",
+              "op": "=",
+              "value": "communication",
+              "scope": "absolute",
+              "missing": "fail"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
