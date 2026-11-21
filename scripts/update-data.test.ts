@@ -11,7 +11,7 @@ import {
   isOperatingTicker, minusMonths, normalizeTicker, parseChart, periodEve, parseRange, parseRanges, parseRetryAfter, parseSecTickers, parseSummary, parseYahooAnnual, priceReturns, readConfig, resolveControls,
   indexDocument, parseWatchlist, range52wPosition, pruneCompanies, publishableCompanies, resolveWatchlist, restoreFeed, run, writeSignalsIssue, runtimeControls, sampleHistory, useApiRoot, useWatchlistDir, valuationMetrics, withMetricKeys, type ChartDay, type Snapshot,
   coverageMarkdown, metaText, scaleCheck, FEED_SCHEMA_VERSION, adrCoverage, adrFlag, annualRowsFromSec, FUNDAMENTALS_BASIS, SCALE_TOLERANCE_ANNUAL_PCT, staleForeignLayer,
-  restateAnnualEps,
+  restateAnnualEps, isSecUrl, newPacing, reserveRequest, SEC_MAX_PER_SECOND,
 } from './update-data.ts';
 import { parseCompanyFacts } from './sec/companyfacts';
 import { applyScoresSnapshot, computeScoring, parseScoresSnapshot, stocksScoresKey } from '../src/core/scoring';
@@ -863,6 +863,19 @@ describe('network', () => {
     peak = 0;
     await run(controls({ CONCURRENCY: '3' }));
     expect(peak).toBeGreaterThan(1);
+  });
+
+  test('SEC and Yahoo have their own lanes and SEC never exceeds SEC_MAX_PER_SECOND (fake clock)', () => {
+    const pacing = newPacing(24);
+    const sec = Array.from({ length: 10 }, () => reserveRequest(pacing, 0, true, 1000));
+    expect(sec).toEqual(sec.map((_, i) => i * (1000 / SEC_MAX_PER_SECOND))); // 24 free lanes, still 8 per second
+    expect(Array.from({ length: 24 }, () => reserveRequest(pacing, 0, false, 1000))).toEqual(new Array(24).fill(0)); // Yahoo is not held up by SEC
+    expect(reserveRequest(pacing, 0, false, 1000)).toBe(1000); // a lane waits REQUEST_SLEEP
+    const one = newPacing(1);
+    expect([reserveRequest(one, 0, true, 1000), reserveRequest(one, 0, true, 1000)]).toEqual([0, 1000]); // CONCURRENCY=1: REQUEST_SLEEP wins over the SEC gate
+    const off = newPacing(1);
+    expect([reserveRequest(off, 5, true, 0), reserveRequest(off, 5, true, 0)]).toEqual([5, 5]); // REQUEST_SLEEP=0: no pacing
+    expect([isSecUrl('https://data.sec.gov/api/xbrl/companyfacts/CIK1.json'), isSecUrl('https://www.sec.gov/files/x.json'), isSecUrl('https://query1.finance.yahoo.com/v8/finance/chart/SEC'), isSecUrl('https://notsec.gov/x')]).toEqual([true, true, false, false]);
   });
 
   test('HISTORY_RANGE shrinks the Yahoo request with explicit period1 and period2', async () => {

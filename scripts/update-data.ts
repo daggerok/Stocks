@@ -230,17 +230,38 @@ export function resolveControls(
 
 let secUa = DEFAULT_SEC_UA;
 let requestSleepSeconds = 1;
-let requestGates: number[] = [0];
 let verboseOutput = false;
 const note = (message: string) => { if (verboseOutput) console.warn(message); };
 
-async function paceRequests(): Promise<void> {
-  const now = Date.now();
+/** SEC fair access allows 10 requests per second per IP; the updater keeps 2 of them free for other tools on the same IP */
+export const SEC_MAX_PER_SECOND = 8;
+/**
+ * Request pacing: SEC and Yahoo each get their own CONCURRENCY lanes paced by REQUEST_SLEEP, and all SEC requests also pass one
+ * gate of SEC_MAX_PER_SECOND. One shared set of lanes made the large SEC downloads take a quarter of the Yahoo budget (a run of
+ * 489 stocks: 24.7 request starts per second while 3.3 requests were in flight on average). REQUEST_SLEEP=0 turns all pacing off
+ */
+export type Pacing = { lanes: number[]; secLanes: number[]; secGate: number };
+export const newPacing = (concurrency: number): Pacing => ({ lanes: new Array(Math.max(1, concurrency)).fill(0), secLanes: new Array(Math.max(1, concurrency)).fill(0), secGate: 0 });
+export const isSecUrl = (url: string): boolean => /^https?:\/\/(?:[^/?#]+\.)?sec\.gov(?:[:/?#]|$)/i.test(url);
+/** Reserves the start time (ms) of the next request on the earliest free lane of its provider */
+export function reserveRequest(pacing: Pacing, now: number, sec: boolean, sleepMs: number): number {
+  const lanes = sec ? pacing.secLanes : pacing.lanes;
   let lane = 0;
-  for (let i = 1; i < requestGates.length; i++) if (requestGates[i] < requestGates[lane]) lane = i;
-  const wait = Math.max(0, requestGates[lane] - now);
-  requestGates[lane] = Math.max(now, requestGates[lane]) + requestSleepSeconds * 1000;
-  if (wait) await sleep(wait);
+  for (let i = 1; i < lanes.length; i++) if (lanes[i] < lanes[lane]) lane = i;
+  let start = Math.max(now, lanes[lane]);
+  if (sec && sleepMs > 0) {
+    start = Math.max(start, pacing.secGate);
+    pacing.secGate = start + 1000 / SEC_MAX_PER_SECOND;
+  }
+  lanes[lane] = start + sleepMs;
+  return start;
+}
+let pacing: Pacing = newPacing(1);
+
+async function paceRequests(url: string): Promise<void> {
+  const now = Date.now();
+  const wait = reserveRequest(pacing, now, isSecUrl(url), requestSleepSeconds * 1000) - now;
+  if (wait > 0) await sleep(wait);
 }
 
 class HttpError extends Error {
@@ -259,7 +280,7 @@ async function fetchText(url: string, label: string, config: UpdaterConfig, head
   let lastError: unknown = new Error('no request attempted');
   for (let attempt = 0; attempt <= config.maxRetries; attempt += 1) {
     try {
-      await paceRequests();
+      await paceRequests(url);
       const signal = AbortSignal.timeout(FETCH_TIMEOUT_MS); // covers headers and body
       const response = await fetch(url, { headers: { 'User-Agent': secUa, Accept: '*/*', ...headers }, redirect: 'follow', signal });
       if (!response.ok) throw new HttpError(response.status, `${response.status} ${response.statusText}`, parseRetryAfter(response.headers.get('retry-after')));
@@ -703,7 +724,7 @@ let yahooSession: Promise<YahooSession> | null = null;
 
 async function openYahooSession(config: UpdaterConfig): Promise<YahooSession> {
   try {
-    await paceRequests();
+    await paceRequests(YAHOO_COOKIE_URL);
     const home = await fetch(YAHOO_COOKIE_URL, { headers: { 'User-Agent': BROWSER_UA }, redirect: 'manual', signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
     const cookie = (home.headers.getSetCookie?.() ?? []).map((c) => c.split(';')[0]).filter(Boolean).join('; ');
     if (!cookie) throw new Error('no cookie');
@@ -1594,7 +1615,7 @@ export async function run(controls: Record<string, string | undefined>, options:
   const config = readConfig(controls);
   secUa = config.secUa;
   requestSleepSeconds = config.requestSleep;
-  requestGates = new Array(Math.max(1, config.concurrency)).fill(0);
+  pacing = newPacing(config.concurrency);
   verboseOutput = config.verbose;
   yahooSession = null;
   yahooSessionRetryAt = 0;
@@ -1761,7 +1782,7 @@ Configuration: scripts/update-data.config.json defaults < advanced JSON (workflo
 only) < nonblank workflow inputs < environment variables below (all filters use
 AND logic):
   MAX_FETCHES=0       all selected stocks; positive value is a resumable batch
-  REQUEST_SLEEP=1     seconds between request starts per worker lane
+  REQUEST_SLEEP=1     seconds between request starts per worker lane (SEC and Yahoo lanes apart, SEC at most 8 per second)
   CONCURRENCY=3       parallel workers, each with its own request lane
   MAX_RETRIES=2       retries after the initial request (integer >= 1)
   EXCHANGES=Nasdaq,NYSE,CBOE   listing exchanges to include
