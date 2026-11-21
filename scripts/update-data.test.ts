@@ -977,7 +977,11 @@ describe('network 2', () => {
     await expect(restoreFeed(SITE)).rejects.toThrow('history/002.json');
     expect((await readdir(dir)).sort()).not.toContain('index.json');
     site = { ...full, [`${SITE}companies/AAA/meta.json`]: '{"ticker": "AAA", "history": {"pages": ["../../x.json"]}}' };
+    await rm(join(dir, 'companies'), { recursive: true, force: true });
     await expect(restoreFeed(SITE)).rejects.toThrow('unexpected history pages');
+    // the other worker finished its company before the restore failed: no write lands later (it went to the real api/stocks
+    // once the test had restored API_ROOT)
+    expect(await readFile(join(dir, 'companies', 'BRK-B', 'meta.json'), 'utf8')).toBe(site[`${SITE}companies/BRK-B/meta.json`]);
   });
 
   test('--publish refuses a missing, broken or empty index.json and counts the companies of a good one', () => {

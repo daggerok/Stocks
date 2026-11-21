@@ -1405,8 +1405,9 @@ export async function restoreFeed(base: string = PUBLISHED_FEED_URL, concurrency
   if (replace || ifNewer) await rm(API_ROOT, { recursive: true, force: true });
   let files = 0;
   let next = 0;
+  let failure: unknown = null;
   const worker = async (): Promise<void> => {
-    while (next < tickers.length) {
+    while (next < tickers.length && !failure) {
       const ticker = tickers[next];
       next += 1;
       const metaText = await fetchFeedFile(`${root}companies/${ticker}/meta.json`);
@@ -1425,7 +1426,9 @@ export async function restoreFeed(base: string = PUBLISHED_FEED_URL, concurrency
       files += 1;
     }
   };
-  await Promise.all(Array.from({ length: Math.max(1, Math.min(concurrency, tickers.length)) }, worker));
+  // the first failure stops every worker, and the restore settles only after all of them stopped: no write lands after it returned
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(concurrency, tickers.length)) }, () => worker().catch((error) => { failure = failure ?? error; })));
+  if (failure) throw failure;
   const stateText = await fetchFeedFile(`${root}update-state.json`);
   if (stateText !== null) { await writeFeedFile(stateFile(), stateText); files += 1; }
   // the signals of the last 12 weeks and the pending preset exits (plan stage 8); none yet before the first run with --signals
