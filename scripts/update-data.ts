@@ -1614,6 +1614,11 @@ export async function writeSignalsIssue(dir: string, siteUrl: string = PUBLISHED
   return issue.count;
 }
 
+/** One progress line of the update: `[ n/total ] TICKER status  detail`, the status word padded so every detail starts in one column */
+function progressLine(n: number, total: number, ticker: string, status: 'updated' | 'skipped' | 'failed', detail: string): string {
+  return `[ ${`${String(n).padStart(String(total).length)}/${total}`.padEnd(9)} ] ${ticker.padEnd(6)} ${status.padEnd(7)}  ${detail}`;
+}
+
 export async function run(controls: Record<string, string | undefined>, options: { deadlineMs?: number; signals?: boolean; now?: Date } = {}): Promise<{ updated: number; skipped: number; failed: number; rows: number; signals: number | null }> {
   const config = readConfig(controls);
   secUa = config.secUa;
@@ -1679,15 +1684,15 @@ export async function run(controls: Record<string, string | undefined>, options:
       const n = ++processed;
       try {
         const out = await processCompany(listing, config, previous.get(listing.ticker) ?? null);
-        if ('skipped' in out) { skipped += 1; console.log(`[ ${`${String(n).padStart(String(total).length)}/${total}`.padEnd(9)} ] ${listing.ticker.padEnd(6)} skipped: ${out.skipped}`); continue; }
+        if ('skipped' in out) { skipped += 1; console.log(progressLine(n, total, listing.ticker, 'skipped', out.skipped)); continue; }
         results.push(out.row);
         if (!out.degraded) clean.add(listing.ticker);
         for (const name of Object.keys(checkFails)) if (out.checks?.[name] && out.checks[name].ok === false) checkFails[name].push(`${listing.ticker} ${out.checks[name].diffPct}%${out.checks[name].scaleError ? ' withheld' : ''}`);
         const m = out.row.metrics;
-        console.log(`[ ${`${String(n).padStart(String(total).length)}/${total}`.padEnd(9)} ] ${listing.ticker.padEnd(6)} updated  cap ${m.marketCap === null ? '-' : `$${round(m.marketCap / 1e9, 1)}B`}  P/E ${m.pe ?? '-'}  FY ${out.row.fundamentalsAsOf ?? '-'}`);
+        console.log(progressLine(n, total, listing.ticker, 'updated', `cap ${m.marketCap === null ? '-' : `$${round(m.marketCap / 1e9, 1)}B`}  P/E ${m.pe ?? '-'}  FY ${out.row.fundamentalsAsOf ?? '-'}`));
       } catch (error) {
         failed += 1;
-        console.warn(`[ ${`${String(n).padStart(String(total).length)}/${total}`.padEnd(9)} ] ${listing.ticker.padEnd(6)} failed: ${error instanceof Error ? error.message : String(error)}`);
+        console.warn(progressLine(n, total, listing.ticker, 'failed', error instanceof Error ? error.message : String(error)));
       }
     }
   };
