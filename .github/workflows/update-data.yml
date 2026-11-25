@@ -1,6 +1,11 @@
 name: Update Stocks data
 
 on:
+  schedule:
+    - cron: '37 9 * * 1-5'
+      timezone: America/New_York
+    - cron: '17 20 * * 1-5'
+      timezone: America/New_York
   workflow_dispatch:
     inputs:
       max_fetches:
@@ -196,3 +201,47 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: bun ./scripts/update-data.ts --publish --no-build
+
+  signals-issue:
+    # once a week (the scheduled run of Friday evening, New York, after the publish so the links show the new data): one issue
+    # with the signals of the last 7 days, assigned to the owner so it arrives as a notification; nothing to report opens no issue
+    if: github.event_name == 'schedule'
+    needs: update-data
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      # the schedule runs twice every workday: only the Friday evening run (a late start may slip past midnight) writes the issue
+      - name: Friday evening run only
+        id: week
+        run: |
+          day=$(TZ=America/New_York date +%u); hour=$(TZ=America/New_York date +%H)
+          if { [ "$day" = 5 ] && [ "$hour" -ge 18 ]; } || { [ "$day" = 6 ] && [ "$hour" -lt 6 ]; }; then echo "issue=true" >> "$GITHUB_OUTPUT"; else echo "issue=false" >> "$GITHUB_OUTPUT"; fi
+      - name: Checkout
+        if: steps.week.outputs.issue == 'true'
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Setup bun
+        if: steps.week.outputs.issue == 'true'
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Restore api/stocks of this run from the Actions cache
+        if: steps.week.outputs.issue == 'true'
+        uses: actions/cache/restore@v6
+        with:
+          path: api/stocks
+          key: feed-stocks-${{ github.run_id }}-${{ github.run_attempt }}
+          fail-on-cache-miss: true
+      - name: Write the issue text
+        if: steps.week.outputs.issue == 'true'
+        id: issue
+        run: bun ./scripts/update-data.ts --signals-issue "$RUNNER_TEMP/signals-issue" https://daggerok.github.io/Stocks/
+      - name: Open the weekly signals issue
+        if: steps.week.outputs.issue == 'true' && steps.issue.outputs.count != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh issue create --repo "$GITHUB_REPOSITORY" --title "$(cat "$RUNNER_TEMP/signals-issue/title.txt")" --body-file "$RUNNER_TEMP/signals-issue/body.md" --assignee daggerok
