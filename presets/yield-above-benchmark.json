@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "id": "yield-above-benchmark",
+  "title": {
+    "en": "Yield above the benchmark",
+    "ru": "Дивиденд выше бенчмарка"
+  },
+  "description": {
+    "en": "Refinement: a dividend yield above both SPY and SPYM (or QQQ and QQQM), compared with the yields of those rows in the same table",
+    "ru": "Уточнение: дивидендная доходность выше, чем у SPY и SPYM (или QQQ и QQQM), в сравнении с доходностью этих строк той же таблицы"
+  },
+  "appliesTo": [
+    "etf"
+  ],
+  "match": "all",
+  "refine": true,
+  "conditions": [
+    {
+      "metric": "dividendYield",
+      "op": ">",
+      "value": 0,
+      "scope": "benchmark",
+      "benchmark": "{T}",
+      "missing": "fail"
+    },
+    {
+      "metric": "dividendYield",
+      "op": ">",
+      "value": 0,
+      "scope": "benchmark",
+      "benchmark": "{T2}",
+      "missing": "fail"
+    }
+  ],
+  "pickers": [
+    {
+      "id": "benchmark",
+      "title": {
+        "en": "Benchmark",
+        "ru": "Бенчмарк"
+      },
+      "default": "spy",
+      "options": [
+        {
+          "id": "spy",
+          "title": {
+            "en": "SPY",
+            "ru": "SPY"
+          },
+          "vars": {
+            "B": "Spy",
+            "T": "SPY",
+            "T2": "SPYM"
+          }
+        },
+        {
+          "id": "qqq",
+          "title": {
+            "en": "QQQ",
+            "ru": "QQQ"
+          },
+          "vars": {
+            "B": "Qqq",
+            "T": "QQQ",
+            "T2": "QQQM"
+          }
+        }
+      ]
+    }
+  ]
+}

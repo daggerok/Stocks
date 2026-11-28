@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "mine",
+  "title": {
+    "en": "Mine",
+    "ru": "Мои"
+  },
+  "description": {
+    "en": "Stocks and ETFs of the owner's own list (scripts/All.txt)",
+    "ru": "Акции и ETF из собственного списка владельца (scripts/All.txt)"
+  },
+  "appliesTo": [
+    "stock",
+    "etf"
+  ],
+  "match": "all",
+  "conditions": [
+    {
+      "metric": "isMine",
+      "op": "=",
+      "value": true,
+      "scope": "absolute",
+      "missing": "fail"
+    }
+  ]
+}

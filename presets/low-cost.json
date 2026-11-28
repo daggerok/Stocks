@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "id": "low-cost",
+  "title": {
+    "en": "Costs up to",
+    "ru": "Расходы до"
+  },
+  "description": {
+    "en": "Refinement: a net expense ratio (after fee waivers, as the issuer publishes it) at or below the chosen level; a fund whose brand publishes no expense ratio does not pass",
+    "ru": "Уточнение: чистые расходы фонда (после скидок, как их публикует эмитент) не выше выбранного уровня; фонд, у бренда которого нет расходов, не проходит"
+  },
+  "appliesTo": [
+    "etf"
+  ],
+  "match": "all",
+  "refine": true,
+  "conditions": [
+    {
+      "metric": "expenseRatio",
+      "op": "<=",
+      "value": "{E}",
+      "scope": "absolute",
+      "missing": "fail"
+    }
+  ],
+  "pickers": [
+    {
+      "id": "level",
+      "title": {
+        "en": "Up to",
+        "ru": "До"
+      },
+      "default": "0-4",
+      "options": [
+        {
+          "id": "0-1",
+          "title": {
+            "en": "0.1%",
+            "ru": "0,1%"
+          },
+          "vars": {
+            "E": 0.1
+          }
+        },
+        {
+          "id": "0-2",
+          "title": {
+            "en": "0.2%",
+            "ru": "0,2%"
+          },
+          "vars": {
+            "E": 0.2
+          }
+        },
+        {
+          "id": "0-4",
+          "title": {
+            "en": "0.4%",
+            "ru": "0,4%"
+          },
+          "vars": {
+            "E": 0.4
+          }
+        },
+        {
+          "id": "0-75",
+          "title": {
+            "en": "0.75%",
+            "ru": "0,75%"
+          },
+          "vars": {
+            "E": 0.75
+          }
+        }
+      ]
+    }
+  ]
+}

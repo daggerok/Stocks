@@ -1,0 +1,159 @@
+{
+  "schemaVersion": 1,
+  "id": "beats-benchmark",
+  "title": {
+    "en": "Beats the benchmark",
+    "ru": "Обгоняет бенчмарк"
+  },
+  "description": {
+    "en": "ETFs whose total return beat SPY or QQQ over the chosen horizon by more than 0.25% a year, measured on the same dates from dividend-adjusted closes (vsSpy and vsQqq of the brand feeds). With \"Total and price\" the price alone also has to beat the benchmark's price. An exact index tracker cannot pass: it differs from SPY only by its fee. At least $100M of assets, no leveraged or inverse funds. Add «and Index family» for S&P 500 or Nasdaq-100 based funds, «and Yield above the benchmark» for income, «and Pullback» for an entry",
+    "ru": "ETF, полная доходность которых на выбранном горизонте выше, чем у SPY или QQQ, больше чем на 0,25% в год; считается на одних и тех же датах по закрытиям с поправкой на дивиденды (vsSpy и vsQqq фидов брендов). В режиме «Полная и цена» рост цены тоже должен быть выше, чем у бенчмарка. Точный индексный фонд не пройдёт: он отличается от SPY только комиссией. Активы от $100 млн, без фондов с плечом и обратных. Добавьте «и Семейство индекса», «и Дивиденд выше бенчмарка», «и Откат»"
+  },
+  "appliesTo": [
+    "etf"
+  ],
+  "match": "all",
+  "conditions": [
+    {
+      "metric": "size",
+      "op": ">=",
+      "value": 100000000,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "isGeared",
+      "op": "=",
+      "value": false,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "vs{B}{h}",
+      "op": ">",
+      "value": 0.25,
+      "scope": "absolute",
+      "missing": "fail"
+    }
+  ],
+  "pickers": [
+    {
+      "id": "benchmark",
+      "title": {
+        "en": "Benchmark",
+        "ru": "Бенчмарк"
+      },
+      "default": "spy",
+      "options": [
+        {
+          "id": "spy",
+          "title": {
+            "en": "SPY",
+            "ru": "SPY"
+          },
+          "vars": {
+            "B": "Spy",
+            "T": "SPY",
+            "T2": "SPYM"
+          }
+        },
+        {
+          "id": "qqq",
+          "title": {
+            "en": "QQQ",
+            "ru": "QQQ"
+          },
+          "vars": {
+            "B": "Qqq",
+            "T": "QQQ",
+            "T2": "QQQM"
+          }
+        }
+      ]
+    },
+    {
+      "id": "horizon",
+      "title": {
+        "en": "Horizon",
+        "ru": "Горизонт"
+      },
+      "default": "5y",
+      "options": [
+        {
+          "id": "1y",
+          "title": {
+            "en": "1Y",
+            "ru": "1 год"
+          },
+          "vars": {
+            "h": "1y"
+          }
+        },
+        {
+          "id": "3y",
+          "title": {
+            "en": "3Y",
+            "ru": "3 года"
+          },
+          "vars": {
+            "h": "3y"
+          }
+        },
+        {
+          "id": "5y",
+          "title": {
+            "en": "5Y",
+            "ru": "5 лет"
+          },
+          "vars": {
+            "h": "5y"
+          }
+        },
+        {
+          "id": "10y",
+          "title": {
+            "en": "10Y",
+            "ru": "10 лет"
+          },
+          "vars": {
+            "h": "10y"
+          }
+        }
+      ]
+    },
+    {
+      "id": "return",
+      "title": {
+        "en": "Return",
+        "ru": "Доходность"
+      },
+      "default": "total",
+      "options": [
+        {
+          "id": "total",
+          "title": {
+            "en": "Total",
+            "ru": "Полная"
+          }
+        },
+        {
+          "id": "price",
+          "title": {
+            "en": "Total and price",
+            "ru": "Полная и цена"
+          },
+          "conditions": [
+            {
+              "metric": "perf{h}",
+              "op": ">",
+              "value": 0,
+              "scope": "benchmark",
+              "benchmark": "{T}",
+              "missing": "fail"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

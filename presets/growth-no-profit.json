@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "id": "growth-no-profit",
+  "title": {
+    "en": "Growth without profit",
+    "ru": "Рост без прибыли"
+  },
+  "description": {
+    "en": "Young growers that may not earn yet: revenue up 25% or more in the last fiscal year, gross margin of 50% or more, price up 20% or more in 6 months, market cap of $2B or more and a quick ratio of 1.5 or more to survive the cash burn",
+    "ru": "Молодые растущие компании, которые могут ещё не зарабатывать: выручка за последний финансовый год выросла от 25%, валовая маржа от 50%, цена за 6 месяцев выросла от 20%, капитализация от $2 млрд и быстрая ликвидность от 1,5, чтобы пережить сжигание денег"
+  },
+  "appliesTo": [
+    "stock"
+  ],
+  "match": "all",
+  "conditions": [
+    {
+      "metric": "revenueGrowth",
+      "op": ">=",
+      "value": 25,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "grossMargin",
+      "op": ">=",
+      "value": 50,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "perf6m",
+      "op": ">=",
+      "value": 20,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "marketCap",
+      "op": ">=",
+      "value": 2000000000,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "quickRatio",
+      "op": ">=",
+      "value": 1.5,
+      "scope": "absolute",
+      "missing": "fail"
+    }
+  ]
+}

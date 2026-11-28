@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "top": 10,
+  "minShare": 0.5,
+  "minGroup": 5,
+  "minSectorRows": 20,
+  "differences": 3,
+  "tolerance": 0.2,
+  "groups": [
+    {
+      "id": "business",
+      "title": { "en": "Business", "ru": "Бизнес" },
+      "metrics": ["grossMargin", "operatingMargin", "netMargin", "fcfMargin", "roic", "revenueGrowth3y", "epsGrowth3y", "capexToRevenue", "fcfToNi"]
+    },
+    {
+      "id": "dividend",
+      "title": { "en": "Dividend", "ru": "Дивиденд" },
+      "metrics": ["dividendYield", "dividendGrowth5y", "dividendStreak", "payoutRatio", "fcfPayout", "yieldVsAvg5y"]
+    },
+    {
+      "id": "valuation",
+      "title": { "en": "Valuation", "ru": "Оценка" },
+      "metrics": ["pe", "forwardPe", "ps", "pFcf", "evEbitda", "pb", "peg", "pegHist"]
+    },
+    {
+      "id": "risk",
+      "title": { "en": "Risk", "ru": "Риск" },
+      "metrics": ["beta", "volatility1y", "debtToEquity", "netDebtToEbitda", "interestCoverage", "altmanZ", "currentRatio", "pctFromAth"]
+    }
+  ]
+}

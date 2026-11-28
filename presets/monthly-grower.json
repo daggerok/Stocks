@@ -1,0 +1,191 @@
+{
+  "schemaVersion": 1,
+  "id": "monthly-grower",
+  "title": {
+    "en": "Monthly grower",
+    "ru": "Ежемесячный рост"
+  },
+  "description": {
+    "en": "Funds that pay every month and still grow: a higher price than at the start of the horizon, total return no more than 3% a year behind the benchmark, a yield of 1% or more, no dividend cut. A small dividend is fine",
+    "ru": "Фонды, которые платят каждый месяц и при этом растут: цена выше, чем в начале горизонта, полная доходность отстаёт от бенчмарка не больше чем на 3% в год, дивидендная доходность от 1%, дивиденд не сокращался. Небольшой дивиденд подходит"
+  },
+  "appliesTo": [
+    "etf"
+  ],
+  "match": "all",
+  "conditions": [
+    {
+      "metric": "size",
+      "op": ">=",
+      "value": 100000000,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "isGeared",
+      "op": "=",
+      "value": false,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "payFrequency",
+      "op": "=",
+      "value": "monthly",
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "perf{h}",
+      "op": ">",
+      "value": 0,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "vs{B}{h}",
+      "op": ">=",
+      "value": -3,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "dividendYield",
+      "op": ">=",
+      "value": 1,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "dividendCut10y",
+      "op": "=",
+      "value": false,
+      "scope": "absolute",
+      "missing": "skip"
+    }
+  ],
+  "pickers": [
+    {
+      "id": "benchmark",
+      "title": {
+        "en": "Benchmark",
+        "ru": "Бенчмарк"
+      },
+      "default": "spy",
+      "options": [
+        {
+          "id": "spy",
+          "title": {
+            "en": "SPY",
+            "ru": "SPY"
+          },
+          "vars": {
+            "B": "Spy",
+            "T": "SPY",
+            "T2": "SPYM"
+          }
+        },
+        {
+          "id": "qqq",
+          "title": {
+            "en": "QQQ",
+            "ru": "QQQ"
+          },
+          "vars": {
+            "B": "Qqq",
+            "T": "QQQ",
+            "T2": "QQQM"
+          }
+        }
+      ]
+    },
+    {
+      "id": "horizon",
+      "title": {
+        "en": "Horizon",
+        "ru": "Горизонт"
+      },
+      "default": "5y",
+      "options": [
+        {
+          "id": "1y",
+          "title": {
+            "en": "1Y",
+            "ru": "1 год"
+          },
+          "vars": {
+            "h": "1y"
+          },
+          "conditions": [
+            {
+              "metric": "tr1y",
+              "op": ">",
+              "value": 0,
+              "scope": "absolute",
+              "missing": "fail"
+            }
+          ]
+        },
+        {
+          "id": "3y",
+          "title": {
+            "en": "3Y",
+            "ru": "3 года"
+          },
+          "vars": {
+            "h": "3y"
+          },
+          "conditions": [
+            {
+              "metric": "tr1y",
+              "op": ">",
+              "value": 0,
+              "scope": "absolute",
+              "missing": "fail"
+            },
+            {
+              "metric": "tr3y",
+              "op": ">",
+              "value": 0,
+              "scope": "absolute",
+              "missing": "fail"
+            }
+          ]
+        },
+        {
+          "id": "5y",
+          "title": {
+            "en": "5Y",
+            "ru": "5 лет"
+          },
+          "vars": {
+            "h": "5y"
+          },
+          "conditions": [
+            {
+              "metric": "tr1y",
+              "op": ">",
+              "value": 0,
+              "scope": "absolute",
+              "missing": "fail"
+            },
+            {
+              "metric": "tr3y",
+              "op": ">",
+              "value": 0,
+              "scope": "absolute",
+              "missing": "fail"
+            },
+            {
+              "metric": "tr5y",
+              "op": ">",
+              "value": 0,
+              "scope": "absolute",
+              "missing": "fail"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

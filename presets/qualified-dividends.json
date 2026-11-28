@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "id": "qualified-dividends",
+  "title": {
+    "en": "Qualified dividends",
+    "ru": "Квалифицированные дивиденды"
+  },
+  "description": {
+    "en": "Refinement: at least the chosen share of the dividends was qualified (taxed at the lower rate) in the last tax year: the issuer's tax document where it is read, else an estimate by fund class (US equity 95, international 60, bonds and REITs near 0; option income is never estimated and does not pass)",
+    "ru": "Уточнение: не меньше выбранной доли дивидендов была квалифицированной (облагается по льготной ставке) за последний налоговый год: по налоговому документу эмитента, где он прочитан, иначе оценка по классу фонда (акции США 95, международные 60, облигации и REIT около 0; опционный доход не оценивается и не проходит)"
+  },
+  "appliesTo": [
+    "etf"
+  ],
+  "match": "all",
+  "refine": true,
+  "conditions": [
+    {
+      "metric": "qualifiedDividendPct",
+      "op": ">=",
+      "value": "{Q}",
+      "scope": "absolute",
+      "missing": "fail"
+    }
+  ],
+  "pickers": [
+    {
+      "id": "level",
+      "title": {
+        "en": "Share from",
+        "ru": "Доля от"
+      },
+      "default": "80",
+      "options": [
+        {
+          "id": "60",
+          "title": {
+            "en": "60%",
+            "ru": "60%"
+          },
+          "vars": {
+            "Q": 60
+          }
+        },
+        {
+          "id": "80",
+          "title": {
+            "en": "80%",
+            "ru": "80%"
+          },
+          "vars": {
+            "Q": 80
+          }
+        },
+        {
+          "id": "90",
+          "title": {
+            "en": "90%",
+            "ru": "90%"
+          },
+          "vars": {
+            "Q": 90
+          }
+        }
+      ]
+    }
+  ]
+}

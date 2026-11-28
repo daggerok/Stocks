@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "id": "monthly-pay",
+  "title": {
+    "en": "Monthly payments",
+    "ru": "Ежемесячные выплаты"
+  },
+  "description": {
+    "en": "Refinement: pays every month (payFrequency monthly: 11 or more calendar months with a payment in the last year, or the last four payments in four consecutive months), from the Yahoo dividend events of the Stocks updater and the brand feeds (O, MAIN, STAG among stocks); empty until the feed publishes the key",
+    "ru": "Уточнение: платит каждый месяц (payFrequency monthly: выплаты в 11 и больше календарных месяцах за последний год или последние четыре выплаты в четырёх месяцах подряд), по дивидендным событиям Yahoo апдейтера Stocks и фидов брендов (O, MAIN, STAG среди акций); пусто, пока фид не публикует ключ"
+  },
+  "appliesTo": [
+    "stock",
+    "etf"
+  ],
+  "match": "all",
+  "refine": true,
+  "conditions": [
+    {
+      "metric": "payFrequency",
+      "op": "=",
+      "value": "monthly",
+      "scope": "absolute",
+      "missing": "fail"
+    }
+  ]
+}

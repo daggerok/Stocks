@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "id": "dividend-growth",
+  "title": {
+    "en": "Dividend growth",
+    "ru": "Дивидендный рост"
+  },
+  "description": {
+    "en": "Fast dividend growers: dividend up 10% a year or more over 5 years, at most half of free cash flow paid out, EPS growing 8% a year or more and ROIC of 15% or more, so the growth is earned, not borrowed",
+    "ru": "Быстро растущий дивиденд: рост дивиденда от 10% в год за 5 лет, на выплаты уходит не больше половины свободного денежного потока, EPS растёт от 8% в год, ROIC от 15%, то есть рост заработан, а не взят в долг"
+  },
+  "appliesTo": [
+    "stock"
+  ],
+  "match": "all",
+  "conditions": [
+    {
+      "metric": "dividendGrowth5y",
+      "op": ">=",
+      "value": 10,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "fcfPayout",
+      "op": "<=",
+      "value": 50,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "epsGrowth5y",
+      "op": ">=",
+      "value": 8,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "roic",
+      "op": ">=",
+      "value": 15,
+      "scope": "absolute",
+      "missing": "fail"
+    }
+  ]
+}

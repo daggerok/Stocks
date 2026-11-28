@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "id": "gold",
+  "title": {
+    "en": "Gold",
+    "ru": "Золото"
+  },
+  "description": {
+    "en": "Gold miners by Yahoo industry or gold ETFs by an explicit ticker list; either condition is enough. The ticker list is edited in the preset",
+    "ru": "Золотодобытчики по отрасли Yahoo или золотые ETF по явному списку тикеров; достаточно одного из двух условий. Список тикеров правится в пресете"
+  },
+  "appliesTo": [
+    "stock",
+    "etf"
+  ],
+  "match": 1,
+  "conditions": [
+    {
+      "metric": "industry",
+      "op": "in",
+      "value": [
+        "Gold",
+        "Other Precious Metals & Mining"
+      ],
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "ticker",
+      "op": "in",
+      "value": [
+        "GLD",
+        "IAU",
+        "GLDM",
+        "SGOL",
+        "BAR",
+        "AAAU",
+        "OUNZ",
+        "GDX",
+        "GDXJ",
+        "RING",
+        "SGDM",
+        "GOAU"
+      ],
+      "scope": "absolute",
+      "missing": "fail"
+    }
+  ]
+}

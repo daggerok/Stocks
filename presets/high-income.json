@@ -1,0 +1,249 @@
+{
+  "schemaVersion": 1,
+  "id": "high-income",
+  "title": {
+    "en": "High income, no erosion",
+    "ru": "Высокий доход без проедания"
+  },
+  "description": {
+    "en": "Funds with a dividend yield at or above the chosen level whose price did not fall over the chosen horizon: what was paid out was earned, not taken from the fund's value. The price is the split-adjusted close without dividends, so a reverse split does not hide a fall. \"Since listing\" checks the whole life of the fund (at least a year). Risk \"Calm\" also needs volatility of 20% or less and a drawdown no deeper than 25% over the horizon. The total return has to be positive on every horizon up to the chosen one",
+    "ru": "Фонды с дивидендной доходностью не ниже выбранного уровня, цена которых не упала за выбранный горизонт: выплаты заработаны, а не взяты из стоимости фонда. Цена - закрытие с поправкой на сплиты без дивидендов, поэтому обратный сплит не прячет падение. «С начала торгов» проверяет всю историю фонда (не меньше года). Риск «Спокойный» дополнительно требует волатильность не выше 20% и просадку не глубже 25% за горизонт. Полная доходность выше 0 на каждом горизонте до выбранного"
+  },
+  "appliesTo": [
+    "etf"
+  ],
+  "match": "all",
+  "conditions": [
+    {
+      "metric": "size",
+      "op": ">=",
+      "value": 100000000,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "isGeared",
+      "op": "=",
+      "value": false,
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "dividendYield",
+      "op": ">=",
+      "value": "{Y}",
+      "scope": "absolute",
+      "missing": "fail"
+    },
+    {
+      "metric": "{P}",
+      "op": ">=",
+      "value": 0,
+      "scope": "absolute",
+      "missing": "fail"
+    }
+  ],
+  "pickers": [
+    {
+      "id": "yield",
+      "title": {
+        "en": "Yield from",
+        "ru": "Доходность от"
+      },
+      "default": "8",
+      "options": [
+        {
+          "id": "6",
+          "title": {
+            "en": "6%",
+            "ru": "6%"
+          },
+          "vars": {
+            "Y": 6
+          }
+        },
+        {
+          "id": "8",
+          "title": {
+            "en": "8%",
+            "ru": "8%"
+          },
+          "vars": {
+            "Y": 8
+          }
+        },
+        {
+          "id": "10",
+          "title": {
+            "en": "10%",
+            "ru": "10%"
+          },
+          "vars": {
+            "Y": 10
+          }
+        },
+        {
+          "id": "12",
+          "title": {
+            "en": "12%",
+            "ru": "12%"
+          },
+          "vars": {
+            "Y": 12
+          }
+        }
+      ]
+    },
+    {
+      "id": "horizon",
+      "title": {
+        "en": "Horizon",
+        "ru": "Горизонт"
+      },
+      "default": "3y",
+      "options": [
+        {
+          "id": "1y",
+          "title": {
+            "en": "1Y",
+            "ru": "1 год"
+          },
+          "vars": {
+            "P": "perf1y",
+            "D": "maxDrawdown1y"
+          },
+          "conditions": [
+            {
+              "metric": "tr1y",
+              "op": ">",
+              "value": 0,
+              "scope": "absolute",
+              "missing": "fail"
+            }
+          ]
+        },
+        {
+          "id": "3y",
+          "title": {
+            "en": "3Y",
+            "ru": "3 года"
+          },
+          "vars": {
+            "P": "perf3y",
+            "D": "maxDrawdown3y"
+          },
+          "conditions": [
+            {
+              "metric": "tr1y",
+              "op": ">",
+              "value": 0,
+              "scope": "absolute",
+              "missing": "fail"
+            },
+            {
+              "metric": "tr3y",
+              "op": ">",
+              "value": 0,
+              "scope": "absolute",
+              "missing": "fail"
+            }
+          ]
+        },
+        {
+          "id": "5y",
+          "title": {
+            "en": "5Y",
+            "ru": "5 лет"
+          },
+          "vars": {
+            "P": "perf5y",
+            "D": "maxDrawdown5y"
+          },
+          "conditions": [
+            {
+              "metric": "tr1y",
+              "op": ">",
+              "value": 0,
+              "scope": "absolute",
+              "missing": "fail"
+            },
+            {
+              "metric": "tr3y",
+              "op": ">",
+              "value": 0,
+              "scope": "absolute",
+              "missing": "fail"
+            },
+            {
+              "metric": "tr5y",
+              "op": ">",
+              "value": 0,
+              "scope": "absolute",
+              "missing": "fail"
+            }
+          ]
+        },
+        {
+          "id": "si",
+          "title": {
+            "en": "Since listing",
+            "ru": "С начала торгов"
+          },
+          "vars": {
+            "P": "perfSi",
+            "D": "maxDrawdown1y"
+          },
+          "conditions": [
+            {
+              "metric": "tr1y",
+              "op": ">",
+              "value": 0,
+              "scope": "absolute",
+              "missing": "fail"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "risk",
+      "title": {
+        "en": "Risk",
+        "ru": "Риск"
+      },
+      "default": "any",
+      "options": [
+        {
+          "id": "any",
+          "title": {
+            "en": "Any",
+            "ru": "Любой"
+          }
+        },
+        {
+          "id": "calm",
+          "title": {
+            "en": "Calm",
+            "ru": "Спокойный"
+          },
+          "conditions": [
+            {
+              "metric": "volatility1y",
+              "op": "<=",
+              "value": 20,
+              "scope": "absolute",
+              "missing": "fail"
+            },
+            {
+              "metric": "{D}",
+              "op": ">=",
+              "value": -25,
+              "scope": "absolute",
+              "missing": "fail"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
